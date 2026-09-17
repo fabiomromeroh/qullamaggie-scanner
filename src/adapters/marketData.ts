@@ -16,8 +16,8 @@ import {
   SCAN_UNIVERSE,
   WATCHLIST_GROUPS,
 } from '../data/watchlist'
-import { computeIdeaMetrics, computeMarketRegime } from '../lib/metrics'
-import { fetchLiveSnapshot, mapPool } from './providers/liveFetch'
+import { applyEarningsToIdea, computeIdeaMetrics, computeMarketRegime } from '../lib/metrics'
+import { fetchLiveEarningsBatch, fetchLiveSnapshot, mapPool } from './providers/liveFetch'
 
 export interface MarketDataAdapter {
   readonly name: string
@@ -58,18 +58,25 @@ function buildGroups(ideas: TradingIdea[]): IndustryGroup[] {
     const members = byGroup.get(g.id) ?? []
     const avg = (pick: (i: TradingIdea) => number) =>
       members.length ? members.reduce((s, m) => s + pick(m), 0) / members.length : 0
+    const perf1m = Math.round(avg((m) => m.perf1M) * 100) / 100
+    const perf3m = Math.round(avg((m) => m.perf3M) * 100) / 100
+    const perf6m = Math.round(avg((m) => m.perf6M) * 100) / 100
     return {
       ...g,
       rsRank: 0,
       leaderCount: members.filter((m) => m.pctFrom52wHigh >= -10).length,
       dayPct: Math.round(avg((m) => m.dayPct) * 100) / 100,
       weekPct: Math.round(avg((m) => m.perf1M / 4) * 100) / 100,
-      monthPct: Math.round(avg((m) => m.perf1M) * 100) / 100,
+      monthPct: perf1m,
+      perf1m,
+      perf3m,
+      perf6m,
       description: g.description,
     }
   }).filter((g) => (byGroup.get(g.id) ?? []).length > 0)
 
-  groups.sort((a, b) => b.monthPct - a.monthPct)
+  // Rank by 3M group strength (prefer medium-horizon RS), fall back to 1M
+  groups.sort((a, b) => b.perf3m - a.perf3m || b.perf1m - a.perf1m)
   groups.forEach((g, i) => {
     g.rsRank = i + 1
   })
@@ -145,6 +152,18 @@ export class LiveMarketAdapter implements MarketDataAdapter {
       throw new Error(
         `No valid setups: ${belowSma200} below 200 SMA, ${failures.length} fetch failures (hard trend gate).`,
       )
+    }
+
+    // Earnings proximity overlay (Finnhub calendar → Nasdaq). Avoid → not A+.
+    try {
+      const earnMap = await fetchLiveEarningsBatch(ideas.map((i) => i.ticker))
+      for (let i = 0; i < ideas.length; i++) {
+        const t = ideas[i]!.ticker.toUpperCase()
+        const date = earnMap.has(t) ? earnMap.get(t)! : null
+        ideas[i] = applyEarningsToIdea(ideas[i]!, date)
+      }
+    } catch {
+      // Leave default clear earnings if calendar fails — still live bars.
     }
 
     return {

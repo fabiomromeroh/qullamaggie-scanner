@@ -17,7 +17,7 @@ export interface WatchlistEntry {
 /** Static industry tags (RS rank / % filled from live member metrics). */
 export const WATCHLIST_GROUPS: Omit<
   IndustryGroup,
-  'rsRank' | 'leaderCount' | 'dayPct' | 'weekPct' | 'monthPct'
+  'rsRank' | 'leaderCount' | 'dayPct' | 'weekPct' | 'monthPct' | 'perf1m' | 'perf3m' | 'perf6m'
 >[] = [
   {
     id: 'semis',

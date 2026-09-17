@@ -19,11 +19,15 @@ export function DetailDrawer({ idea, onClose, source = 'live' }: Props) {
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="font-mono text-lg font-bold text-terminal-fg">{idea.ticker}</h2>
-            {idea.isAPlus && (
+            {idea.earningsStatus === 'avoid' ? (
+              <span className="rounded border border-terminal-red/50 bg-terminal-red-dim px-1.5 py-0.5 text-[10px] font-bold text-terminal-red">
+                AVOID EARNINGS
+              </span>
+            ) : idea.isAPlus ? (
               <span className="rounded bg-terminal-a-plus px-1.5 py-0.5 text-[10px] font-bold text-terminal-bg">
                 A+
               </span>
-            )}
+            ) : null}
             <span
               className="rounded border border-terminal-amber/40 bg-terminal-amber-dim px-1.5 py-0.5 text-[10px] font-mono text-terminal-amber"
               title="Heuristic kyleScore (not Kyle official Rating)"
@@ -102,6 +106,7 @@ export function DetailDrawer({ idea, onClose, source = 'live' }: Props) {
             { label: 'vs 52w', value: fmtPct(idea.pctFrom52wHigh) },
             { label: '1M', value: fmtPct(idea.perf1M, 0) },
             { label: '3M', value: fmtPct(idea.perf3M, 0) },
+            { label: '6M', value: fmtPct(idea.perf6M, 0) },
             { label: 'Setup', value: idea.setupType },
             { label: 'vs 200 SMA', value: fmtPct(idea.pctAboveSma200) },
             { label: 'vs 50 SMA', value: fmtPct(idea.pctAboveSma50) },
@@ -131,6 +136,43 @@ export function DetailDrawer({ idea, onClose, source = 'live' }: Props) {
             aboveSma200={String(idea.aboveSma200)} · aboveSma50={String(idea.aboveSma50)} ·
             aboveSma20={String(idea.aboveSma20)} · aboveSma10={String(idea.aboveSma10)} · SMA50{' '}
             {fmtPrice(idea.sma50)}
+          </p>
+        </section>
+
+        <section>
+          <h3 className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-terminal-dim">
+            Earnings proximity
+          </h3>
+          <p
+            className={`rounded border px-3 py-2 text-sm ${
+              idea.earningsStatus === 'avoid'
+                ? 'border-terminal-red/40 bg-terminal-red-dim text-terminal-red'
+                : idea.earningsStatus === 'alert'
+                  ? 'border-terminal-amber/40 bg-terminal-amber-dim text-terminal-amber'
+                  : 'border-terminal-border bg-terminal-bg text-terminal-muted'
+            }`}
+          >
+            {idea.earningsDate != null ? (
+              <>
+                Next earnings <span className="font-mono">{idea.earningsDate}</span>
+                {idea.daysToEarnings != null ? (
+                  <>
+                    {' '}
+                    · <span className="font-mono">{idea.daysToEarnings}</span> trading day
+                    {idea.daysToEarnings === 1 ? '' : 's'}
+                  </>
+                ) : null}
+                {' '}
+                · status <span className="font-mono uppercase">{idea.earningsStatus}</span>
+                {idea.earningsStatus === 'avoid'
+                  ? ' — hard fail for entry (same day / next trading day)'
+                  : idea.earningsStatus === 'alert'
+                    ? ' — flagged (~2 trading days out)'
+                    : ''}
+              </>
+            ) : (
+              <>No upcoming earnings in calendar window · status clear</>
+            )}
           </p>
         </section>
 

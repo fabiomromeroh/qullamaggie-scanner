@@ -32,7 +32,24 @@ export function GroupStrength({ groups, selectedGroupId, onSelectGroup }: Props)
               <th className="px-2 py-1.5 font-medium">Group</th>
               <th className="px-2 py-1.5 font-medium text-right">Leaders</th>
               <th className="px-2 py-1.5 font-medium text-right">1D</th>
-              <th className="px-2 py-1.5 font-medium text-right">1M</th>
+              <th
+                className="px-2 py-1.5 font-medium text-right"
+                title="Avg member ~21 trading-day return"
+              >
+                1M
+              </th>
+              <th
+                className="px-2 py-1.5 font-medium text-right"
+                title="Avg member ~63 trading-day return"
+              >
+                3M
+              </th>
+              <th
+                className="px-2 py-1.5 font-medium text-right"
+                title="Avg member ~126 trading-day return"
+              >
+                6M
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -42,7 +59,7 @@ export function GroupStrength({ groups, selectedGroupId, onSelectGroup }: Props)
                 <tr
                   key={g.id}
                   onClick={() => onSelectGroup(active ? null : g.id)}
-                  title={g.description}
+                  title={`${g.description} · 1M ${fmtPct(g.perf1m)} · 3M ${fmtPct(g.perf3m)} · 6M ${fmtPct(g.perf6m)}`}
                   className={`cursor-pointer border-t border-terminal-border/60 transition-colors hover:bg-terminal-elevated ${
                     active ? 'bg-terminal-blue/10' : ''
                   }`}
@@ -63,8 +80,14 @@ export function GroupStrength({ groups, selectedGroupId, onSelectGroup }: Props)
                   <td className={`px-2 py-1.5 text-right font-mono ${pctClass(g.dayPct)}`}>
                     {fmtPct(g.dayPct)}
                   </td>
-                  <td className={`px-2 py-1.5 text-right font-mono ${pctClass(g.monthPct)}`}>
-                    {fmtPct(g.monthPct)}
+                  <td className={`px-2 py-1.5 text-right font-mono ${pctClass(g.perf1m)}`}>
+                    {fmtPct(g.perf1m, 0)}
+                  </td>
+                  <td className={`px-2 py-1.5 text-right font-mono ${pctClass(g.perf3m)}`}>
+                    {fmtPct(g.perf3m, 0)}
+                  </td>
+                  <td className={`px-2 py-1.5 text-right font-mono ${pctClass(g.perf6m)}`}>
+                    {fmtPct(g.perf6m, 0)}
                   </td>
                 </tr>
               )

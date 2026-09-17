@@ -1,5 +1,6 @@
 import type {
   CharacteristicTag,
+  EarningsStatus,
   MarketRegime,
   SetupType,
   SparkPoint,
@@ -44,6 +45,64 @@ function barDate(t: number): string {
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100
+}
+
+/** True if local calendar day is Sat/Sun. */
+export function isWeekend(d: Date): boolean {
+  const day = d.getUTCDay()
+  return day === 0 || day === 6
+}
+
+/** Advance a UTC date by one calendar day (mutates copy). */
+function addUtcDays(d: Date, n: number): Date {
+  const x = new Date(d.getTime())
+  x.setUTCDate(x.getUTCDate() + n)
+  return x
+}
+
+/** Count trading days from `from` (inclusive of from if trading) to `to` exclusive of after-to. */
+export function tradingDaysUntil(fromIsoDate: string, toIsoDate: string): number {
+  const from = new Date(`${fromIsoDate}T12:00:00Z`)
+  const to = new Date(`${toIsoDate}T12:00:00Z`)
+  if (to < from) return -1
+  let count = 0
+  let cur = new Date(from.getTime())
+  // Same calendar day → 0 trading days out
+  if (fromIsoDate === toIsoDate) return 0
+  cur = addUtcDays(cur, 1)
+  while (cur <= to) {
+    if (!isWeekend(cur)) count += 1
+    if (cur.toISOString().slice(0, 10) === toIsoDate) break
+    cur = addUtcDays(cur, 1)
+    if (count > 400) break
+  }
+  return count
+}
+
+/**
+ * Classify earnings proximity.
+ * - avoid: same day or next trading day (≤1 trading day)
+ * - alert: about 2 trading days out
+ * - clear: further / unknown
+ */
+export function classifyEarningsProximity(
+  earningsDate: string | null,
+  todayIso?: string,
+): { daysToEarnings: number | null; earningsStatus: EarningsStatus } {
+  if (!earningsDate) {
+    return { daysToEarnings: null, earningsStatus: 'clear' }
+  }
+  const today =
+    todayIso ??
+    new Date().toISOString().slice(0, 10)
+  const days = tradingDaysUntil(today, earningsDate)
+  if (days < 0) {
+    // Past date — treat as clear (already reported)
+    return { daysToEarnings: null, earningsStatus: 'clear' }
+  }
+  if (days <= 1) return { daysToEarnings: days, earningsStatus: 'avoid' }
+  if (days === 2) return { daysToEarnings: days, earningsStatus: 'alert' }
+  return { daysToEarnings: days, earningsStatus: 'clear' }
 }
 
 /** Simple moving average of the last `period` closes, or null if insufficient history. */
@@ -137,7 +196,10 @@ export function isAPlusHeuristic(m: {
   aboveSma10: boolean
   aboveSma20: boolean
   priorRunPct: number
+  /** Hard fail: earnings same day / next trading day cannot be tradeable A+. */
+  earningsStatus?: EarningsStatus
 }): boolean {
+  if (m.earningsStatus === 'avoid') return false
   if (!m.aboveSma200 || !m.aboveSma50) return false
   if (m.adrPct < 2.5) return false
   const nearHigh = m.pctFrom52wHigh >= -5
@@ -254,6 +316,7 @@ export function computeMarketRegime(bars: DailyBar[]): MarketRegime | null {
 export function computeIdeaMetrics(
   entry: { ticker: string; name: string; groupId: string; groupName: string },
   snap: SymbolBars,
+  earnings?: { earningsDate: string | null } | null,
 ): TradingIdea | null {
   const bars = [...snap.bars].sort((a, b) => a.t - b.t)
   // Need 200 sessions for SMA200 (Qullamaggie hard trend gate).
@@ -297,6 +360,7 @@ export function computeIdeaMetrics(
   }
   const perf1M = pctChange(closeAt(21), price)
   const perf3M = pctChange(closeAt(63), price)
+  const perf6M = pctChange(closeAt(126), price)
 
   const avgDollarVol = avg(lookback20.map((b) => b.c * b.v))
   const priorRunPct = priorRunPctProxy(bars)
@@ -311,6 +375,9 @@ export function computeIdeaMetrics(
 
   const catalyst: string | null = null
 
+  const earningsDate = earnings?.earningsDate ?? null
+  const { daysToEarnings, earningsStatus } = classifyEarningsProximity(earningsDate)
+
   const metricsCore = {
     pctFrom52wHigh: round2(pctFrom52wHigh),
     rvol: round2(rvol),
@@ -321,6 +388,7 @@ export function computeIdeaMetrics(
     aboveSma10,
     aboveSma20,
     priorRunPct,
+    earningsStatus,
   }
 
   const isAPlus = isAPlusHeuristic(metricsCore)
@@ -359,6 +427,7 @@ export function computeIdeaMetrics(
     pctFrom52wHigh: metricsCore.pctFrom52wHigh,
     perf1M: round2(perf1M),
     perf3M: round2(perf3M),
+    perf6M: round2(perf6M),
     avgDollarVol: Math.round(avgDollarVol),
     sma200: round2(sma200),
     sma50: round2(sma50),
@@ -370,11 +439,14 @@ export function computeIdeaMetrics(
     catalyst,
     isAPlus,
     notes: `Live metrics via ${snap.provider}. Catalyst left blank for brief fill-in. Kyle-style proxies from bars only.`,
-    whyQualifies: isAPlus
-      ? 'Heuristic A+: above 200 & 50 SMA, near highs, ADR≥2.5, elevated RVOL or prior run, preferably MA surfer (not a signal / not Kyle Rating).'
-      : aboveSma200
-        ? 'On watchlist above 200 SMA; does not meet heuristic A+ thresholds today.'
-        : 'Below daily 200 SMA — fails Qullamaggie hard trend gate (not a valid setup). Tag: Below 200MA.',
+    whyQualifies:
+      earningsStatus === 'avoid'
+        ? 'Earnings same day or next trading day — AVOID entry (hard fail). Not tradeable A+ regardless of other metrics.'
+        : isAPlus
+          ? 'Heuristic A+: above 200 & 50 SMA, near highs, ADR≥2.5, elevated RVOL or prior run, preferably MA surfer; earnings clear/alert (not a signal / not Kyle Rating).'
+          : aboveSma200
+            ? 'On watchlist above 200 SMA; does not meet heuristic A+ thresholds today.'
+            : 'Below daily 200 SMA — fails Qullamaggie hard trend gate (not a valid setup). Tag: Below 200MA.',
     suggestedEntry: null,
     suggestedStop: null,
     sparkline,
@@ -389,5 +461,57 @@ export function computeIdeaMetrics(
     kyleScore,
     characteristics,
     setupStage: stage,
+    earningsDate,
+    daysToEarnings,
+    earningsStatus,
+  }
+}
+
+/** Re-apply earnings fields and recompute A+ (after async calendar fetch). */
+export function applyEarningsToIdea(
+  idea: TradingIdea,
+  earningsDate: string | null,
+): TradingIdea {
+  const { daysToEarnings, earningsStatus } = classifyEarningsProximity(earningsDate)
+  const isAPlus = isAPlusHeuristic({
+    pctFrom52wHigh: idea.pctFrom52wHigh,
+    rvol: idea.rvol,
+    adrPct: idea.adrPct,
+    aboveSma200: idea.aboveSma200,
+    aboveSma50: idea.aboveSma50,
+    aboveSma10: idea.aboveSma10,
+    aboveSma20: idea.aboveSma20,
+    priorRunPct: idea.priorRunPct,
+    earningsStatus,
+  })
+  const kyleScore = kyleScoreHeuristic({
+    aboveSma200: idea.aboveSma200,
+    aboveSma50: idea.aboveSma50,
+    aboveSma10: idea.aboveSma10,
+    aboveSma20: idea.aboveSma20,
+    pctFrom52wHigh: idea.pctFrom52wHigh,
+    rvol: idea.rvol,
+    adrPct: idea.adrPct,
+    priorRunPct: idea.priorRunPct,
+    isAPlus,
+  })
+  let whyQualifies = idea.whyQualifies
+  if (earningsStatus === 'avoid') {
+    whyQualifies =
+      'Earnings same day or next trading day — AVOID entry (hard fail). Not tradeable A+ regardless of other metrics.'
+  } else if (isAPlus && !idea.isAPlus) {
+    whyQualifies =
+      'Heuristic A+: above 200 & 50 SMA, near highs, ADR≥2.5, elevated RVOL or prior run, preferably MA surfer; earnings clear/alert (not a signal / not Kyle Rating).'
+  } else if (!isAPlus && idea.isAPlus) {
+    whyQualifies = 'On watchlist above 200 SMA; does not meet heuristic A+ thresholds today.'
+  }
+  return {
+    ...idea,
+    earningsDate,
+    daysToEarnings,
+    earningsStatus,
+    isAPlus,
+    kyleScore,
+    whyQualifies,
   }
 }

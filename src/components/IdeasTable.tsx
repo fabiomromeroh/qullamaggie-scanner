@@ -1,5 +1,5 @@
 import { Pin, PinOff } from 'lucide-react'
-import type { CharacteristicTag, SetupStage, TradingIdea } from '../types'
+import type { CharacteristicTag, EarningsStatus, SetupStage, TradingIdea } from '../types'
 import { stageLabel } from '../lib/setupStage'
 import { fmtDollarVol, fmtPct, fmtPrice, fmtRvol, pctClass } from '../utils/format'
 
@@ -108,6 +108,37 @@ function StageBadge({ stage }: { stage: SetupStage }) {
   )
 }
 
+function EarningsBadge({ idea }: { idea: TradingIdea }) {
+  const status: EarningsStatus = idea.earningsStatus ?? 'clear'
+  const styles: Record<EarningsStatus, string> = {
+    avoid: 'bg-terminal-red-dim text-terminal-red border-terminal-red/50 font-bold',
+    alert: 'bg-terminal-amber/15 text-terminal-amber border-terminal-amber/40',
+    clear: 'bg-terminal-elevated text-terminal-dim border-terminal-border',
+  }
+  const label =
+    status === 'avoid'
+      ? 'AVOID'
+      : status === 'alert'
+        ? idea.daysToEarnings != null
+          ? `Earn ${idea.daysToEarnings}d`
+          : 'Earn soon'
+        : idea.daysToEarnings != null
+          ? `${idea.daysToEarnings}d`
+          : '—'
+  const title =
+    idea.earningsDate != null
+      ? `Next earnings ${idea.earningsDate} · ${idea.daysToEarnings ?? '?'} trading days · ${status}`
+      : 'No upcoming earnings in calendar window'
+  return (
+    <span
+      className={`inline-block whitespace-nowrap rounded border px-1.5 py-0.5 text-[10px] ${styles[status]}`}
+      title={title}
+    >
+      {label}
+    </span>
+  )
+}
+
 export function IdeasTable({
   ideas,
   selectedTicker,
@@ -136,7 +167,7 @@ export function IdeasTable({
         </span>
       </div>
       <div className="min-h-0 flex-1 overflow-auto">
-        <table className="w-full min-w-[1580px] text-left text-xs">
+        <table className="w-full min-w-[1680px] text-left text-xs">
           <thead className="sticky top-0 z-10 bg-terminal-elevated text-[10px] uppercase tracking-wide text-terminal-dim shadow-[0_1px_0_0_var(--color-terminal-border)]">
             <tr>
               <th className="px-2 py-2 font-medium w-8" title="Pin to dynamic watchlist">★</th>
@@ -169,6 +200,12 @@ export function IdeasTable({
               <th className="px-2 py-2 font-medium text-center" title="Heuristic kyleScore 3–5">
                 Score
               </th>
+              <th
+                className="px-2 py-2 font-medium"
+                title="Earnings proximity: AVOID = same/next trading day"
+              >
+                Earn
+              </th>
               <th className="px-2 py-2 font-medium">Catalyst</th>
               <th className="px-2 py-2 font-medium text-center">A+</th>
             </tr>
@@ -176,8 +213,10 @@ export function IdeasTable({
           <tbody>
             {ideas.map((idea) => {
               const selected = selectedTicker === idea.ticker
-              const highlight =
-                idea.isAPlus && idea.catalyst
+              const avoid = idea.earningsStatus === 'avoid'
+              const highlight = avoid
+                ? 'bg-terminal-red-dim/70'
+                : idea.isAPlus && idea.catalyst
                   ? 'bg-terminal-a-plus-bg/80'
                   : idea.isAPlus
                     ? 'bg-terminal-a-plus-bg/40'
@@ -188,7 +227,7 @@ export function IdeasTable({
                   onClick={() => onSelect(idea.ticker)}
                   className={`cursor-pointer border-t border-terminal-border/50 transition-colors hover:bg-terminal-elevated/80 ${highlight} ${
                     selected ? 'ring-1 ring-inset ring-terminal-blue/50' : ''
-                  }`}
+                  } ${avoid ? 'opacity-90' : ''}`}
                 >
                   <td className="px-2 py-1.5">
                     {onTogglePin ? (
@@ -283,6 +322,9 @@ export function IdeasTable({
                   <td className="px-2 py-1.5 text-center">
                     <KyleStars score={idea.kyleScore} />
                   </td>
+                  <td className="px-2 py-1.5">
+                    <EarningsBadge idea={idea} />
+                  </td>
                   <td className="max-w-[140px] truncate px-2 py-1.5">
                     {idea.catalyst ? (
                       <span className="text-terminal-green" title={idea.catalyst}>
@@ -293,7 +335,11 @@ export function IdeasTable({
                     )}
                   </td>
                   <td className="px-2 py-1.5 text-center">
-                    {idea.isAPlus ? (
+                    {avoid ? (
+                      <span className="inline-flex rounded border border-terminal-red/50 bg-terminal-red-dim px-1.5 py-0.5 text-[10px] font-bold text-terminal-red">
+                        AVOID
+                      </span>
+                    ) : idea.isAPlus ? (
                       <span className="inline-flex rounded bg-terminal-a-plus px-1.5 py-0.5 text-[10px] font-bold text-terminal-bg">
                         A+
                       </span>

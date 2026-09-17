@@ -8,6 +8,14 @@ export type SetupType = 'Range Breakout' | 'Episodic Pivot' | 'Continuation'
  */
 export type SetupStage = 'watching' | 'coiled' | 'triggering'
 
+/**
+ * Earnings proximity (critical trading rule).
+ * - avoid: same day or next trading day (hard fail for entry)
+ * - alert: ~2 trading days out
+ * - clear: further out / none soon
+ */
+export type EarningsStatus = 'avoid' | 'alert' | 'clear'
+
 /** Heuristic market regime from QQQ (not a signal). */
 export type StDirection = 'Uptrend' | 'Sideways' | 'Downtrend'
 
@@ -38,6 +46,12 @@ export interface IndustryGroup {
   dayPct: number
   weekPct: number
   monthPct: number
+  /** Approx group return ~21 trading days (avg of scan members). */
+  perf1m: number
+  /** Approx group return ~63 trading days. */
+  perf3m: number
+  /** Approx group return ~126 trading days. */
+  perf6m: number
   description: string
 }
 
@@ -115,6 +129,14 @@ export interface TradingIdea {
    * Only set when aboveSma200; below 200 → excluded from scan results.
    */
   setupStage: SetupStage
+  /** ~126 trading-day performance (close vs ~6 months ago). */
+  perf6M: number
+  /** ISO date (YYYY-MM-DD) of next earnings, if known. */
+  earningsDate: string | null
+  /** Trading days until next earnings (null if unknown / none in window). */
+  daysToEarnings: number | null
+  /** avoid = same/next trading day; alert ≈ 2 days; clear otherwise. */
+  earningsStatus: EarningsStatus
 }
 
 export interface DashboardData {
@@ -148,6 +170,8 @@ export interface IdeaFilters {
   requireSma20: boolean
   /** Visible readiness stages (default: coiled + triggering). */
   stages: SetupStage[]
+  /** Visible earnings proximity statuses (default: all). */
+  earningsStatuses: EarningsStatus[]
   groupId: string | null
   search: string
 }
@@ -157,6 +181,8 @@ export const ALL_SETUP_TYPES: SetupType[] = [
   'Episodic Pivot',
   'Continuation',
 ]
+
+export const ALL_EARNINGS_STATUSES: EarningsStatus[] = ['clear', 'alert', 'avoid']
 
 export const DEFAULT_FILTERS: IdeaFilters = {
   minRvol: 0,
@@ -168,6 +194,7 @@ export const DEFAULT_FILTERS: IdeaFilters = {
   requireSma10: false,
   requireSma20: false,
   stages: ['coiled', 'triggering'],
+  earningsStatuses: [...ALL_EARNINGS_STATUSES],
   groupId: null,
   search: '',
 }

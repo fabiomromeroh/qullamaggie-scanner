@@ -17,6 +17,10 @@ function matchesFilters(idea: TradingIdea, f: IdeaFilters): boolean {
   if (distance > f.maxPctFromHigh) return false
   if (!f.setupTypes.includes(idea.setupType)) return false
   if (f.aPlusOnly && !idea.isAPlus) return false
+  // A+ only never includes earnings avoid (isAPlus already false); still honor status filter
+  if (f.earningsStatuses?.length && !f.earningsStatuses.includes(idea.earningsStatus)) {
+    return false
+  }
   if (f.hasCatalyst && !idea.catalyst) return false
   if (f.groupId && idea.groupId !== f.groupId) return false
   if (f.search) {
@@ -65,6 +69,10 @@ export function useDashboard() {
     return data.ideas
       .filter((i) => matchesFilters(i, filters))
       .sort((a, b) => {
+        // Earnings avoid sinks to bottom (hard fail for entry)
+        const ea = a.earningsStatus === 'avoid' ? 1 : 0
+        const eb = b.earningsStatus === 'avoid' ? 1 : 0
+        if (ea !== eb) return ea - eb
         // Coiled + triggering first (stage rank), then score
         const sr = stageSortRank(a.setupStage) - stageSortRank(b.setupStage)
         if (sr !== 0) return sr

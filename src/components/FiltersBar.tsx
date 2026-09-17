@@ -1,5 +1,5 @@
-import type { IdeaFilters, IndustryGroup, SetupStage, SetupType } from '../types'
-import { ALL_SETUP_TYPES, DEFAULT_FILTERS } from '../types'
+import type { EarningsStatus, IdeaFilters, IndustryGroup, SetupStage, SetupType } from '../types'
+import { ALL_EARNINGS_STATUSES, ALL_SETUP_TYPES, DEFAULT_FILTERS } from '../types'
 import { ALL_SETUP_STAGES, stageLabel } from '../lib/setupStage'
 
 interface Props {
@@ -28,6 +28,19 @@ export function FiltersBar({ filters, onChange, groups, dense = false }: Props) 
     })
   }
 
+  const toggleEarnings = (s: EarningsStatus) => {
+    const has = filters.earningsStatuses.includes(s)
+    const earningsStatuses = has
+      ? filters.earningsStatuses.filter((x) => x !== s)
+      : [...filters.earningsStatuses, s]
+    onChange({
+      ...filters,
+      earningsStatuses: earningsStatuses.length
+        ? earningsStatuses
+        : [...ALL_EARNINGS_STATUSES],
+    })
+  }
+
   return (
     <section
       className={`rounded-lg border border-terminal-border bg-terminal-panel ${
@@ -47,6 +60,7 @@ export function FiltersBar({ filters, onChange, groups, dense = false }: Props) 
               groupId: filters.groupId,
               setupTypes: [...ALL_SETUP_TYPES],
               stages: [...DEFAULT_FILTERS.stages],
+              earningsStatuses: [...ALL_EARNINGS_STATUSES],
             })
           }
         >
@@ -207,6 +221,40 @@ export function FiltersBar({ filters, onChange, groups, dense = false }: Props) 
           />
           <span>20MA Surfer</span>
         </label>
+
+        <div className="flex flex-col gap-0.5 text-[10px] text-terminal-dim">
+          Earnings
+          <div className="flex flex-wrap gap-1">
+            {ALL_EARNINGS_STATUSES.map((s) => {
+              const on = filters.earningsStatuses.includes(s)
+              return (
+                <button
+                  key={s}
+                  type="button"
+                  onClick={() => toggleEarnings(s)}
+                  title={
+                    s === 'avoid'
+                      ? 'Same day or next trading day — hard fail for entry'
+                      : s === 'alert'
+                        ? '~2 trading days out'
+                        : 'Further out / none soon'
+                  }
+                  className={`rounded px-2 py-1 text-[10px] uppercase ${
+                    on
+                      ? s === 'avoid'
+                        ? 'bg-terminal-red-dim text-terminal-red border border-terminal-red/40'
+                        : s === 'alert'
+                          ? 'bg-terminal-amber/20 text-terminal-amber border border-terminal-amber/40'
+                          : 'bg-terminal-green/15 text-terminal-green border border-terminal-green/40'
+                      : 'bg-terminal-bg text-terminal-dim border border-terminal-border'
+                  }`}
+                >
+                  {s}
+                </button>
+              )
+            })}
+          </div>
+        </div>
 
         <label className="flex cursor-pointer items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1 text-xs text-terminal-fg">
           <input

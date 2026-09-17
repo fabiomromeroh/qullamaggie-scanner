@@ -34,6 +34,9 @@ export const DEMO_GROUPS: IndustryGroup[] = [
     dayPct: 1.8,
     weekPct: 4.2,
     monthPct: 12.5,
+    perf1m: 12.5,
+    perf3m: 27.5,
+    perf6m: 43.8,
     description: 'AI / HBM / foundry leaders leading the tape',
   },
   {
@@ -44,6 +47,9 @@ export const DEMO_GROUPS: IndustryGroup[] = [
     dayPct: 0.9,
     weekPct: 3.1,
     monthPct: 9.8,
+    perf1m: 9.8,
+    perf3m: 21.6,
+    perf6m: 34.3,
     description: 'SaaS names with strong RS and tight ranges',
   },
   {
@@ -54,6 +60,9 @@ export const DEMO_GROUPS: IndustryGroup[] = [
     dayPct: 1.2,
     weekPct: 2.8,
     monthPct: 8.4,
+    perf1m: 8.4,
+    perf3m: 18.5,
+    perf6m: 29.4,
     description: 'Defense contractors + space theme momentum',
   },
   {
@@ -64,6 +73,9 @@ export const DEMO_GROUPS: IndustryGroup[] = [
     dayPct: 2.4,
     weekPct: 5.6,
     monthPct: 14.2,
+    perf1m: 14.2,
+    perf3m: 31.2,
+    perf6m: 49.7,
     description: 'Selective momentum names with catalysts',
   },
   {
@@ -74,6 +86,9 @@ export const DEMO_GROUPS: IndustryGroup[] = [
     dayPct: 0.6,
     weekPct: 1.9,
     monthPct: 6.1,
+    perf1m: 6.1,
+    perf3m: 13.4,
+    perf6m: 21.3,
     description: 'E-commerce leaders holding relative strength',
   },
   {
@@ -84,6 +99,9 @@ export const DEMO_GROUPS: IndustryGroup[] = [
     dayPct: 1.1,
     weekPct: 2.4,
     monthPct: 7.3,
+    perf1m: 7.3,
+    perf3m: 16.1,
+    perf6m: 25.6,
     description: 'Payments / brokerage momentum cohort',
   },
   {
@@ -94,6 +112,9 @@ export const DEMO_GROUPS: IndustryGroup[] = [
     dayPct: -0.4,
     weekPct: 0.8,
     monthPct: 3.2,
+    perf1m: 3.2,
+    perf3m: 7.0,
+    perf6m: 11.2,
     description: 'Selective setups; group RS fading',
   },
   {
@@ -104,6 +125,9 @@ export const DEMO_GROUPS: IndustryGroup[] = [
     dayPct: 0.7,
     weekPct: 2.1,
     monthPct: 5.9,
+    perf1m: 5.9,
+    perf3m: 13.0,
+    perf6m: 20.7,
     description: 'Security software holding constructive bases',
   },
 ]
@@ -112,6 +136,7 @@ type DemoIdeaSeed = Omit<
   TradingIdea,
   | 'sma10' | 'sma20' | 'aboveSma10' | 'aboveSma20' | 'priorRunPct' | 'tightDays'
   | 'baseLengthDays' | 'dollarVolume' | 'kyleScore' | 'characteristics' | 'setupStage'
+  | 'perf6M' | 'earningsDate' | 'daysToEarnings' | 'earningsStatus'
 >
 
 function enrichKyleDemo(idea: DemoIdeaSeed): TradingIdea {
@@ -152,8 +177,28 @@ function enrichKyleDemo(idea: DemoIdeaSeed): TradingIdea {
       dayPct: idea.dayPct,
       priorRunPct: priorRounded,
     }) ?? 'watching'
+  const perf6M = Math.round(Math.max(idea.perf3M * 1.6, idea.perf1M * 3) * 10) / 10
+  // Demo earnings: A+ names further out (clear); one alert/avoid for UI coverage via ticker hash
+  let earningsDate: string | null = null
+  let daysToEarnings: number | null = 25
+  let earningsStatus: TradingIdea['earningsStatus'] = 'clear'
+  if (idea.ticker === 'CRWD') {
+    daysToEarnings = 1
+    earningsStatus = 'avoid'
+    earningsDate = '2026-09-18'
+  } else if (idea.ticker === 'NET') {
+    daysToEarnings = 2
+    earningsStatus = 'alert'
+    earningsDate = '2026-09-21'
+  } else {
+    earningsDate = '2026-10-28'
+    daysToEarnings = 25
+    earningsStatus = 'clear'
+  }
+  const isAPlusFinal = earningsStatus === 'avoid' ? false : isAPlus
   return {
     ...idea,
+    isAPlus: isAPlusFinal,
     sma10: Math.round(idea.price * 0.98 * 100) / 100,
     sma20: Math.round(idea.price * 0.96 * 100) / 100,
     aboveSma10,
@@ -165,6 +210,10 @@ function enrichKyleDemo(idea: DemoIdeaSeed): TradingIdea {
     kyleScore,
     characteristics,
     setupStage,
+    perf6M,
+    earningsDate,
+    daysToEarnings,
+    earningsStatus,
   }
 }
 

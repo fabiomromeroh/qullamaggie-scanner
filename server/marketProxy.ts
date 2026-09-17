@@ -419,6 +419,224 @@ export async function fetchSymbolSnapshot(symbol: string): Promise<SymbolSnapsho
 }
 
 
+// ---------------------------------------------------------------------------
+// Earnings calendar (Finnhub → Nasdaq → clear). Cached aggressively.
+// ---------------------------------------------------------------------------
+
+export interface EarningsInfo {
+  symbol: string
+  earningsDate: string | null
+  provider: 'finnhub' | 'nasdaq' | 'none'
+}
+
+const EARNINGS_CACHE_TTL_MS = Number(process.env.EARNINGS_CACHE_TTL_MS || 6 * 60 * 60 * 1000)
+const earningsBySymbol = new Map<string, { at: number; info: EarningsInfo }>()
+let calendarMapCache: { at: number; map: Map<string, string> } | null = null
+
+function todayIsoUtc(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
+function addDaysIso(iso: string, days: number): string {
+  const d = new Date(`${iso}T12:00:00Z`)
+  d.setUTCDate(d.getUTCDate() + days)
+  return d.toISOString().slice(0, 10)
+}
+
+function getCachedEarnings(symbol: string): EarningsInfo | null {
+  const hit = earningsBySymbol.get(symbol)
+  if (!hit) return null
+  if (Date.now() - hit.at > EARNINGS_CACHE_TTL_MS) {
+    earningsBySymbol.delete(symbol)
+    return null
+  }
+  return hit.info
+}
+
+function setCachedEarnings(info: EarningsInfo): void {
+  earningsBySymbol.set(info.symbol, { at: Date.now(), info })
+}
+
+async function finnhubEarningsForSymbol(
+  symbol: string,
+  token: string,
+): Promise<string | null> {
+  const from = todayIsoUtc()
+  const to = addDaysIso(from, 90)
+  const raw = (await fetchJson(
+    `https://finnhub.io/api/v1/calendar/earnings?from=${from}&to=${to}&symbol=${encodeURIComponent(symbol)}&token=${encodeURIComponent(token)}`,
+  )) as { earningsCalendar?: Array<{ symbol?: string; date?: string }> }
+  const rows = (raw.earningsCalendar ?? [])
+    .filter((r) => (r.symbol ?? '').toUpperCase() === symbol && r.date)
+    .map((r) => r.date!)
+    .sort()
+  return rows[0] ?? null
+}
+
+/** Fetch Finnhub earnings calendar in ~14-day chunks; build symbol→next date map. */
+async function finnhubEarningsCalendarMap(token: string): Promise<Map<string, string>> {
+  if (calendarMapCache && Date.now() - calendarMapCache.at < EARNINGS_CACHE_TTL_MS) {
+    return calendarMapCache.map
+  }
+  const map = new Map<string, string>()
+  const from0 = todayIsoUtc()
+  const chunk = 14
+  const horizon = 90
+  for (let offset = 0; offset < horizon; offset += chunk) {
+    const from = addDaysIso(from0, offset)
+    const to = addDaysIso(from0, Math.min(offset + chunk - 1, horizon))
+    try {
+      const raw = (await fetchJson(
+        `https://finnhub.io/api/v1/calendar/earnings?from=${from}&to=${to}&token=${encodeURIComponent(token)}`,
+      )) as { earningsCalendar?: Array<{ symbol?: string; date?: string }> }
+      for (const row of raw.earningsCalendar ?? []) {
+        const sym = (row.symbol ?? '').toUpperCase()
+        const date = row.date
+        if (!sym || !date) continue
+        const prev = map.get(sym)
+        if (!prev || date < prev) map.set(sym, date)
+      }
+    } catch {
+      // Chunk failure — keep what we have
+    }
+    await sleep(80)
+  }
+  calendarMapCache = { at: Date.now(), map }
+  return map
+}
+
+async function nasdaqEarningsForSymbol(symbol: string): Promise<string | null> {
+  // Walk next ~10 calendar days of Nasdaq earnings calendar (public JSON).
+  const from0 = todayIsoUtc()
+  for (let i = 0; i < 12; i++) {
+    const date = addDaysIso(from0, i)
+    try {
+      const raw = (await fetchJson(
+        `https://api.nasdaq.com/api/calendar/earnings?date=${date}`,
+        {
+          headers: {
+            Accept: 'application/json,text/plain,*/*',
+            'User-Agent': BROWSER_UA,
+            Origin: 'https://www.nasdaq.com',
+            Referer: 'https://www.nasdaq.com/',
+          },
+        },
+      )) as {
+        data?: { rows?: Array<{ symbol?: string }> | null }
+      }
+      const rows = raw.data?.rows ?? []
+      for (const row of rows) {
+        if ((row.symbol ?? '').toUpperCase() === symbol) return date
+      }
+    } catch {
+      /* try next day */
+    }
+    await sleep(40)
+  }
+  return null
+}
+
+export async function fetchEarningsForSymbol(symbol: string): Promise<EarningsInfo> {
+  const sym = symbol.trim().toUpperCase()
+  const cached = getCachedEarnings(sym)
+  if (cached) return cached
+
+  const key = getFinnhubKey()
+  const errors: string[] = []
+
+  if (key) {
+    try {
+      const map = await finnhubEarningsCalendarMap(key)
+      if (map.has(sym)) {
+        const info: EarningsInfo = {
+          symbol: sym,
+          earningsDate: map.get(sym)!,
+          provider: 'finnhub',
+        }
+        setCachedEarnings(info)
+        return info
+      }
+      // Not in map — confirm with symbol-specific call (may still find date)
+      try {
+        const date = await finnhubEarningsForSymbol(sym, key)
+        const info: EarningsInfo = {
+          symbol: sym,
+          earningsDate: date,
+          provider: date ? 'finnhub' : 'none',
+        }
+        setCachedEarnings(info)
+        return info
+      } catch (err) {
+        errors.push(`finnhub-symbol: ${err instanceof Error ? err.message : String(err)}`)
+      }
+    } catch (err) {
+      errors.push(`finnhub-map: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  } else {
+    errors.push('finnhub: no API key')
+  }
+
+  try {
+    const date = await nasdaqEarningsForSymbol(sym)
+    const info: EarningsInfo = {
+      symbol: sym,
+      earningsDate: date,
+      provider: date ? 'nasdaq' : 'none',
+    }
+    setCachedEarnings(info)
+    return info
+  } catch (err) {
+    errors.push(`nasdaq: ${err instanceof Error ? err.message : String(err)}`)
+  }
+
+  const info: EarningsInfo = { symbol: sym, earningsDate: null, provider: 'none' }
+  setCachedEarnings(info)
+  return info
+}
+
+/** Batch earnings lookup — uses Finnhub calendar map when possible. */
+export async function fetchEarningsBatch(symbols: string[]): Promise<EarningsInfo[]> {
+  const uniq = [...new Set(symbols.map((s) => s.trim().toUpperCase()).filter(Boolean))]
+  const key = getFinnhubKey()
+  let map: Map<string, string> | null = null
+  if (key) {
+    try {
+      map = await finnhubEarningsCalendarMap(key)
+    } catch {
+      map = null
+    }
+  }
+
+  const out: EarningsInfo[] = []
+  for (const sym of uniq) {
+    const cached = getCachedEarnings(sym)
+    if (cached) {
+      out.push(cached)
+      continue
+    }
+    if (map && map.has(sym)) {
+      const info: EarningsInfo = {
+        symbol: sym,
+        earningsDate: map.get(sym)!,
+        provider: 'finnhub',
+      }
+      setCachedEarnings(info)
+      out.push(info)
+      continue
+    }
+    // Known absent from Finnhub window → clear without Nasdaq (keeps scan fast)
+    if (map) {
+      const info: EarningsInfo = { symbol: sym, earningsDate: null, provider: 'none' }
+      setCachedEarnings(info)
+      out.push(info)
+      continue
+    }
+    out.push(await fetchEarningsForSymbol(sym))
+  }
+  return out
+}
+
+
 export function createMarketMiddleware() {
   return async function marketMiddleware(
     req: { url?: string; method?: string },
@@ -448,8 +666,11 @@ export function createMarketMiddleware() {
             finnhubKeyPresent: Boolean(key),
             finnhubKeyLength: key ? key.length : 0,
             cascade: ['finnhub', 'yahoo', 'stooq'],
+            earningsCascade: ['finnhub', 'nasdaq'],
             cacheTtlMs: SNAPSHOT_CACHE_TTL_MS,
             cacheSize: snapshotCache.size,
+            earningsCacheSize: earningsBySymbol.size,
+            earningsCacheTtlMs: EARNINGS_CACHE_TTL_MS,
           }),
         )
         return
@@ -465,6 +686,37 @@ export function createMarketMiddleware() {
         const snap = await fetchSymbolSnapshot(symbol)
         res.statusCode = 200
         res.end(JSON.stringify(snap))
+        return
+      }
+
+      if (url.pathname === '/api/market/earnings') {
+        const symbol = url.searchParams.get('symbol')
+        if (!symbol) {
+          res.statusCode = 400
+          res.end(JSON.stringify({ error: 'symbol query required' }))
+          return
+        }
+        const info = await fetchEarningsForSymbol(symbol)
+        res.statusCode = 200
+        res.end(JSON.stringify(info))
+        return
+      }
+
+      if (url.pathname === '/api/market/earnings/batch') {
+        const raw = url.searchParams.get('symbols') ?? ''
+        const symbols = raw
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
+        if (!symbols.length) {
+          res.statusCode = 400
+          res.end(JSON.stringify({ error: 'symbols query required (comma-separated)' }))
+          return
+        }
+        const capped = symbols.slice(0, 200)
+        const rows = await fetchEarningsBatch(capped)
+        res.statusCode = 200
+        res.end(JSON.stringify({ results: rows }))
         return
       }
 

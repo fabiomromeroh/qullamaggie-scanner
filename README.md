@@ -55,8 +55,9 @@ If the key is missing or Finnhub errors/rate-limits, the proxy falls through the
 3. **Cascade (server)** — Finnhub → Yahoo (unofficial) → Stooq.  
 4. **Cache** — in-memory snapshot TTL (**10 minutes** by default; override with `MARKET_CACHE_TTL_MS`). Refresh within the window reuses bars (Finnhub free-tier friendly).  
 5. **Score** — `src/lib/metrics.ts` computes priorRunPct, tightDays, baseLengthDays, MA surfers, ADR, DolVol, above 200/50, kyleScore, A+.  
-6. **Stage** — `src/lib/setupStage.ts` assigns readiness (see below). Names **below 200 SMA are excluded** from results.  
-7. **Watchlist** — UI pins + **auto-add** when `kyleScore ≥ 4` and stage is `coiled` or `triggering` (see `AUTO_ADD_MIN_KYLE_SCORE`). Persisted in **localStorage**; optional seed file `src/data/userWatchlist.json`.
+6. **Earnings** — after the bar scan, `/api/market/earnings/batch` overlays Finnhub earnings calendar (Nasdaq fallback); `avoid` names are never tradeable A+.  
+7. **Stage** — `src/lib/setupStage.ts` assigns readiness (see below). Names **below 200 SMA are excluded** from results.  
+8. **Watchlist** — UI pins + **auto-add** when `kyleScore ≥ 4` and stage is `coiled` or `triggering` (see `AUTO_ADD_MIN_KYLE_SCORE`). Persisted in **localStorage**; optional seed file `src/data/userWatchlist.json`.
 
 ### Rate limits / free tier
 
@@ -67,7 +68,7 @@ If the key is missing or Finnhub errors/rate-limits, the proxy falls through the
 | Snapshot cache TTL | 10 min | `MARKET_CACHE_TTL_MS` |
 | Cascade | Finnhub → Yahoo → Stooq | Yahoo/Stooq unofficial |
 
-Health: `GET /api/market/health` reports key presence (length only), cascade, and cache size — **not** the key value.
+Health: `GET /api/market/health` reports key presence (length only), cascade, earnings cascade, and cache size — **not** the key value. Earnings: `GET /api/market/earnings?symbol=` and `GET /api/market/earnings/batch?symbols=`.
 
 ## Setup readiness stages
 
@@ -152,7 +153,9 @@ Use only for local UI work. Default when unset: **`live`**.
 | **RVOL** | Last day volume ÷ 20-day average volume |
 | **ADR%** | 20-day average of (high−low)/close × 100 |
 | **% from 52w high** | Distance below ~252-day high |
-| **1M / 3M perf** | Close vs ~21 / ~63 trading days ago |
+| **1M / 3M / 6M perf** | Close vs ~21 / ~63 / ~126 trading days ago |
+| **Group 1M / 3M / 6M** | Average of scan members' 1M/3M/6M returns in that industry (GroupStrength) |
+| **earningsDate / daysToEarnings / earningsStatus** | Next earnings from Finnhub calendar (Nasdaq fallback); `avoid` = same/next trading day (hard fail for entry / not A+); `alert` ≈ 2 trading days; `clear` otherwise |
 | **DolVol / Avg $ volume** | 20-day average of close × volume |
 | **SMA200 / SMA50 / SMA20 / SMA10** | Simple moving averages of daily closes |
 | **aboveSma200** | Hard trend gate: price must be above daily 200-SMA or the name is **not** a valid setup |
@@ -160,7 +163,7 @@ Use only for local UI work. Default when unset: **`live`**.
 | **priorRunPct / tightDays / baseLengthDays** | Kyle-style consolidation proxies |
 | **kyleScore** | Heuristic 3–5 for sorting — **not** Kyle’s official Rating |
 | **setupStage** | watching / coiled / triggering |
-| **A+ (heuristic)** | Above 200 **and** 50 SMA, near highs, ADR% ≥ 2.5, elevated RVOL **or** prior run, preferably MA surfer — heuristic, not a signal |
+| **A+ (heuristic)** | Above 200 **and** 50 SMA, near highs, ADR% ≥ 2.5, elevated RVOL **or** prior run, preferably MA surfer; **earningsStatus must not be `avoid`** — heuristic, not a signal |
 | **Catalyst** | Always blank from APIs (Earnings/GAP tags only if catalyst text is present) |
 
 ## Kyle Breakout Database field mapping (@kyletrades_)
