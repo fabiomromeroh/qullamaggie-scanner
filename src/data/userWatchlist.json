@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "description": "Optional seed for the dynamic user watchlist. Browser localStorage overrides after first load. Auto-add threshold: kyleScore >= 4 and stage coiled|triggering.",
+  "autoAddMinKyleScore": 4,
+  "tickers": []
+}

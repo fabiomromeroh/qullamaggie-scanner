@@ -1,0 +1,96 @@
+@import "tailwindcss";
+
+@theme {
+  --color-terminal-bg: #0a0e14;
+  --color-terminal-panel: #0f1419;
+  --color-terminal-elevated: #151b24;
+  --color-terminal-border: #1e2733;
+  --color-terminal-border-bright: #2a3544;
+  --color-terminal-fg: #e6edf3;
+  --color-terminal-muted: #8b9cb3;
+  --color-terminal-dim: #5a6a7e;
+  --color-terminal-green: #3dd68c;
+  --color-terminal-green-dim: #1a3d2e;
+  --color-terminal-red: #f07178;
+  --color-terminal-red-dim: #3d1a1e;
+  --color-terminal-amber: #ffcc66;
+  --color-terminal-amber-dim: #3d3018;
+  --color-terminal-blue: #59c2ff;
+  --color-terminal-purple: #c792ea;
+  --color-terminal-a-plus: #ffd700;
+  --color-terminal-a-plus-bg: #2a2410;
+  --font-mono: "JetBrains Mono", "SF Mono", "Fira Code", ui-monospace, monospace;
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+}
+
+@layer base {
+  html {
+    font-family: var(--font-sans);
+    height: 100%;
+  }
+  body {
+    margin: 0;
+    min-height: 100%;
+    height: 100%;
+    background: var(--color-terminal-bg);
+    color: var(--color-terminal-fg);
+    overflow: hidden;
+  }
+  #root {
+    height: 100%;
+    min-height: 100%;
+  }
+  * {
+    box-sizing: border-box;
+  }
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--color-terminal-bg);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-terminal-border-bright);
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-terminal-dim);
+  }
+}
+
+@layer utilities {
+  .font-mono {
+    font-family: var(--font-mono);
+  }
+}
+
+/* Viewport-filling dashboard body: groups | scan results | watchlist */
+.dashboard-body {
+  grid-template-columns: 1fr;
+  grid-template-rows: minmax(160px, 28vh) minmax(0, 1fr) minmax(180px, 32vh);
+  grid-template-areas:
+    "groups"
+    "results"
+    "watchlist";
+}
+
+.dashboard-groups {
+  grid-area: groups;
+}
+
+.dashboard-results {
+  grid-area: results;
+}
+
+.dashboard-watchlist {
+  grid-area: watchlist;
+}
+
+@media (min-width: 1024px) {
+  .dashboard-body {
+    grid-template-columns: minmax(220px, 250px) minmax(0, 1fr) minmax(240px, 280px);
+    grid-template-rows: minmax(0, 1fr);
+    grid-template-areas: "groups results watchlist";
+  }
+}

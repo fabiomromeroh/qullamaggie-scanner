@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: qullamaggie-scanner
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build && npm run build:server
+    startCommand: npm start
+    envVars:
+      - key: FINNHUB_API_KEY
+        sync: false
+      - key: NODE_VERSION
+        value: "20"
