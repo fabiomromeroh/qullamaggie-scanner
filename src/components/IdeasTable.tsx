@@ -139,6 +139,136 @@ function EarningsBadge({ idea }: { idea: TradingIdea }) {
   )
 }
 
+function APlusCell({ idea }: { idea: TradingIdea }) {
+  const avoid = idea.earningsStatus === 'avoid'
+  if (avoid) {
+    return (
+      <span className="inline-flex rounded border border-terminal-red/50 bg-terminal-red-dim px-1.5 py-0.5 text-[10px] font-bold text-terminal-red">
+        AVOID
+      </span>
+    )
+  }
+  if (idea.isAPlus) {
+    return (
+      <span className="inline-flex rounded bg-terminal-a-plus px-1.5 py-0.5 text-[10px] font-bold text-terminal-bg">
+        A+
+      </span>
+    )
+  }
+  return <span className="text-terminal-dim">·</span>
+}
+
+function rowHighlight(idea: TradingIdea) {
+  const avoid = idea.earningsStatus === 'avoid'
+  if (avoid) return 'bg-terminal-red-dim/70'
+  if (idea.isAPlus && idea.catalyst) return 'bg-terminal-a-plus-bg/80'
+  if (idea.isAPlus) return 'bg-terminal-a-plus-bg/40'
+  return ''
+}
+
+function PinButton({
+  ticker,
+  isPinned,
+  isOnWatchlist,
+  onTogglePin,
+}: {
+  ticker: string
+  isPinned?: (ticker: string) => boolean
+  isOnWatchlist?: (ticker: string) => boolean
+  onTogglePin?: (ticker: string) => void
+}) {
+  if (!onTogglePin) return <span className="text-terminal-dim">·</span>
+  return (
+    <button
+      type="button"
+      title={isPinned?.(ticker) ? 'Unpin' : 'Pin to watchlist'}
+      onClick={(e) => {
+        e.stopPropagation()
+        onTogglePin(ticker)
+      }}
+      className={`rounded p-1.5 min-h-9 min-w-9 inline-flex items-center justify-center ${
+        isOnWatchlist?.(ticker)
+          ? 'text-terminal-amber'
+          : 'text-terminal-dim hover:text-terminal-amber'
+      }`}
+    >
+      {isPinned?.(ticker) ? (
+        <Pin className="h-4 w-4" />
+      ) : (
+        <PinOff className="h-4 w-4" />
+      )}
+    </button>
+  )
+}
+
+function IdeaCard({
+  idea,
+  selected,
+  onSelect,
+  isPinned,
+  isOnWatchlist,
+  onTogglePin,
+}: {
+  idea: TradingIdea
+  selected: boolean
+  onSelect: (ticker: string) => void
+  isPinned?: (ticker: string) => boolean
+  isOnWatchlist?: (ticker: string) => boolean
+  onTogglePin?: (ticker: string) => void
+}) {
+  const avoid = idea.earningsStatus === 'avoid'
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(idea.ticker)}
+      className={`w-full rounded-lg border border-terminal-border/80 px-3 py-2.5 text-left transition-colors active:bg-terminal-elevated ${rowHighlight(idea)} ${
+        selected ? 'ring-1 ring-terminal-blue/60' : ''
+      } ${avoid ? 'opacity-90' : ''}`}
+    >
+      <div className="flex items-start gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="font-mono text-sm font-bold text-terminal-fg">{idea.ticker}</span>
+            <APlusCell idea={idea} />
+            <StageBadge stage={idea.setupStage} />
+            <EarningsBadge idea={idea} />
+          </div>
+          <p className="mt-0.5 truncate text-[11px] text-terminal-muted">
+            {idea.name}
+            <span className="text-terminal-dim"> · {idea.groupName}</span>
+          </p>
+        </div>
+        <div className="shrink-0 text-right">
+          <div className="font-mono text-sm text-terminal-fg">{fmtPrice(idea.price)}</div>
+          <div className={`font-mono text-xs ${pctClass(idea.dayPct)}`}>{fmtPct(idea.dayPct)}</div>
+        </div>
+        <PinButton
+          ticker={idea.ticker}
+          isPinned={isPinned}
+          isOnWatchlist={isOnWatchlist}
+          onTogglePin={onTogglePin}
+        />
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px]">
+        <SetupBadge type={idea.setupType} />
+        <TrendBadges idea={idea} />
+        <span className={`font-mono ${idea.rvol >= 1.5 ? 'text-terminal-amber' : 'text-terminal-muted'}`}>
+          RVOL {fmtRvol(idea.rvol)}
+        </span>
+        <span className="font-mono text-terminal-muted">ADR {idea.adrPct.toFixed(1)}%</span>
+        <span
+          className={`font-mono ${
+            Math.abs(idea.pctFrom52wHigh) <= 5 ? 'text-terminal-green' : 'text-terminal-muted'
+          }`}
+        >
+          {fmtPct(idea.pctFrom52wHigh)} Hi
+        </span>
+        <KyleStars score={idea.kyleScore} />
+      </div>
+    </button>
+  )
+}
+
 export function IdeasTable({
   ideas,
   selectedTicker,
@@ -158,69 +288,82 @@ export function IdeasTable({
 
   return (
     <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-terminal-border bg-terminal-panel">
-      <div className="flex shrink-0 items-center justify-between border-b border-terminal-border px-3 py-2">
+      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-terminal-border px-3 py-2">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-terminal-muted">
           Scan results
         </h2>
         <span className="font-mono text-[10px] text-terminal-dim">
-          {ideas.length} shown · {source === 'demo' ? 'DEMO' : 'LIVE'} · stages + Kyle proxies
+          {ideas.length} shown · {source === 'demo' ? 'DEMO' : 'LIVE'}
         </span>
       </div>
-      <div className="min-h-0 flex-1 overflow-auto">
-        <table className="w-full min-w-[1680px] text-left text-xs">
+
+      {/* Mobile: card list — critical fields visible without horizontal scroll */}
+      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2 md:hidden">
+        {ideas.map((idea) => (
+          <IdeaCard
+            key={idea.ticker}
+            idea={idea}
+            selected={selectedTicker === idea.ticker}
+            onSelect={onSelect}
+            isPinned={isPinned}
+            isOnWatchlist={isOnWatchlist}
+            onTogglePin={onTogglePin}
+          />
+        ))}
+      </div>
+
+      {/* Desktop / tablet: full table with sticky ticker + earn/A+ */}
+      <div className="hidden min-h-0 flex-1 overflow-auto md:block">
+        <table className="w-full min-w-[1100px] text-left text-xs lg:min-w-[1680px]">
           <thead className="sticky top-0 z-10 bg-terminal-elevated text-[10px] uppercase tracking-wide text-terminal-dim shadow-[0_1px_0_0_var(--color-terminal-border)]">
             <tr>
-              <th className="px-2 py-2 font-medium w-8" title="Pin to dynamic watchlist">★</th>
-              <th className="px-2 py-2 font-medium">Ticker</th>
-              <th className="px-2 py-2 font-medium">Name</th>
-              <th className="px-2 py-2 font-medium">Group</th>
+              <th className="sticky left-0 z-20 bg-terminal-elevated px-2 py-2 font-medium w-8" title="Pin to dynamic watchlist">
+                ★
+              </th>
+              <th className="sticky left-8 z-20 bg-terminal-elevated px-2 py-2 font-medium">Ticker</th>
+              <th className="hidden px-2 py-2 font-medium xl:table-cell">Name</th>
+              <th className="hidden px-2 py-2 font-medium lg:table-cell">Group</th>
               <th className="px-2 py-2 font-medium text-right">Price</th>
               <th className="px-2 py-2 font-medium text-right">Day%</th>
               <th className="px-2 py-2 font-medium text-right">RVOL</th>
-              <th className="px-2 py-2 font-medium text-right">ADR%</th>
-              <th className="px-2 py-2 font-medium text-right">% 52w Hi</th>
-              <th className="px-2 py-2 font-medium">Trend</th>
-              <th className="px-2 py-2 font-medium">Surfer</th>
+              <th className="hidden px-2 py-2 font-medium text-right lg:table-cell">ADR%</th>
+              <th className="hidden px-2 py-2 font-medium text-right lg:table-cell">% 52w Hi</th>
+              <th className="hidden px-2 py-2 font-medium xl:table-cell">Trend</th>
+              <th className="hidden px-2 py-2 font-medium xl:table-cell">Surfer</th>
               <th
-                className="px-2 py-2 font-medium text-right"
+                className="hidden px-2 py-2 font-medium text-right xl:table-cell"
                 title="Inc% BBO proxy: % from ~63d prior low into recent base high"
               >
                 Prior run%
               </th>
-              <th className="px-2 py-2 font-medium text-right" title="Tight-days proxy (last 15)">
+              <th className="hidden px-2 py-2 font-medium text-right xl:table-cell" title="Tight-days proxy (last 15)">
                 Tight
               </th>
-              <th className="px-2 py-2 font-medium text-right">1M</th>
-              <th className="px-2 py-2 font-medium text-right">3M</th>
-              <th className="px-2 py-2 font-medium text-right" title="Avg $ volume (DolVol)">
+              <th className="hidden px-2 py-2 font-medium text-right xl:table-cell">1M</th>
+              <th className="hidden px-2 py-2 font-medium text-right xl:table-cell">3M</th>
+              <th className="hidden px-2 py-2 font-medium text-right xl:table-cell" title="Avg $ volume (DolVol)">
                 DolVol
               </th>
               <th className="px-2 py-2 font-medium">Stage</th>
-              <th className="px-2 py-2 font-medium">Setup</th>
+              <th className="hidden px-2 py-2 font-medium lg:table-cell">Setup</th>
               <th className="px-2 py-2 font-medium text-center" title="Heuristic kyleScore 3–5">
                 Score
               </th>
               <th
-                className="px-2 py-2 font-medium"
+                className="sticky right-12 z-20 bg-terminal-elevated px-2 py-2 font-medium"
                 title="Earnings proximity: AVOID = same/next trading day"
               >
                 Earn
               </th>
-              <th className="px-2 py-2 font-medium">Catalyst</th>
-              <th className="px-2 py-2 font-medium text-center">A+</th>
+              <th className="hidden px-2 py-2 font-medium xl:table-cell">Catalyst</th>
+              <th className="sticky right-0 z-20 bg-terminal-elevated px-2 py-2 font-medium text-center">A+</th>
             </tr>
           </thead>
           <tbody>
             {ideas.map((idea) => {
               const selected = selectedTicker === idea.ticker
               const avoid = idea.earningsStatus === 'avoid'
-              const highlight = avoid
-                ? 'bg-terminal-red-dim/70'
-                : idea.isAPlus && idea.catalyst
-                  ? 'bg-terminal-a-plus-bg/80'
-                  : idea.isAPlus
-                    ? 'bg-terminal-a-plus-bg/40'
-                    : ''
+              const highlight = rowHighlight(idea)
               return (
                 <tr
                   key={idea.ticker}
@@ -229,38 +372,21 @@ export function IdeasTable({
                     selected ? 'ring-1 ring-inset ring-terminal-blue/50' : ''
                   } ${avoid ? 'opacity-90' : ''}`}
                 >
-                  <td className="px-2 py-1.5">
-                    {onTogglePin ? (
-                      <button
-                        type="button"
-                        title={isPinned?.(idea.ticker) ? 'Unpin' : 'Pin to watchlist'}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          onTogglePin(idea.ticker)
-                        }}
-                        className={`rounded p-0.5 ${
-                          isOnWatchlist?.(idea.ticker)
-                            ? 'text-terminal-amber'
-                            : 'text-terminal-dim hover:text-terminal-amber'
-                        }`}
-                      >
-                        {isPinned?.(idea.ticker) ? (
-                          <Pin className="h-3.5 w-3.5" />
-                        ) : (
-                          <PinOff className="h-3.5 w-3.5" />
-                        )}
-                      </button>
-                    ) : (
-                      <span className="text-terminal-dim">·</span>
-                    )}
+                  <td className={`sticky left-0 z-[5] px-2 py-1.5 ${highlight || 'bg-terminal-panel'}`}>
+                    <PinButton
+                      ticker={idea.ticker}
+                      isPinned={isPinned}
+                      isOnWatchlist={isOnWatchlist}
+                      onTogglePin={onTogglePin}
+                    />
                   </td>
-                  <td className="px-2 py-1.5 font-mono font-semibold text-terminal-fg">
+                  <td className={`sticky left-8 z-[5] px-2 py-1.5 font-mono font-semibold text-terminal-fg ${highlight || 'bg-terminal-panel'}`}>
                     {idea.ticker}
                   </td>
-                  <td className="max-w-[120px] truncate px-2 py-1.5 text-terminal-muted">
+                  <td className="hidden max-w-[120px] truncate px-2 py-1.5 text-terminal-muted xl:table-cell">
                     {idea.name}
                   </td>
-                  <td className="max-w-[110px] truncate px-2 py-1.5 text-terminal-muted">
+                  <td className="hidden max-w-[110px] truncate px-2 py-1.5 text-terminal-muted lg:table-cell">
                     {idea.groupName}
                   </td>
                   <td className="px-2 py-1.5 text-right font-mono text-terminal-fg">
@@ -276,11 +402,11 @@ export function IdeasTable({
                   >
                     {fmtRvol(idea.rvol)}
                   </td>
-                  <td className="px-2 py-1.5 text-right font-mono text-terminal-fg">
+                  <td className="hidden px-2 py-1.5 text-right font-mono text-terminal-fg lg:table-cell">
                     {idea.adrPct.toFixed(1)}%
                   </td>
                   <td
-                    className={`px-2 py-1.5 text-right font-mono ${
+                    className={`hidden px-2 py-1.5 text-right font-mono lg:table-cell ${
                       Math.abs(idea.pctFrom52wHigh) <= 5
                         ? 'text-terminal-green'
                         : 'text-terminal-muted'
@@ -288,44 +414,44 @@ export function IdeasTable({
                   >
                     {fmtPct(idea.pctFrom52wHigh)}
                   </td>
-                  <td className="px-2 py-1.5">
+                  <td className="hidden px-2 py-1.5 xl:table-cell">
                     <TrendBadges idea={idea} />
                   </td>
-                  <td className="px-2 py-1.5">
+                  <td className="hidden px-2 py-1.5 xl:table-cell">
                     <SurferBadges idea={idea} />
                   </td>
-                  <td className={`px-2 py-1.5 text-right font-mono ${pctClass(idea.priorRunPct)}`}>
+                  <td className={`hidden px-2 py-1.5 text-right font-mono xl:table-cell ${pctClass(idea.priorRunPct)}`}>
                     {fmtPct(idea.priorRunPct, 0)}
                   </td>
                   <td
-                    className="px-2 py-1.5 text-right font-mono text-terminal-muted"
+                    className="hidden px-2 py-1.5 text-right font-mono text-terminal-muted xl:table-cell"
                     title={`tightDays=${idea.tightDays} · baseLengthDays=${idea.baseLengthDays}`}
                   >
                     {idea.tightDays}
                     <span className="text-terminal-dim">/{idea.baseLengthDays}</span>
                   </td>
-                  <td className={`px-2 py-1.5 text-right font-mono ${pctClass(idea.perf1M)}`}>
+                  <td className={`hidden px-2 py-1.5 text-right font-mono xl:table-cell ${pctClass(idea.perf1M)}`}>
                     {fmtPct(idea.perf1M, 0)}
                   </td>
-                  <td className={`px-2 py-1.5 text-right font-mono ${pctClass(idea.perf3M)}`}>
+                  <td className={`hidden px-2 py-1.5 text-right font-mono xl:table-cell ${pctClass(idea.perf3M)}`}>
                     {fmtPct(idea.perf3M, 0)}
                   </td>
-                  <td className="px-2 py-1.5 text-right font-mono text-terminal-muted">
+                  <td className="hidden px-2 py-1.5 text-right font-mono text-terminal-muted xl:table-cell">
                     {fmtDollarVol(idea.dollarVolume || idea.avgDollarVol)}
                   </td>
                   <td className="px-2 py-1.5">
                     <StageBadge stage={idea.setupStage} />
                   </td>
-                  <td className="px-2 py-1.5">
+                  <td className="hidden px-2 py-1.5 lg:table-cell">
                     <SetupBadge type={idea.setupType} />
                   </td>
                   <td className="px-2 py-1.5 text-center">
                     <KyleStars score={idea.kyleScore} />
                   </td>
-                  <td className="px-2 py-1.5">
+                  <td className={`sticky right-12 z-[5] px-2 py-1.5 ${highlight || 'bg-terminal-panel'}`}>
                     <EarningsBadge idea={idea} />
                   </td>
-                  <td className="max-w-[140px] truncate px-2 py-1.5">
+                  <td className="hidden max-w-[140px] truncate px-2 py-1.5 xl:table-cell">
                     {idea.catalyst ? (
                       <span className="text-terminal-green" title={idea.catalyst}>
                         {idea.catalyst}
@@ -334,18 +460,8 @@ export function IdeasTable({
                       <span className="text-terminal-dim">—</span>
                     )}
                   </td>
-                  <td className="px-2 py-1.5 text-center">
-                    {avoid ? (
-                      <span className="inline-flex rounded border border-terminal-red/50 bg-terminal-red-dim px-1.5 py-0.5 text-[10px] font-bold text-terminal-red">
-                        AVOID
-                      </span>
-                    ) : idea.isAPlus ? (
-                      <span className="inline-flex rounded bg-terminal-a-plus px-1.5 py-0.5 text-[10px] font-bold text-terminal-bg">
-                        A+
-                      </span>
-                    ) : (
-                      <span className="text-terminal-dim">·</span>
-                    )}
+                  <td className={`sticky right-0 z-[5] px-2 py-1.5 text-center ${highlight || 'bg-terminal-panel'}`}>
+                    <APlusCell idea={idea} />
                   </td>
                 </tr>
               )

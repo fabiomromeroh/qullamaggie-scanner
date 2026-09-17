@@ -54,14 +54,14 @@ export default function App() {
       />
 
       {data ? (
-        <div className="shrink-0 border-b border-terminal-border bg-terminal-bg px-3 py-2">
+        <div className="shrink-0 border-b border-terminal-border bg-terminal-bg px-2 py-1.5 sm:px-3 sm:py-2">
           <FiltersBar
             filters={filters}
             onChange={setFilters}
             groups={data.groups}
             dense
           />
-          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-terminal-dim">
+          <div className="mt-1.5 hidden flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-terminal-dim sm:flex">
             <span>
               Workflow: scan → above 200 SMA → prefer above 50 → coiled/triggering → pin.
               Auto-add kyleScore ≥ {userWatchlist.autoAddMinScore}. Catalysts blank from APIs.
@@ -135,7 +135,7 @@ export default function App() {
         )}
       </main>
 
-      <footer className="shrink-0 border-t border-terminal-border px-4 py-1.5 text-center text-[10px] text-terminal-dim">
+      <footer className="shrink-0 border-t border-terminal-border px-2 py-1 text-center text-[9px] text-terminal-dim sm:px-4 sm:py-1.5 sm:text-[10px]">
         {isLive
           ? 'Live market scan · Not investment advice · Qullamaggie / Kyle-style process reference only'
           : mode === 'demo'

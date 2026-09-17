@@ -45,10 +45,13 @@ export function WatchlistPanel({
           </h2>
           <span className="font-mono text-[10px] text-terminal-dim">{entries.length}</span>
         </div>
-        <p className="mt-1 text-[10px] leading-snug text-terminal-dim">
+        <p className="mt-1 hidden text-[10px] leading-snug text-terminal-dim sm:block">
           Persists in localStorage. Auto-adds when{' '}
           <span className="font-mono text-terminal-amber">kyleScore ≥ {autoAddMinScore}</span> and
           stage is coiled/triggering. Pin to keep; unpin/remove to drop.
+        </p>
+        <p className="mt-1 text-[10px] text-terminal-dim sm:hidden">
+          Auto-add ★≥{autoAddMinScore} · pin to keep
         </p>
         {regimeDowntrend ? (
           <p className="mt-1 text-[10px] text-terminal-amber">
@@ -129,7 +132,7 @@ export function WatchlistPanel({
                     type="button"
                     title={entry.pinned ? 'Unpin' : 'Pin'}
                     onClick={() => onTogglePin(entry.ticker)}
-                    className="rounded p-1 text-terminal-dim hover:bg-terminal-bg hover:text-terminal-amber"
+                    className="min-h-9 min-w-9 rounded p-2 text-terminal-dim hover:bg-terminal-bg hover:text-terminal-amber"
                   >
                     {entry.pinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
                   </button>
@@ -137,7 +140,7 @@ export function WatchlistPanel({
                     type="button"
                     title="Remove"
                     onClick={() => onRemove(entry.ticker)}
-                    className="rounded p-1 text-terminal-dim hover:bg-terminal-bg hover:text-terminal-red"
+                    className="min-h-9 min-w-9 rounded p-2 text-terminal-dim hover:bg-terminal-bg hover:text-terminal-red"
                   >
                     <X className="h-3.5 w-3.5" />
                   </button>

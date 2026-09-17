@@ -68,7 +68,8 @@
 /* Viewport-filling dashboard body: groups | scan results | watchlist */
 .dashboard-body {
   grid-template-columns: 1fr;
-  grid-template-rows: minmax(160px, 28vh) minmax(0, 1fr) minmax(180px, 32vh);
+  /* Mobile: compact groups strip, results get most space, watchlist below */
+  grid-template-rows: minmax(7.5rem, 22vh) minmax(14rem, 1fr) minmax(10rem, 28vh);
   grid-template-areas:
     "groups"
     "results"
@@ -85,6 +86,12 @@
 
 .dashboard-watchlist {
   grid-area: watchlist;
+}
+
+@media (min-width: 768px) and (max-width: 1023px) {
+  .dashboard-body {
+    grid-template-rows: minmax(10rem, 26vh) minmax(0, 1fr) minmax(12rem, 30vh);
+  }
 }
 
 @media (min-width: 1024px) {

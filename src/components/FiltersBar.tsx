@@ -79,14 +79,14 @@ export function FiltersBar({ filters, onChange, groups, dense = false }: Props) 
         </p>
       ) : null}
 
-      <div className="flex flex-wrap items-end gap-2 sm:gap-3">
-        <label className="flex flex-col gap-0.5 text-[10px] text-terminal-dim">
+      <div className="flex max-h-[40vh] flex-wrap items-end gap-2 overflow-y-auto overscroll-contain sm:max-h-none sm:gap-3">
+        <label className="flex min-w-[40%] flex-1 flex-col gap-0.5 text-[10px] text-terminal-dim sm:min-w-0 sm:flex-none">
           Search
           <input
             value={filters.search}
             onChange={(e) => onChange({ ...filters, search: e.target.value })}
             placeholder="Ticker / name / tag"
-            className="w-28 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1 text-xs text-terminal-fg outline-none focus:border-terminal-blue sm:w-32"
+            className="w-full min-w-[8rem] rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1.5 text-xs text-terminal-fg outline-none focus:border-terminal-blue sm:w-32 sm:py-1"
           />
         </label>
 
@@ -145,7 +145,7 @@ export function FiltersBar({ filters, onChange, groups, dense = false }: Props) 
                   key={s}
                   type="button"
                   onClick={() => toggleSetup(s)}
-                  className={`rounded px-2 py-1 text-[10px] ${
+                  className={`rounded px-2.5 py-1.5 text-[10px] min-h-8 ${
                     on
                       ? 'bg-terminal-blue/20 text-terminal-blue border border-terminal-blue/40'
                       : 'bg-terminal-bg text-terminal-dim border border-terminal-border'
@@ -175,7 +175,7 @@ export function FiltersBar({ filters, onChange, groups, dense = false }: Props) 
                         ? 'Tight days + near highs + MA surfer'
                         : 'Elevated RVOL / breakout-day heuristic'
                   }
-                  className={`rounded px-2 py-1 text-[10px] ${
+                  className={`rounded px-2.5 py-1.5 text-[10px] min-h-8 ${
                     on
                       ? s === 'triggering'
                         ? 'bg-terminal-amber/20 text-terminal-amber border border-terminal-amber/40'
@@ -192,7 +192,7 @@ export function FiltersBar({ filters, onChange, groups, dense = false }: Props) 
           </div>
         </div>
 
-        <label className="flex cursor-pointer items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1 text-xs text-terminal-fg">
+        <label className="flex min-h-8 cursor-pointer items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1.5 text-xs text-terminal-fg">
           <input
             type="checkbox"
             checked={filters.requireSma50}
@@ -202,7 +202,7 @@ export function FiltersBar({ filters, onChange, groups, dense = false }: Props) 
           <span>Require 50 SMA</span>
         </label>
 
-        <label className="flex cursor-pointer items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1 text-xs text-terminal-fg">
+        <label className="flex min-h-8 cursor-pointer items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1.5 text-xs text-terminal-fg">
           <input
             type="checkbox"
             checked={filters.requireSma10}
@@ -212,7 +212,7 @@ export function FiltersBar({ filters, onChange, groups, dense = false }: Props) 
           <span>10MA Surfer</span>
         </label>
 
-        <label className="flex cursor-pointer items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1 text-xs text-terminal-fg">
+        <label className="flex min-h-8 cursor-pointer items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1.5 text-xs text-terminal-fg">
           <input
             type="checkbox"
             checked={filters.requireSma20}
@@ -239,7 +239,7 @@ export function FiltersBar({ filters, onChange, groups, dense = false }: Props) 
                         ? '~2 trading days out'
                         : 'Further out / none soon'
                   }
-                  className={`rounded px-2 py-1 text-[10px] uppercase ${
+                  className={`rounded px-2.5 py-1.5 text-[10px] uppercase min-h-8 ${
                     on
                       ? s === 'avoid'
                         ? 'bg-terminal-red-dim text-terminal-red border border-terminal-red/40'
@@ -256,7 +256,7 @@ export function FiltersBar({ filters, onChange, groups, dense = false }: Props) 
           </div>
         </div>
 
-        <label className="flex cursor-pointer items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1 text-xs text-terminal-fg">
+        <label className="flex min-h-8 cursor-pointer items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1.5 text-xs text-terminal-fg">
           <input
             type="checkbox"
             checked={filters.aPlusOnly}
@@ -266,7 +266,7 @@ export function FiltersBar({ filters, onChange, groups, dense = false }: Props) 
           <span className="text-terminal-a-plus">A+ only</span>
         </label>
 
-        <label className="flex cursor-pointer items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1 text-xs text-terminal-fg">
+        <label className="flex min-h-8 cursor-pointer items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1.5 text-xs text-terminal-fg">
           <input
             type="checkbox"
             checked={filters.hasCatalyst}

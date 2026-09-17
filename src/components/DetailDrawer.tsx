@@ -14,9 +14,19 @@ export function DetailDrawer({ idea, onClose, source = 'live' }: Props) {
   if (!idea) return null
 
   return (
-    <aside className="fixed inset-y-0 right-0 z-40 flex w-full max-w-md flex-col border-l border-terminal-border bg-terminal-panel shadow-2xl shadow-black/50">
+    <aside
+      className="fixed inset-x-0 bottom-0 z-40 flex max-h-[92dvh] w-full flex-col rounded-t-2xl border border-terminal-border bg-terminal-panel shadow-2xl shadow-black/50 sm:inset-y-0 sm:right-0 sm:left-auto sm:max-h-none sm:max-w-md sm:rounded-none sm:border-l sm:border-t-0"
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${idea.ticker} details`}
+    >
+      {/* Mobile drag affordance */}
+      <div className="flex shrink-0 justify-center pt-2 sm:hidden" aria-hidden>
+        <div className="h-1 w-10 rounded-full bg-terminal-border-bright" />
+      </div>
+
       <div className="flex items-start justify-between border-b border-terminal-border px-4 py-3">
-        <div>
+        <div className="min-w-0 pr-2">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="font-mono text-lg font-bold text-terminal-fg">{idea.ticker}</h2>
             {idea.earningsStatus === 'avoid' ? (
@@ -62,20 +72,20 @@ export function DetailDrawer({ idea, onClose, source = 'live' }: Props) {
               </span>
             )}
           </div>
-          <p className="text-xs text-terminal-muted">{idea.name}</p>
+          <p className="truncate text-xs text-terminal-muted">{idea.name}</p>
           <p className="text-[11px] text-terminal-dim">{idea.groupName}</p>
         </div>
         <button
           type="button"
           onClick={onClose}
-          className="rounded p-1 text-terminal-dim hover:bg-terminal-elevated hover:text-terminal-fg"
+          className="min-h-10 min-w-10 shrink-0 rounded p-2 text-terminal-dim hover:bg-terminal-elevated hover:text-terminal-fg"
           aria-label="Close detail"
         >
           <X className="h-5 w-5" />
         </button>
       </div>
 
-      <div className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
+      <div className="flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4">
         <div className="flex items-center justify-between rounded-lg border border-terminal-border bg-terminal-elevated px-3 py-2">
           <div>
             <div className="font-mono text-xl text-terminal-fg">{fmtPrice(idea.price)}</div>
@@ -99,7 +109,7 @@ export function DetailDrawer({ idea, onClose, source = 'live' }: Props) {
           </div>
         )}
 
-        <div className="grid grid-cols-3 gap-2 text-center">
+        <div className="grid grid-cols-2 gap-2 text-center sm:grid-cols-3">
           {[
             { label: 'RVOL', value: fmtRvol(idea.rvol) },
             { label: 'ADR%', value: `${idea.adrPct.toFixed(1)}%` },
