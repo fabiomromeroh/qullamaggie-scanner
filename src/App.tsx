@@ -38,7 +38,8 @@ export default function App() {
   }, [data?.ideas])
 
   return (
-    <div className="flex h-dvh min-h-0 flex-col overflow-hidden">
+    /* Mobile: min-h-dvh + document scroll. Desktop (lg): locked h-dvh panel layout. */
+    <div className="flex min-h-dvh flex-col lg:h-dvh lg:min-h-0 lg:overflow-hidden">
       <StatusBanner mode={mode} source={data?.source} error={error} />
       <Header
         asOf={data?.asOf ?? new Date().toISOString()}
@@ -54,7 +55,7 @@ export default function App() {
       />
 
       {data ? (
-        <div className="shrink-0 border-b border-terminal-border bg-terminal-bg px-2 py-1.5 sm:px-3 sm:py-2">
+        <div className="shrink-0 border-b border-terminal-border bg-terminal-bg px-2 py-1 sm:px-3 sm:py-2">
           <FiltersBar
             filters={filters}
             onChange={setFilters}
@@ -76,14 +77,15 @@ export default function App() {
         </div>
       ) : null}
 
-      <main className="mx-auto flex min-h-0 w-full max-w-[1800px] flex-1 flex-col p-2 sm:p-3">
+      <main className="mx-auto flex w-full max-w-[1800px] flex-1 flex-col p-2 sm:p-3 lg:min-h-0">
         {loading && !data ? (
-          <div className="flex flex-1 items-center justify-center text-sm text-terminal-muted">
+          <div className="flex flex-1 items-center justify-center py-16 text-sm text-terminal-muted lg:py-0">
             Scanning live universe for Kyle / Qullamaggie setups…
           </div>
         ) : data ? (
-          <div className="dashboard-body grid min-h-0 flex-1 gap-2 sm:gap-3">
-            <aside className="dashboard-groups h-full min-h-0">
+          <div className="dashboard-body flex-1 lg:min-h-0">
+            {/* Results first in DOM on mobile via CSS grid areas; groups stay above visually */}
+            <aside className="dashboard-groups lg:h-full lg:min-h-0">
               <GroupStrength
                 groups={data.groups}
                 selectedGroupId={filters.groupId}
@@ -91,7 +93,7 @@ export default function App() {
               />
             </aside>
 
-            <section className="dashboard-results flex h-full min-h-0 min-w-0 flex-col">
+            <section className="dashboard-results flex min-w-0 flex-col lg:h-full lg:min-h-0">
               <IdeasTable
                 ideas={filteredIdeas}
                 selectedTicker={selectedTicker}
@@ -103,7 +105,7 @@ export default function App() {
               />
             </section>
 
-            <aside className="dashboard-watchlist h-full min-h-0">
+            <aside className="dashboard-watchlist lg:h-full lg:min-h-0">
               <WatchlistPanel
                 entries={userWatchlist.entries}
                 ideasByTicker={ideasByTicker}

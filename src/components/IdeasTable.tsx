@@ -287,7 +287,7 @@ export function IdeasTable({
   }
 
   return (
-    <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-terminal-border bg-terminal-panel">
+    <section className="flex flex-col rounded-lg border border-terminal-border bg-terminal-panel lg:h-full lg:min-h-0 lg:overflow-hidden">
       <div className="flex shrink-0 items-center justify-between gap-2 border-b border-terminal-border px-3 py-2">
         <h2 className="text-xs font-semibold uppercase tracking-wider text-terminal-muted">
           Scan results
@@ -297,8 +297,8 @@ export function IdeasTable({
         </span>
       </div>
 
-      {/* Mobile: card list — critical fields visible without horizontal scroll */}
-      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2 md:hidden">
+      {/* Mobile: card list in document flow (no nested scroll trapping results) */}
+      <div className="space-y-2 p-2 md:hidden">
         {ideas.map((idea) => (
           <IdeaCard
             key={idea.ticker}

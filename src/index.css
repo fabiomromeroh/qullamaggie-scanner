@@ -31,13 +31,14 @@
   body {
     margin: 0;
     min-height: 100%;
-    height: 100%;
     background: var(--color-terminal-bg);
     color: var(--color-terminal-fg);
-    overflow: hidden;
+    /* Mobile: document scroll so results aren't trapped in a near-zero flex child */
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
   #root {
-    height: 100%;
     min-height: 100%;
   }
   * {
@@ -65,39 +66,70 @@
   }
 }
 
-/* Viewport-filling dashboard body: groups | scan results | watchlist */
+/* Mobile-first: single column, content-sized rows, results dominate */
 .dashboard-body {
+  display: grid;
   grid-template-columns: 1fr;
-  /* Mobile: compact groups strip, results get most space, watchlist below */
-  grid-template-rows: minmax(7.5rem, 22vh) minmax(14rem, 1fr) minmax(10rem, 28vh);
+  grid-template-rows: auto auto auto;
   grid-template-areas:
     "groups"
     "results"
     "watchlist";
+  gap: 0.5rem;
+  /* No min-height fight — natural document flow on mobile */
+  min-height: 0;
 }
 
 .dashboard-groups {
   grid-area: groups;
+  /* Cap groups strip so it never steals the fold from results (~header + thin chips) */
+  max-height: 6.25rem; /* ~100px */
 }
 
 .dashboard-results {
   grid-area: results;
+  min-height: 0;
 }
 
 .dashboard-watchlist {
   grid-area: watchlist;
+  min-height: 0;
 }
 
+/* Tablet: still stacked but slightly taller groups allowed */
 @media (min-width: 768px) and (max-width: 1023px) {
-  .dashboard-body {
-    grid-template-rows: minmax(10rem, 26vh) minmax(0, 1fr) minmax(12rem, 30vh);
+  .dashboard-groups {
+    max-height: 8rem;
   }
 }
 
+/* Desktop: locked viewport panels (unchanged behavior) */
 @media (min-width: 1024px) {
+  html,
+  body,
+  #root {
+    height: 100%;
+    overflow: hidden;
+  }
+
   .dashboard-body {
+    flex: 1;
+    min-height: 0;
     grid-template-columns: minmax(220px, 250px) minmax(0, 1fr) minmax(240px, 280px);
     grid-template-rows: minmax(0, 1fr);
     grid-template-areas: "groups results watchlist";
+    gap: 0.75rem;
+  }
+
+  .dashboard-groups {
+    max-height: none;
+    height: 100%;
+    min-height: 0;
+  }
+
+  .dashboard-results,
+  .dashboard-watchlist {
+    height: 100%;
+    min-height: 0;
   }
 }
