@@ -21,7 +21,7 @@ npm run dev
 
 Open the URL Vite prints (usually `http://localhost:5173`).
 
-**Run a scan:** open the app (or click **Refresh**). Live mode scores every symbol in `SCAN_UNIVERSE` (`src/data/watchlist.ts`), derives Kyle metrics + `setupStage`, and auto-adds coiled/triggering names with `kyleScore ≥ 4` to the dynamic watchlist.
+**Run a scan:** open the app (or click **Refresh**). Live mode runs Stage 1 (Yahoo liquid screen) → Stage 1.5 (above 200+50 SMA quotes) → Stage 2 deep Kyle metrics, and auto-adds coiled/triggering names with `kyleScore ≥ 4` to the dynamic watchlist.
 
 Production build:
 
@@ -50,7 +50,7 @@ If the key is missing or Finnhub errors/rate-limits, the proxy falls through the
 
 ## How scanning works
 
-Two-stage **server-side** scan. The browser never walks thousands of symbols on page load — it only reads `GET /api/market/dashboard` (file cache).
+Three-stage **server-side** scan (Stage 1 → Stage 1.5 SMA → Stage 2). The browser never walks thousands of symbols on page load — it only reads `GET /api/market/dashboard` (file cache).
 
 ### Stage 1 — Yahoo EquityQuery screener (universe)
 
@@ -71,12 +71,26 @@ Observed in a workspace smoke test (2026-09-18): custom EquityQuery returned cru
 
 If that also fails, Stage 1 uses the tiny emergency `SCAN_UNIVERSE` (~100 names) and labels the dashboard **Emergency universe**.
 
-### Stage 2 — deep metrics on survivors only
+### Stage 1.5 — SMA prefilter (cheap Yahoo quotes)
 
-For each Stage-1 survivor (Yahoo-first cascade: Yahoo → Finnhub → Stooq):
+Before any full bar history download, Stage 1.5 batches Yahoo `/v7/finance/quote` for Stage-1 symbols and keeps only names where:
+
+| Gate | Rule |
+|------|------|
+| Trend | `regularMarketPrice > twoHundredDayAverage` |
+| Soft → hard | `regularMarketPrice > fiftyDayAverage` |
+| Missing data | **Fail closed** — drop symbol if either average is absent / quote fails |
+
+Prefers light Yahoo quote fields (`fiftyDayAverage`, `twoHundredDayAverage`, price) when crumb auth works. If quote/crumb is blocked (401/429), falls back to Yahoo **spark** closes-only (`/v8/finance/spark`, 1y daily closes) to compute SMA50/SMA200 — still **not** full OHLCV candle history. Batched (~20 symbols; Yahoo spark rejects larger batches) with short gaps + brief in-memory cache (`SMA_QUOTE_CACHE_TTL_MS`, default 5 min).
+
+Only Stage 1.5 survivors become the Stage-2 shortlist (`stage15Count` / `shortlistCount` in cache + UI).
+
+### Stage 2 — deep metrics on SMA survivors only
+
+For each Stage-1.5 survivor (Yahoo-first cascade: Yahoo → Finnhub → Stooq):
 
 1. Daily bars → Kyle / Qullamaggie proxies (`computeIdeaMetrics`)
-2. Hard gate: **above daily 200 SMA** or excluded
+2. Hard gate: **above daily 200 SMA** (recomputed from bars) or excluded
 3. Earnings overlay (Finnhub calendar → Nasdaq)
 4. Dynamic industry groups from Yahoo sector/industry (static `WATCHLIST_GROUPS` when ticker is known)
 5. QQQ regime from live bars
@@ -100,6 +114,7 @@ On server boot: load cache; if missing/stale, start a background scan. UI **Refr
 | Lever | Default | Notes |
 |-------|---------|--------|
 | Stage 1 | Yahoo screener | Avoids Finnhub 60/min for universe pass |
+| Stage 1.5 | Yahoo quote SMA batch | Drops below 200/50 before deep bars |
 | Stage 2 concurrency | 3 | `SCAN_STAGE2_CONCURRENCY` |
 | Stage 2 gap | 150 ms | `SCAN_STAGE2_GAP_MS` |
 | Snapshot cache TTL | 10 min | `MARKET_CACHE_TTL_MS` |
@@ -110,8 +125,8 @@ On server boot: load cache; if missing/stale, start a background scan. UI **Refr
 
 - Yahoo screener / chart endpoints are **unofficial** and may break or rate-limit (crumb 429).
 - Stage-1 liquidity uses **share volume**, not dollar volume (Yahoo screener field `avgdailyvol3m`).
-- Stage-1 is capped (~800) so Stage-2 finishes within free-tier budgets on Render.
-- Near-high / momentum narrowing is intentionally light in Stage 1 so coiled bases are not missed; Stage 2 + UI filters refine.
+- Stage-1 is capped (~800); Stage 1.5 further shrinks the deep-scan budget via SMA quotes.
+- Near-high / momentum narrowing is intentionally light in Stage 1 so coiled bases are not missed; Stage 1.5 enforces above-200 **and** above-50; Stage 2 + UI filters refine.
 
 ## Setup readiness stages
 
@@ -177,7 +192,7 @@ Use only for local UI work. Default when unset: **`live`**.
 | `src/lib/setupStage.ts` | watching / coiled / triggering |
 | `src/lib/userWatchlistStore.ts` | localStorage pin + auto-add |
 | `server/yahooScreener.ts` | Stage-1 Yahoo EquityQuery client (crumb + pagination) |
-| `server/scanEngine.ts` | Stage-1→2 orchestration + cache writer |
+| `server/scanEngine.ts` | Stage-1→1.5→2 orchestration + cache writer |
 | `server/scanCache.ts` | `data/scan-cache.json` load/save + scan lock |
 | `server/marketProxy.ts` | Cascade + TTL cache + Vite middleware |
 | `src/hooks/useDashboard.ts` | Load + filters + stage sort |
@@ -187,9 +202,10 @@ Use only for local UI work. Default when unset: **`live`**.
 ## How to extend / tune the scan
 
 1. **Liquidity / price** — env `SCAN_MIN_AVG_VOL` (default 750000), `SCAN_MIN_PRICE` (default 5), `SCAN_STAGE1_CAP` (default 800).
-2. **Staleness** — `SCAN_CACHE_STALE_MS` (default 45m).
-3. **Emergency list** — edit `SCAN_UNIVERSE` in `src/data/watchlist.ts` only as a last-resort fallback.
-4. **Catalysts** stay `null` from market APIs — fill later via notes.
+2. **Stage 1.5 SMA** — `SMA_QUOTE_BATCH` (default 20), `SMA_QUOTE_GAP_MS` (default 120), `SMA_QUOTE_CACHE_TTL_MS` (default 5m). Always requires above 200 **and** above 50.
+3. **Staleness** — `SCAN_CACHE_STALE_MS` (default 45m).
+4. **Emergency list** — edit `SCAN_UNIVERSE` in `src/data/watchlist.ts` only as a last-resort fallback.
+5. **Catalysts** stay `null` from market APIs — fill later via notes.
 
 ## Metrics & A+ badge
 

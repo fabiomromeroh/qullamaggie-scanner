@@ -51,6 +51,7 @@ export default function App() {
         marketRegime={data?.marketRegime}
         scanUniverseSize={data?.scanUniverseSize}
         stage1Count={data?.stage1Count}
+        stage15Count={data?.stage15Count}
         shortlistCount={data?.shortlistCount}
         emergencyFallback={data?.emergencyFallback}
         coiledCount={coiledCount}
@@ -67,13 +68,28 @@ export default function App() {
           />
           <div className="mt-1.5 hidden flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-terminal-dim sm:flex">
             <span>
-              Workflow: scan → above 200 SMA → prefer above 50 → coiled/triggering → pin.
+              Workflow: Stage1 liquid → Stage1.5 above 200+50 SMA → deep → coiled/triggering → pin.
               Auto-add kyleScore ≥ {userWatchlist.autoAddMinScore}. Catalysts blank from APIs.
             </span>
             {data.scanUniverseSize != null ? (
               <span className="font-mono">
-                Univ {data.stage1Count ?? data.scanUniverseSize} → deep {data.shortlistCount ?? data.scanUniverseSize} → {data.scanHitCount ?? 0} above 200 · below200{' '}
-                {data.scanBelow200Count ?? 0} · fails {data.scanFailCount ?? 0}
+                Univ {data.stage1Count ?? data.scanUniverseSize}
+                {data.stage15Count != null ? (
+                  <> → SMA {data.stage15Count}</>
+                ) : null}{' '}
+                → deep {data.shortlistCount ?? data.stage15Count ?? data.scanUniverseSize} →{' '}
+                {data.scanHitCount ?? 0} hits · below200 {data.scanBelow200Count ?? 0} · fails{' '}
+                {data.scanFailCount ?? 0}
+                {data.stage15BelowSma200Count != null || data.stage15BelowSma50Count != null ? (
+                  <>
+                    {' '}
+                    · prefilter −200:{data.stage15BelowSma200Count ?? 0} −50:
+                    {data.stage15BelowSma50Count ?? 0}
+                    {data.stage15MissingSmaCount != null
+                      ? ` miss:${data.stage15MissingSmaCount}`
+                      : ''}
+                  </>
+                ) : null}
               </span>
             ) : null}
           </div>

@@ -73,7 +73,7 @@ function mergeCookies(existing: string, incoming: string): string {
   return [...map.entries()].map(([k, v]) => `${k}=${v}`).join('; ')
 }
 
-async function refreshCrumb(force = false): Promise<{ crumb: string; cookie: string }> {
+export async function refreshYahooCrumb(force = false): Promise<{ crumb: string; cookie: string }> {
   if (!force && crumbState && Date.now() - crumbState.at < CRUMB_TTL_MS && crumbState.crumb) {
     return { crumb: crumbState.crumb, cookie: crumbState.cookie }
   }
@@ -322,7 +322,7 @@ export async function runYahooEquityScreener(): Promise<ScreenerResult> {
   const errors: string[] = []
 
   try {
-    let auth = await refreshCrumb()
+    let auth = await refreshYahooCrumb()
     const bySym = new Map<string, ScreenerHit>()
     let totalReported = 0
     let offset = 0
@@ -335,7 +335,7 @@ export async function runYahooEquityScreener(): Promise<ScreenerResult> {
         page = await postScreenerPage(offset, SCREENER_PAGE_SIZE, auth.crumb, auth.cookie)
       } catch {
         try {
-          auth = await refreshCrumb(true)
+          auth = await refreshYahooCrumb(true)
           page = await postScreenerPage(offset, SCREENER_PAGE_SIZE, auth.crumb, auth.cookie)
         } catch (err2) {
           errors.push(err2 instanceof Error ? err2.message : String(err2))

@@ -11,6 +11,7 @@ interface HeaderProps {
   marketRegime?: MarketRegime | null
   scanUniverseSize?: number
   stage1Count?: number
+  stage15Count?: number
   shortlistCount?: number
   emergencyFallback?: boolean
   coiledCount?: number
@@ -27,6 +28,7 @@ export function Header({
   marketRegime,
   scanUniverseSize,
   stage1Count,
+  stage15Count,
   shortlistCount,
   emergencyFallback,
   coiledCount,
@@ -112,6 +114,14 @@ export function Header({
                 <span className="text-terminal-border-bright">|</span>
                 <span title="Stage-1 Yahoo liquid universe size">
                   Univ <span className="text-terminal-fg">{stage1Count}</span>
+                </span>
+              </>
+            ) : null}
+            {typeof stage15Count === 'number' ? (
+              <>
+                <span className="text-terminal-border-bright">|</span>
+                <span title="Stage 1.5 SMA prefilter survivors (above 200 AND above 50)">
+                  SMA <span className="text-terminal-fg">{stage15Count}</span>
                 </span>
               </>
             ) : null}

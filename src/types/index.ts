@@ -156,9 +156,11 @@ export interface DashboardData {
   scanBelow200Count?: number
   /** Stage-1 universe source label (yahoo-screener / predefined / emergency). */
   stage1Source?: string
-  /** Stage-1 ticker count before deep scan. */
+  /** Stage-1 ticker count before SMA prefilter. */
   stage1Count?: number
-  /** Deep-scan shortlist size (usually == stage1Count, capped). */
+  /** Stage 1.5 survivors (above 200 SMA AND above 50 SMA via Yahoo quotes). */
+  stage15Count?: number
+  /** Deep-scan shortlist size (usually == stage15Count). */
   shortlistCount?: number
   /** True when Stage-1 Yahoo failed and emergency SCAN_UNIVERSE was used. */
   emergencyFallback?: boolean
@@ -166,6 +168,11 @@ export interface DashboardData {
   scanDurationMs?: number
   /** Stage-1 filter snapshot for UI/debug. */
   stage1Filters?: Record<string, unknown>
+  /** Stage 1.5 SMA prefilter snapshot. */
+  stage15Filters?: Record<string, unknown>
+  stage15BelowSma200Count?: number
+  stage15BelowSma50Count?: number
+  stage15MissingSmaCount?: number
 }
 
 

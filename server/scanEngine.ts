@@ -1,6 +1,7 @@
 /**
- * Two-stage US liquid equity scan.
+ * Three-stage US liquid equity scan.
  * Stage 1: Yahoo screener (price > $5, avg vol >= 750k, equities only).
+ * Stage 1.5: cheap Yahoo quote SMA prefilter (above 200 AND above 50).
  * Stage 2: deep Kyle/Qullamaggie metrics on survivors (Yahoo-first cascade).
  */
 import type { IndustryGroup, TradingIdea } from '../src/types/index.ts'
@@ -14,6 +15,7 @@ import { SCAN_UNIVERSE, WATCHLIST_GROUPS } from '../src/data/watchlist.ts'
 import {
   fetchEarningsBatch,
   fetchSymbolSnapshot,
+  runSmaPrefilter,
   type SymbolSnapshot,
 } from './marketProxy.ts'
 import {
@@ -186,8 +188,53 @@ export async function runFullScan(): Promise<ScanCachePayload> {
     }))
   }
 
-  const shortlist = hits.slice(0, STAGE1_CAP)
-  const hitBySym = new Map(shortlist.map((h) => [h.symbol.toUpperCase(), h]))
+  const stage1Hits = hits.slice(0, STAGE1_CAP)
+  const hitBySym = new Map(stage1Hits.map((h) => [h.symbol.toUpperCase(), h]))
+
+  let stage15Count = stage1Hits.length
+  let stage15Below200 = 0
+  let stage15Below50 = 0
+  let stage15Missing = 0
+  let stage15QuoteFails = 0
+  let stage15Filters: Record<string, unknown> = {
+    requireAbove200Sma: true,
+    requireAbove50Sma: true,
+  }
+
+  let shortlist = stage1Hits
+  try {
+    const pre = await runSmaPrefilter(stage1Hits.map((h) => h.symbol))
+    stage15Count = pre.stage15Count
+    stage15Below200 = pre.belowSma200Count
+    stage15Below50 = pre.belowSma50Count
+    stage15Missing = pre.missingSmaCount
+    stage15QuoteFails = pre.quoteFailCount
+    stage15Filters = pre.filters
+    const keep = new Set(pre.survivors)
+    shortlist = stage1Hits.filter((h) => keep.has(h.symbol.toUpperCase()))
+    console.log(
+      JSON.stringify({
+        scan: 'stage1.5',
+        stage1: stage1Hits.length,
+        stage15: shortlist.length,
+        below200: stage15Below200,
+        below50: stage15Below50,
+        missingSma: stage15Missing,
+        quoteFails: stage15QuoteFails,
+      }),
+    )
+  } catch (err) {
+    errors.push(`stage1.5: ${err instanceof Error ? err.message : String(err)}`)
+    // Fail closed: do not deep-scan Stage-1 names without a successful SMA prefilter.
+    shortlist = []
+    stage15Count = 0
+  }
+
+  if (!shortlist.length) {
+    throw new Error(
+      `Stage 1.5 SMA prefilter produced zero survivors (stage1=${stage1Hits.length}, below200=${stage15Below200}, below50=${stage15Below50}, missing=${stage15Missing}). ${errors.slice(0, 3).join(' | ')}`,
+    )
+  }
 
   const settled = await mapPool(
     shortlist,
@@ -252,7 +299,7 @@ export async function runFullScan(): Promise<ScanCachePayload> {
 
   if (!ideas.length) {
     throw new Error(
-      `Scan produced zero ideas (stage1=${shortlist.length}, below200=${below200}, fails=${failCount}). ${errors.slice(0, 3).join(' | ')}`,
+      `Scan produced zero ideas (stage1=${stage1Hits.length}, stage15=${shortlist.length}, below200=${below200}, fails=${failCount}). ${errors.slice(0, 3).join(' | ')}`,
     )
   }
 
@@ -262,15 +309,21 @@ export async function runFullScan(): Promise<ScanCachePayload> {
     groups: buildDynamicGroups(ideas),
     ideas,
     marketRegime,
-    scanUniverseSize: shortlist.length,
+    scanUniverseSize: stage1Hits.length,
     scanHitCount: ideas.length,
     scanFailCount: failCount,
     scanBelow200Count: below200,
     meta: {
       stage1Source,
-      stage1Count: shortlist.length,
+      stage1Count: stage1Hits.length,
+      stage15Count,
       shortlistCount: shortlist.length,
       stage1Filters,
+      stage15Filters,
+      stage15BelowSma200Count: stage15Below200,
+      stage15BelowSma50Count: stage15Below50,
+      stage15MissingSmaCount: stage15Missing,
+      stage15QuoteFailCount: stage15QuoteFails,
       scanDurationMs: Date.now() - t0,
       errors: errors.slice(0, 50),
       emergencyFallback,
@@ -295,6 +348,7 @@ export async function triggerScan(
         scan: 'done',
         reason,
         stage1: result.meta.stage1Count,
+        stage15: result.meta.stage15Count,
         hits: result.scanHitCount,
         source: result.meta.stage1Source,
         ms: result.meta.scanDurationMs,

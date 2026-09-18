@@ -12,6 +12,7 @@ import { readFileSync, existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { getScanRuntimeStatus, loadScanCache } from './scanCache.ts'
 import { kickScanOnBoot, triggerScan } from './scanEngine.ts'
+import { refreshYahooCrumb } from './yahooScreener.ts'
 
 export interface DailyBar {
   t: number
@@ -644,6 +645,305 @@ export async function fetchEarningsBatch(symbols: string[]): Promise<EarningsInf
 }
 
 
+
+// ---------------------------------------------------------------------------
+// Stage 1.5 — cheap SMA prefilter (Yahoo quote fields, spark fallback)
+// Prefer quote.fiftyDayAverage / twoHundredDayAverage; spark closes-only if crumb/quote blocked.
+// ---------------------------------------------------------------------------
+
+export interface YahooSmaQuote {
+  symbol: string
+  price: number
+  fiftyDayAverage: number | null
+  twoHundredDayAverage: number | null
+  source: 'yahoo-quote' | 'yahoo-spark'
+}
+
+const SMA_QUOTE_CACHE_TTL_MS = Number(process.env.SMA_QUOTE_CACHE_TTL_MS || 5 * 60 * 1000)
+/** Yahoo spark rejects batches ≥ ~50; keep ≤20. */
+const SMA_QUOTE_BATCH = Number(process.env.SMA_QUOTE_BATCH || 20)
+const SMA_QUOTE_GAP_MS = Number(process.env.SMA_QUOTE_GAP_MS || 120)
+const smaQuoteCache = new Map<string, { at: number; quote: YahooSmaQuote }>()
+
+function getCachedSmaQuote(symbol: string): YahooSmaQuote | null {
+  const hit = smaQuoteCache.get(symbol)
+  if (!hit) return null
+  if (Date.now() - hit.at > SMA_QUOTE_CACHE_TTL_MS) {
+    smaQuoteCache.delete(symbol)
+    return null
+  }
+  return hit.quote
+}
+
+function setCachedSmaQuote(quote: YahooSmaQuote): void {
+  smaQuoteCache.set(quote.symbol, { at: Date.now(), quote })
+}
+
+function numOrNull(v: unknown): number | null {
+  return typeof v === 'number' && Number.isFinite(v) && v > 0 ? v : null
+}
+
+function simpleSma(closes: number[], n: number): number | null {
+  if (closes.length < n) return null
+  let sum = 0
+  for (let i = closes.length - n; i < closes.length; i++) sum += closes[i]!
+  return sum / n
+}
+
+/** Prefer official Yahoo quote averages when crumb auth works (fail-fast → spark). */
+async function fetchYahooSmaQuoteBatch(symbols: string[]): Promise<Map<string, YahooSmaQuote>> {
+  const out = new Map<string, YahooSmaQuote>()
+  if (!symbols.length) return out
+  let auth: { crumb: string; cookie: string }
+  try {
+    auth = await Promise.race([
+      refreshYahooCrumb(),
+      new Promise<never>((_, rej) =>
+        setTimeout(() => rej(new Error('crumb timeout')), 2500),
+      ),
+    ])
+  } catch {
+    return out
+  }
+  const hosts = ['query1.finance.yahoo.com', 'query2.finance.yahoo.com']
+  const joined = symbols.map((s) => encodeURIComponent(s)).join(',')
+  const fields = 'symbol,regularMarketPrice,fiftyDayAverage,twoHundredDayAverage'
+  for (const host of hosts) {
+    const url =
+      `https://${host}/v7/finance/quote?symbols=${joined}` +
+      `&fields=${fields}&formatted=false&lang=en-US&region=US` +
+      `&crumb=${encodeURIComponent(auth.crumb)}`
+    try {
+      const res = await fetch(url, {
+        headers: {
+          ...BROWSER_HEADERS,
+          Cookie: auth.cookie,
+        },
+      })
+      if (res.status === 401 || res.status === 403) {
+        // Force crumb refresh once
+        try {
+          auth = await refreshYahooCrumb(true)
+        } catch {
+          return out
+        }
+        continue
+      }
+      if (!res.ok) continue
+      const raw = (await res.json()) as {
+        quoteResponse?: {
+          result?: Array<{
+            symbol?: string
+            regularMarketPrice?: number
+            fiftyDayAverage?: number
+            twoHundredDayAverage?: number
+          }>
+        }
+      }
+      for (const row of raw.quoteResponse?.result ?? []) {
+        const sym = (row.symbol ?? '').toUpperCase()
+        if (!sym) continue
+        const price = numOrNull(row.regularMarketPrice)
+        if (price == null) continue
+        const quote: YahooSmaQuote = {
+          symbol: sym,
+          price,
+          fiftyDayAverage: numOrNull(row.fiftyDayAverage),
+          twoHundredDayAverage: numOrNull(row.twoHundredDayAverage),
+          source: 'yahoo-quote',
+        }
+        setCachedSmaQuote(quote)
+        out.set(sym, quote)
+      }
+      if (out.size) return out
+    } catch {
+      /* try next host */
+    }
+  }
+  return out
+}
+
+/**
+ * Cheap closes-only spark batch — compute SMA50/SMA200 without full OHLCV candles.
+ * Used when quote+crumb is unavailable (common 401/429).
+ */
+async function fetchYahooSparkSmaBatch(symbols: string[]): Promise<Map<string, YahooSmaQuote>> {
+  const out = new Map<string, YahooSmaQuote>()
+  if (!symbols.length) return out
+  const hosts = ['query1.finance.yahoo.com', 'query2.finance.yahoo.com']
+  const joined = symbols.map((s) => encodeURIComponent(s)).join(',')
+  const errors: string[] = []
+  for (const host of hosts) {
+    const url =
+      `https://${host}/v8/finance/spark?symbols=${joined}` +
+      `&range=1y&interval=1d`
+    try {
+      const raw = (await fetchJson(url)) as Record<
+        string,
+        {
+          symbol?: string
+          close?: (number | null)[]
+          fulldayPrice?: number
+          previousClose?: number
+          chartPreviousClose?: number
+        }
+      >
+      for (const [key, data] of Object.entries(raw)) {
+        const sym = (data.symbol || key || '').toUpperCase()
+        if (!sym || !Array.isArray(data.close)) continue
+        const closes = data.close.filter(
+          (c): c is number => typeof c === 'number' && Number.isFinite(c) && c > 0,
+        )
+        if (closes.length < 50) continue
+        const last = closes[closes.length - 1]!
+        const price =
+          numOrNull(data.fulldayPrice) ??
+          numOrNull(data.previousClose) ??
+          last
+        const quote: YahooSmaQuote = {
+          symbol: sym,
+          price,
+          fiftyDayAverage: simpleSma(closes, 50),
+          twoHundredDayAverage: simpleSma(closes, 200),
+          source: 'yahoo-spark',
+        }
+        setCachedSmaQuote(quote)
+        out.set(sym, quote)
+      }
+      if (out.size) return out
+    } catch (err) {
+      errors.push(`${host}: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+  if (!out.size && errors.length) {
+    throw new Error(`Yahoo spark SMA batch failed: ${errors.join('; ')}`)
+  }
+  return out
+}
+
+export interface SmaPrefilterResult {
+  survivors: string[]
+  quotes: Map<string, YahooSmaQuote>
+  stage1Count: number
+  stage15Count: number
+  belowSma200Count: number
+  belowSma50Count: number
+  missingSmaCount: number
+  quoteFailCount: number
+  filters: Record<string, unknown>
+}
+
+/**
+ * Stage 1.5: keep symbols with price > 200-day avg AND price > 50-day avg.
+ * Quote fields preferred; spark closes-only fallback. Fail-closed when averages missing.
+ */
+export async function runSmaPrefilter(symbols: string[]): Promise<SmaPrefilterResult> {
+  const uniq = [...new Set(symbols.map((s) => s.trim().toUpperCase()).filter(Boolean))]
+  const quotes = new Map<string, YahooSmaQuote>()
+  const needFetch: string[] = []
+  for (const sym of uniq) {
+    const cached = getCachedSmaQuote(sym)
+    if (cached) quotes.set(sym, cached)
+    else needFetch.push(sym)
+  }
+
+  let quoteFailCount = 0
+  let usedQuote = 0
+  let usedSpark = 0
+  // Probe quote path once on the first batch; if crumb/quote fails, spark-only thereafter.
+  let preferSparkOnly = false
+  for (let i = 0; i < needFetch.length; i += SMA_QUOTE_BATCH) {
+    const batch = needFetch.slice(i, i + SMA_QUOTE_BATCH)
+    if (i > 0) await sleep(SMA_QUOTE_GAP_MS)
+    try {
+      if (!preferSparkOnly) {
+        const got = await fetchYahooSmaQuoteBatch(batch)
+        let quoteHits = 0
+        for (const [sym, q] of got) {
+          quotes.set(sym, q)
+          if (q.source === 'yahoo-quote') {
+            usedQuote += 1
+            quoteHits += 1
+          }
+        }
+        if (quoteHits === 0) preferSparkOnly = true
+      }
+      const stillMissing = batch.filter((s) => !quotes.has(s))
+      if (stillMissing.length) {
+        const sparkGot = await fetchYahooSparkSmaBatch(stillMissing)
+        for (const [sym, q] of sparkGot) {
+          quotes.set(sym, q)
+          usedSpark += 1
+        }
+      }
+      for (const sym of batch) {
+        if (!quotes.has(sym)) quoteFailCount += 1
+      }
+    } catch {
+      preferSparkOnly = true
+      try {
+        const sparkGot = await fetchYahooSparkSmaBatch(batch)
+        for (const [sym, q] of sparkGot) {
+          quotes.set(sym, q)
+          usedSpark += 1
+        }
+        for (const sym of batch) {
+          if (!quotes.has(sym)) quoteFailCount += 1
+        }
+      } catch {
+        quoteFailCount += batch.length
+      }
+    }
+  }
+
+  const survivors: string[] = []
+  let belowSma200Count = 0
+  let belowSma50Count = 0
+  let missingSmaCount = 0
+
+  for (const sym of uniq) {
+    const q = quotes.get(sym)
+    if (!q) {
+      missingSmaCount += 1
+      continue
+    }
+    const sma200 = q.twoHundredDayAverage
+    const sma50 = q.fiftyDayAverage
+    if (sma200 == null || sma50 == null) {
+      missingSmaCount += 1
+      continue
+    }
+    const above200 = q.price > sma200
+    const above50 = q.price > sma50
+    if (!above200) belowSma200Count += 1
+    if (!above50) belowSma50Count += 1
+    if (above200 && above50) survivors.push(sym)
+  }
+
+  return {
+    survivors,
+    quotes,
+    stage1Count: uniq.length,
+    stage15Count: survivors.length,
+    belowSma200Count,
+    belowSma50Count,
+    missingSmaCount,
+    quoteFailCount,
+    filters: {
+      requireAbove200Sma: true,
+      requireAbove50Sma: true,
+      preferredSource: 'yahoo-quote',
+      fallbackSource: 'yahoo-spark',
+      fields: ['regularMarketPrice', 'fiftyDayAverage', 'twoHundredDayAverage'],
+      failClosedMissingAverages: true,
+      batchSize: SMA_QUOTE_BATCH,
+      cacheTtlMs: SMA_QUOTE_CACHE_TTL_MS,
+      usedQuote,
+      usedSpark,
+    },
+  }
+}
+
 export function createMarketMiddleware() {
   return async function marketMiddleware(
     req: { url?: string; method?: string },
@@ -676,6 +976,8 @@ export function createMarketMiddleware() {
             earningsCascade: ['finnhub', 'nasdaq'],
             cacheTtlMs: SNAPSHOT_CACHE_TTL_MS,
             cacheSize: snapshotCache.size,
+            smaQuoteCacheSize: smaQuoteCache.size,
+            smaQuoteCacheTtlMs: SMA_QUOTE_CACHE_TTL_MS,
             earningsCacheSize: earningsBySymbol.size,
             earningsCacheTtlMs: EARNINGS_CACHE_TTL_MS,
           }),
@@ -748,10 +1050,15 @@ if (url.pathname === '/api/market/dashboard') {
             ...dashboard,
             stage1Source: meta?.stage1Source,
             stage1Count: meta?.stage1Count,
+            stage15Count: meta?.stage15Count,
             shortlistCount: meta?.shortlistCount,
             emergencyFallback: meta?.emergencyFallback,
             scanDurationMs: meta?.scanDurationMs,
             stage1Filters: meta?.stage1Filters,
+            stage15Filters: meta?.stage15Filters,
+            stage15BelowSma200Count: meta?.stage15BelowSma200Count,
+            stage15BelowSma50Count: meta?.stage15BelowSma50Count,
+            stage15MissingSmaCount: meta?.stage15MissingSmaCount,
           }),
         )
         return

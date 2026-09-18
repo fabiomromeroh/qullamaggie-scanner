@@ -15,8 +15,15 @@ import type { DashboardData } from '../src/types/index.ts'
 export interface ScanCacheMeta {
   stage1Source: string
   stage1Count: number
+  /** Survivors after Stage 1.5 SMA prefilter (above 200 AND above 50). */
+  stage15Count: number
   shortlistCount: number
   stage1Filters: Record<string, unknown>
+  stage15Filters?: Record<string, unknown>
+  stage15BelowSma200Count?: number
+  stage15BelowSma50Count?: number
+  stage15MissingSmaCount?: number
+  stage15QuoteFailCount?: number
   scanDurationMs: number
   errors: string[]
   emergencyFallback: boolean
@@ -35,6 +42,7 @@ export type ScanStatus = {
   cacheAsOf: string | null
   stage1Source: string | null
   stage1Count: number | null
+  stage15Count: number | null
   shortlistCount: number | null
   emergencyFallback: boolean
 }
@@ -106,6 +114,7 @@ export function getScanRuntimeStatus(): ScanStatus {
     cacheAsOf: cache?.asOf ?? null,
     stage1Source: cache?.meta?.stage1Source ?? null,
     stage1Count: cache?.meta?.stage1Count ?? null,
+    stage15Count: cache?.meta?.stage15Count ?? null,
     shortlistCount: cache?.meta?.shortlistCount ?? null,
     emergencyFallback: Boolean(cache?.meta?.emergencyFallback),
   }
