@@ -1,0 +1,1 @@
+Node.js v20.19.2 win-x64 (official binary from nodejs.org)
