@@ -5,6 +5,7 @@ import { stageLabel } from '../lib/setupStage'
 import { fmtDollarVol, fmtPct, fmtPrice, fmtRvol, pctClass } from '../utils/format'
 import { useResizableColumns } from '../hooks/useResizableColumns'
 import { ResizeHandle } from './ResizeHandle'
+import { CopyForTradingView } from './CopyForTradingView'
 
 const IDEAS_COL_KEY = 'qm-ideas-col-widths'
 
@@ -352,25 +353,28 @@ export function IdeasTable({
   const earnW = widthOf('earn')
   const aPlusW = widthOf('aPlus')
 
-  if (!ideas.length) {
-    return (
-      <div className="flex h-full min-h-[12rem] items-center justify-center rounded-lg border border-terminal-border bg-terminal-panel text-sm text-terminal-muted">
-        No ideas match current filters.
-      </div>
-    )
-  }
+  const tickers = ideas.map((i) => i.ticker)
 
   return (
     <section className="flex flex-col rounded-lg border border-terminal-border bg-terminal-panel lg:h-full lg:min-h-0 lg:overflow-hidden">
-      <div className="flex shrink-0 items-center justify-between gap-2 border-b border-terminal-border px-3 py-2">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-terminal-muted">
-          Scan results
-        </h2>
-        <span className="font-mono text-[10px] text-terminal-dim">
-          {ideas.length} shown · {source === 'demo' ? 'DEMO' : 'LIVE'}
-        </span>
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-terminal-border px-2 py-2 sm:px-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-terminal-muted">
+            Scan results
+          </h2>
+          <span className="font-mono text-[10px] text-terminal-dim">
+            {ideas.length} shown · {source === 'demo' ? 'DEMO' : 'LIVE'}
+          </span>
+        </div>
+        <CopyForTradingView tickers={tickers} />
       </div>
 
+      {!ideas.length ? (
+        <div className="flex min-h-[12rem] flex-1 items-center justify-center p-4 text-sm text-terminal-muted">
+          No ideas match current filters.
+        </div>
+      ) : (
+        <>
       {/* Mobile: card list in document flow (no nested scroll trapping results) */}
       <div className="space-y-2 p-2 md:hidden">
         {ideas.map((idea) => (
@@ -700,6 +704,8 @@ export function IdeasTable({
           </tbody>
         </table>
       </div>
+        </>
+      )}
     </section>
   )
 }
