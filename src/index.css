@@ -133,3 +133,10 @@
     min-height: 0;
   }
 }
+
+/* Extra-wide desktops: slightly wider side panels; center still takes the rest */
+@media (min-width: 1536px) {
+  .dashboard-body {
+    grid-template-columns: minmax(240px, 280px) minmax(0, 1fr) minmax(260px, 320px);
+  }
+}

@@ -314,7 +314,7 @@ export function IdeasTable({
 
       {/* Desktop / tablet: full table with sticky ticker + earn/A+ */}
       <div className="hidden min-h-0 flex-1 overflow-auto md:block">
-        <table className="w-full min-w-[1100px] text-left text-xs lg:min-w-[1680px]">
+        <table className="w-full text-left text-xs">
           <thead className="sticky top-0 z-10 bg-terminal-elevated text-[10px] uppercase tracking-wide text-terminal-dim shadow-[0_1px_0_0_var(--color-terminal-border)]">
             <tr>
               <th className="sticky left-0 z-20 bg-terminal-elevated px-2 py-2 font-medium w-8" title="Pin to dynamic watchlist">

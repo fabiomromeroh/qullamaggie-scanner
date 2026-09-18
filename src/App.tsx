@@ -77,7 +77,7 @@ export default function App() {
         </div>
       ) : null}
 
-      <main className="mx-auto flex w-full max-w-[1800px] flex-1 flex-col p-2 sm:p-3 lg:min-h-0">
+      <main className="mx-auto flex w-full max-w-none flex-1 flex-col p-2 sm:p-3 lg:min-h-0">
         {loading && !data ? (
           <div className="flex flex-1 items-center justify-center py-16 text-sm text-terminal-muted lg:py-0">
             Scanning live universe for Kyle / Qullamaggie setups…
