@@ -45,11 +45,14 @@ export default function App() {
         asOf={data?.asOf ?? new Date().toISOString()}
         ideaCount={filteredIdeas.length}
         aPlusCount={aPlusCount}
-        onRefresh={() => void reload()}
+        onRefresh={() => void reload({ refreshScan: true })}
         loading={loading}
         source={data?.source ?? (error ? 'live' : undefined)}
         marketRegime={data?.marketRegime}
         scanUniverseSize={data?.scanUniverseSize}
+        stage1Count={data?.stage1Count}
+        shortlistCount={data?.shortlistCount}
+        emergencyFallback={data?.emergencyFallback}
         coiledCount={coiledCount}
         triggeringCount={triggeringCount}
       />
@@ -69,7 +72,7 @@ export default function App() {
             </span>
             {data.scanUniverseSize != null ? (
               <span className="font-mono">
-                Scan {data.scanHitCount ?? 0}/{data.scanUniverseSize} above 200 · below200{' '}
+                Univ {data.stage1Count ?? data.scanUniverseSize} → deep {data.shortlistCount ?? data.scanUniverseSize} → {data.scanHitCount ?? 0} above 200 · below200{' '}
                 {data.scanBelow200Count ?? 0} · fails {data.scanFailCount ?? 0}
               </span>
             ) : null}
@@ -127,7 +130,7 @@ export default function App() {
             </p>
             <button
               type="button"
-              onClick={() => void reload()}
+              onClick={() => void reload({ refreshScan: true })}
               disabled={loading}
               className="rounded-md border border-terminal-border-bright bg-terminal-elevated px-3 py-1.5 text-xs text-terminal-fg hover:border-terminal-blue disabled:opacity-50"
             >

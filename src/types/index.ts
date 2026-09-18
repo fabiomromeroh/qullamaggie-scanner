@@ -154,7 +154,20 @@ export interface DashboardData {
   scanFailCount?: number
   /** Excluded solely for failing 200 SMA. */
   scanBelow200Count?: number
+  /** Stage-1 universe source label (yahoo-screener / predefined / emergency). */
+  stage1Source?: string
+  /** Stage-1 ticker count before deep scan. */
+  stage1Count?: number
+  /** Deep-scan shortlist size (usually == stage1Count, capped). */
+  shortlistCount?: number
+  /** True when Stage-1 Yahoo failed and emergency SCAN_UNIVERSE was used. */
+  emergencyFallback?: boolean
+  /** Last full scan wall time in ms. */
+  scanDurationMs?: number
+  /** Stage-1 filter snapshot for UI/debug. */
+  stage1Filters?: Record<string, unknown>
 }
+
 
 export interface IdeaFilters {
   minRvol: number

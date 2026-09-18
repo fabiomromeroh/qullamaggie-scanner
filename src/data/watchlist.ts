@@ -65,6 +65,10 @@ export const WATCHLIST_GROUPS: Omit<
  * Broader liquid US scan universe (80–150 target).
  * Prefer high average dollar volume names so Yahoo/Stooq fallbacks stay useful.
  */
+/**
+ * Emergency tiny fallback only — used if Yahoo Stage-1 screener fails completely.
+ * Production universe comes from server Yahoo EquityQuery (liquid US equities > $5).
+ */
 export const SCAN_UNIVERSE: WatchlistEntry[] = [
   // Semiconductors / hardware
   { ticker: 'NVDA', name: 'NVIDIA Corp', groupId: 'semis' },

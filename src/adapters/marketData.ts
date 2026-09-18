@@ -1,23 +1,13 @@
 /**
  * Market data adapter — live by default.
  *
- * Cascade (server proxy): Finnhub REST → Yahoo Finance (unofficial) → Stooq.
- * Demo only when VITE_MARKET_DATA_MODE=demo. Never silently falls back to demo on live failure.
- * Kyle-style metrics are computed from live bars only (no Notion row access).
- *
- * Live mode scans SCAN_UNIVERSE (broader than a fixed personal watchlist),
- * scores each name, and derives setupStage (watching / coiled / triggering).
+ * Live mode reads the server scan cache (`GET /api/market/dashboard`).
+ * Stage 1 (Yahoo liquid US equity screen) + Stage 2 (deep metrics) run
+ * server-side so the browser never scans thousands of symbols on load.
+ * Demo only when VITE_MARKET_DATA_MODE=demo — never a silent live→demo fallback.
  */
-import type { DashboardData, IndustryGroup, MarketRegime, TradingIdea } from '../types'
+import type { DashboardData } from '../types'
 import { DEMO_DASHBOARD } from '../data/demoData'
-import {
-  SCAN_CONCURRENCY,
-  SCAN_GAP_MS,
-  SCAN_UNIVERSE,
-  WATCHLIST_GROUPS,
-} from '../data/watchlist'
-import { applyEarningsToIdea, computeIdeaMetrics, computeMarketRegime } from '../lib/metrics'
-import { fetchLiveEarningsBatch, fetchLiveSnapshot, mapPool } from './providers/liveFetch'
 
 export interface MarketDataAdapter {
   readonly name: string
@@ -46,139 +36,37 @@ export class DemoMarketAdapter implements MarketDataAdapter {
   }
 }
 
-function buildGroups(ideas: TradingIdea[]): IndustryGroup[] {
-  const byGroup = new Map<string, TradingIdea[]>()
-  for (const idea of ideas) {
-    const list = byGroup.get(idea.groupId) ?? []
-    list.push(idea)
-    byGroup.set(idea.groupId, list)
-  }
 
-  const groups: IndustryGroup[] = WATCHLIST_GROUPS.map((g) => {
-    const members = byGroup.get(g.id) ?? []
-    const avg = (pick: (i: TradingIdea) => number) =>
-      members.length ? members.reduce((s, m) => s + pick(m), 0) / members.length : 0
-    const perf1m = Math.round(avg((m) => m.perf1M) * 100) / 100
-    const perf3m = Math.round(avg((m) => m.perf3M) * 100) / 100
-    const perf6m = Math.round(avg((m) => m.perf6M) * 100) / 100
-    return {
-      ...g,
-      rsRank: 0,
-      leaderCount: members.filter((m) => m.pctFrom52wHigh >= -10).length,
-      dayPct: Math.round(avg((m) => m.dayPct) * 100) / 100,
-      weekPct: Math.round(avg((m) => m.perf1M / 4) * 100) / 100,
-      monthPct: perf1m,
-      perf1m,
-      perf3m,
-      perf6m,
-      description: g.description,
-    }
-  }).filter((g) => (byGroup.get(g.id) ?? []).length > 0)
-
-  // Rank by 3M group strength (prefer medium-horizon RS), fall back to 1M
-  groups.sort((a, b) => b.perf3m - a.perf3m || b.perf1m - a.perf1m)
-  groups.forEach((g, i) => {
-    g.rsRank = i + 1
-  })
-  return groups
-}
-
-async function fetchQqqRegime(): Promise<MarketRegime | null> {
-  try {
-    const snap = await fetchLiveSnapshot('QQQ')
-    return computeMarketRegime(snap.bars)
-  } catch {
-    return null
-  }
-}
 
 export class LiveMarketAdapter implements MarketDataAdapter {
   readonly name = 'live'
 
   async fetch(): Promise<DashboardData> {
-    const groupName = (id: string) =>
-      WATCHLIST_GROUPS.find((g) => g.id === id)?.name ?? id
-
-    const universe = SCAN_UNIVERSE
-
-    const [settled, marketRegime] = await Promise.all([
-      mapPool(
-        universe,
-        SCAN_CONCURRENCY,
-        async (entry) => {
-          const snap = await fetchLiveSnapshot(entry.ticker)
-          const idea = computeIdeaMetrics(
-            {
-              ticker: entry.ticker,
-              name: entry.name,
-              groupId: entry.groupId,
-              groupName: groupName(entry.groupId),
-            },
-            snap,
-          )
-          if (!idea) throw new Error(`Insufficient history for ${entry.ticker}`)
-          return idea
-        },
-        SCAN_GAP_MS,
-      ),
-      fetchQqqRegime(),
-    ])
-
-    const ideas: TradingIdea[] = []
-    const failures: string[] = []
-    let belowSma200 = 0
-    for (let i = 0; i < settled.length; i++) {
-      const r = settled[i]!
-      const ticker = universe[i]!.ticker
-      if (r.status === 'fulfilled') {
-        // Hard gate: below daily 200 SMA is not a valid setup — exclude from ideas list.
-        if (!r.value.aboveSma200) {
-          belowSma200 += 1
-          continue
-        }
-        ideas.push(r.value)
-      } else {
-        const msg = r.reason instanceof Error ? r.reason.message : String(r.reason)
-        failures.push(`${ticker}: ${msg}`)
-      }
+    // Server owns the Yahoo Stage-1 + deep Stage-2 scan; UI only reads the cache.
+    const res = await fetch('/api/market/dashboard')
+    const body = (await res.json()) as DashboardData & {
+      error?: string
+      status?: unknown
     }
-
-    if (!ideas.length) {
-      if (failures.length === universe.length) {
-        throw new Error(
-          `Could not load live data — all ${universe.length} symbols failed. ${failures.slice(0, 3).join(' | ')}`,
-        )
-      }
+    if (res.status === 503) {
       throw new Error(
-        `No valid setups: ${belowSma200} below 200 SMA, ${failures.length} fetch failures (hard trend gate).`,
+        body.error ||
+          'Live scan cache is warming up — click Refresh in a minute (server-side Yahoo screen in progress).',
       )
     }
-
-    // Earnings proximity overlay (Finnhub calendar → Nasdaq). Avoid → not A+.
-    try {
-      const earnMap = await fetchLiveEarningsBatch(ideas.map((i) => i.ticker))
-      for (let i = 0; i < ideas.length; i++) {
-        const t = ideas[i]!.ticker.toUpperCase()
-        const date = earnMap.has(t) ? earnMap.get(t)! : null
-        ideas[i] = applyEarningsToIdea(ideas[i]!, date)
-      }
-    } catch {
-      // Leave default clear earnings if calendar fails — still live bars.
+    if (!res.ok) {
+      throw new Error(body.error || `Dashboard cache failed (${res.status})`)
     }
-
+    if (!body.ideas?.length) {
+      throw new Error('Live scan cache returned no ideas')
+    }
     return {
+      ...body,
       source: 'live',
-      asOf: new Date().toISOString(),
-      groups: buildGroups(ideas),
-      ideas,
-      marketRegime,
-      scanUniverseSize: universe.length,
-      scanHitCount: ideas.length,
-      scanFailCount: failures.length,
-      scanBelow200Count: belowSma200,
     }
   }
 }
+
 
 function resolveAdapter(): MarketDataAdapter {
   const mode = (import.meta.env.VITE_MARKET_DATA_MODE as string | undefined) ?? 'live'

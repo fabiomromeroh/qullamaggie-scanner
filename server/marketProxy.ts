@@ -10,6 +10,8 @@
  */
 import { readFileSync, existsSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { getScanRuntimeStatus, loadScanCache } from './scanCache.ts'
+import { kickScanOnBoot, triggerScan } from './scanEngine.ts'
 
 export interface DailyBar {
   t: number
@@ -379,40 +381,45 @@ function setCachedSnapshot(symbol: string, snap: SymbolSnapshot): void {
   snapshotCache.set(symbol, { at: Date.now(), snap })
 }
 
-export async function fetchSymbolSnapshot(symbol: string): Promise<SymbolSnapshot> {
+export async function fetchSymbolSnapshot(
+  symbol: string,
+  opts?: { preferYahoo?: boolean },
+): Promise<SymbolSnapshot> {
   const sym = symbol.trim().toUpperCase()
   const cached = getCachedSnapshot(sym)
   if (cached) return cached
 
   const errors: string[] = []
   const key = getFinnhubKey()
+  const preferYahoo = Boolean(opts?.preferYahoo)
 
-  if (key) {
-    try {
-      const snap = await fromFinnhub(sym, key)
-      setCachedSnapshot(sym, snap)
-      return snap
-    } catch (err) {
-      errors.push(`finnhub: ${err instanceof Error ? err.message : String(err)}`)
-    }
-  } else {
-    errors.push('finnhub: no API key (FINNHUB_API_KEY)')
-  }
-
-  try {
+  const tryYahoo = async () => {
     const snap = await fromYahoo(sym)
     setCachedSnapshot(sym, snap)
     return snap
-  } catch (err) {
-    errors.push(`yahoo: ${err instanceof Error ? err.message : String(err)}`)
   }
-
-  try {
+  const tryFinnhub = async () => {
+    if (!key) throw new Error('no API key (FINNHUB_API_KEY)')
+    const snap = await fromFinnhub(sym, key)
+    setCachedSnapshot(sym, snap)
+    return snap
+  }
+  const tryStooq = async () => {
     const snap = await fromStooq(sym)
     setCachedSnapshot(sym, snap)
     return snap
-  } catch (err) {
-    errors.push(`stooq: ${err instanceof Error ? err.message : String(err)}`)
+  }
+
+  const order = preferYahoo
+    ? [ ['yahoo', tryYahoo], ['finnhub', tryFinnhub], ['stooq', tryStooq] ] as const
+    : [ ['finnhub', tryFinnhub], ['yahoo', tryYahoo], ['stooq', tryStooq] ] as const
+
+  for (const [label, fn] of order) {
+    try {
+      return await fn()
+    } catch (err) {
+      errors.push(`${label}: ${err instanceof Error ? err.message : String(err)}`)
+    }
   }
 
   throw new Error(`All providers failed for ${sym}: ${errors.join('; ')}`)
@@ -720,6 +727,54 @@ export function createMarketMiddleware() {
         return
       }
 
+
+if (url.pathname === '/api/market/dashboard') {
+        const cache = loadScanCache()
+        if (!cache) {
+          void triggerScan('dashboard-miss')
+          res.statusCode = 503
+          res.end(
+            JSON.stringify({
+              error: 'Scan cache empty — background scan started',
+              status: getScanRuntimeStatus(),
+            }),
+          )
+          return
+        }
+        const { meta, ...dashboard } = cache
+        res.statusCode = 200
+        res.end(
+          JSON.stringify({
+            ...dashboard,
+            stage1Source: meta?.stage1Source,
+            stage1Count: meta?.stage1Count,
+            shortlistCount: meta?.shortlistCount,
+            emergencyFallback: meta?.emergencyFallback,
+            scanDurationMs: meta?.scanDurationMs,
+            stage1Filters: meta?.stage1Filters,
+          }),
+        )
+        return
+      }
+
+      if (url.pathname === '/api/market/scan/status') {
+        res.statusCode = 200
+        res.end(JSON.stringify(getScanRuntimeStatus()))
+        return
+      }
+
+      if (
+        (url.pathname === '/api/market/scan/refresh' ||
+          url.pathname === '/api/market/scan/refresh/') &&
+        (req.method === 'POST' || req.method === 'GET')
+      ) {
+        const result = await triggerScan('client-refresh')
+        res.statusCode =
+          result.started && result.status !== 'already-scanning' ? 202 : 200
+        res.end(JSON.stringify({ ...result, statusDetail: getScanRuntimeStatus() }))
+        return
+      }
+
       res.statusCode = 404
       res.end(JSON.stringify({ error: 'Not found' }))
     } catch (err) {
@@ -731,4 +786,9 @@ export function createMarketMiddleware() {
       )
     }
   }
+}
+
+/** Call from prod server listen / Vite configureServer — not at import time. */
+export function startBackgroundScanIfNeeded(): void {
+  kickScanOnBoot()
 }

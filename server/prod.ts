@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url'
 import {
   createMarketMiddleware,
   getFinnhubKey,
+  startBackgroundScanIfNeeded,
 } from './marketProxy.ts'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -144,6 +145,8 @@ async function main(): Promise<void> {
   })
 
   const keyPresent = Boolean(getFinnhubKey())
+  startBackgroundScanIfNeeded()
+
   console.log(
     JSON.stringify({
       ready: true,

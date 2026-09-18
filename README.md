@@ -50,25 +50,68 @@ If the key is missing or Finnhub errors/rate-limits, the proxy falls through the
 
 ## How scanning works
 
-1. **Universe** — `SCAN_UNIVERSE` in `src/data/watchlist.ts` (~100 liquid US names across semis, software, cyber, aero, biotech, retail, fintech, energy). This is broader than a fixed personal watchlist.  
-2. **Fetch** — client requests `/api/market/snapshot?symbol=…` with **concurrency 2** and **~200 ms gap** (`SCAN_CONCURRENCY` / `SCAN_GAP_MS`).  
-3. **Cascade (server)** — Finnhub → Yahoo (unofficial) → Stooq.  
-4. **Cache** — in-memory snapshot TTL (**10 minutes** by default; override with `MARKET_CACHE_TTL_MS`). Refresh within the window reuses bars (Finnhub free-tier friendly).  
-5. **Score** — `src/lib/metrics.ts` computes priorRunPct, tightDays, baseLengthDays, MA surfers, ADR, DolVol, above 200/50, kyleScore, A+.  
-6. **Earnings** — after the bar scan, `/api/market/earnings/batch` overlays Finnhub earnings calendar (Nasdaq fallback); `avoid` names are never tradeable A+.  
-7. **Stage** — `src/lib/setupStage.ts` assigns readiness (see below). Names **below 200 SMA are excluded** from results.  
-8. **Watchlist** — UI pins + **auto-add** when `kyleScore ≥ 4` and stage is `coiled` or `triggering` (see `AUTO_ADD_MIN_KYLE_SCORE`). Persisted in **localStorage**; optional seed file `src/data/userWatchlist.json`.
+Two-stage **server-side** scan. The browser never walks thousands of symbols on page load — it only reads `GET /api/market/dashboard` (file cache).
+
+### Stage 1 — Yahoo EquityQuery screener (universe)
+
+Unofficial Yahoo Finance screener POST (`/v1/finance/screener`) with cookie + crumb, paginated at ≤250 rows.
+
+| Filter | Value | Notes |
+|--------|-------|--------|
+| Region | `us` | US listings |
+| Quote type | `EQUITY` | **No ETFs / funds** |
+| Price | `intradayprice > 5` | Min price **above $5** |
+| Liquidity | `avgdailyvol3m ≥ 750_000` | Mid-band of 500k–1M avg share volume |
+| Exchanges | NMS, NYQ, NGM, NCM | Nasdaq + NYSE |
+| Cap | 800 names | `SCAN_STAGE1_CAP` (deep-scan budget) |
+
+If the custom screener fails (crumb / 401 / empty), Stage 1 falls back to Yahoo **predefined** screens (most actives / gainers / losers / etc.), still equity-filtered.
+
+Observed in a workspace smoke test (2026-09-18): custom EquityQuery returned crumb **429**, predefined fallback still produced **~608** liquid equities (≫ emergency ~100 list). On Render, crumb often works and EquityQuery pagination applies.
+
+If that also fails, Stage 1 uses the tiny emergency `SCAN_UNIVERSE` (~100 names) and labels the dashboard **Emergency universe**.
+
+### Stage 2 — deep metrics on survivors only
+
+For each Stage-1 survivor (Yahoo-first cascade: Yahoo → Finnhub → Stooq):
+
+1. Daily bars → Kyle / Qullamaggie proxies (`computeIdeaMetrics`)
+2. Hard gate: **above daily 200 SMA** or excluded
+3. Earnings overlay (Finnhub calendar → Nasdaq)
+4. Dynamic industry groups from Yahoo sector/industry (static `WATCHLIST_GROUPS` when ticker is known)
+5. QQQ regime from live bars
+
+Results are written to `data/scan-cache.json` (gitignored). Default staleness **45 minutes** (`SCAN_CACHE_STALE_MS`).
+
+### API
+
+| Endpoint | Role |
+|----------|------|
+| `GET /api/market/dashboard` | Cached dashboard JSON (fast UI) |
+| `GET /api/market/scan/status` | Scanning flag, cache age, Stage-1 counts |
+| `POST /api/market/scan/refresh` | Kick background rescan (lock; 202 if started) |
+| `GET /api/market/health` | Key presence + cascade (no secrets) |
+| `GET /api/market/snapshot?symbol=` | On-demand single-symbol cascade |
+
+On server boot: load cache; if missing/stale, start a background scan. UI **Refresh** triggers `POST /api/market/scan/refresh` then reloads the cache.
 
 ### Rate limits / free tier
 
 | Lever | Default | Notes |
 |-------|---------|--------|
-| Client concurrency | 2 | Keep low for Finnhub free tier |
-| Client gap | 200 ms | Between symbol requests |
+| Stage 1 | Yahoo screener | Avoids Finnhub 60/min for universe pass |
+| Stage 2 concurrency | 3 | `SCAN_STAGE2_CONCURRENCY` |
+| Stage 2 gap | 150 ms | `SCAN_STAGE2_GAP_MS` |
 | Snapshot cache TTL | 10 min | `MARKET_CACHE_TTL_MS` |
-| Cascade | Finnhub → Yahoo → Stooq | Yahoo/Stooq unofficial |
+| Scan cache stale | 45 min | `SCAN_CACHE_STALE_MS` |
+| Cascade | Yahoo-first on bulk scan | Finnhub still used when helpful |
 
-Health: `GET /api/market/health` reports key presence (length only), cascade, earnings cascade, and cache size — **not** the key value. Earnings: `GET /api/market/earnings?symbol=` and `GET /api/market/earnings/batch?symbols=`.
+### Limitations
+
+- Yahoo screener / chart endpoints are **unofficial** and may break or rate-limit (crumb 429).
+- Stage-1 liquidity uses **share volume**, not dollar volume (Yahoo screener field `avgdailyvol3m`).
+- Stage-1 is capped (~800) so Stage-2 finishes within free-tier budgets on Render.
+- Near-high / momentum narrowing is intentionally light in Stage 1 so coiled bases are not missed; Stage 2 + UI filters refine.
 
 ## Setup readiness stages
 
@@ -133,18 +176,20 @@ Use only for local UI work. Default when unset: **`live`**.
 | `src/lib/metrics.ts` | RVOL, ADR%, SMAs, Kyle proxies, A+ |
 | `src/lib/setupStage.ts` | watching / coiled / triggering |
 | `src/lib/userWatchlistStore.ts` | localStorage pin + auto-add |
+| `server/yahooScreener.ts` | Stage-1 Yahoo EquityQuery client (crumb + pagination) |
+| `server/scanEngine.ts` | Stage-1→2 orchestration + cache writer |
+| `server/scanCache.ts` | `data/scan-cache.json` load/save + scan lock |
 | `server/marketProxy.ts` | Cascade + TTL cache + Vite middleware |
 | `src/hooks/useDashboard.ts` | Load + filters + stage sort |
 | `src/components/WatchlistPanel.tsx` | Dynamic watchlist UI |
 | `src/components/*` | Header, table, filters, drawer |
 
-## How to extend the scan universe
+## How to extend / tune the scan
 
-1. Open `src/data/watchlist.ts`.  
-2. Ensure the industry group exists in `WATCHLIST_GROUPS` (or add one).  
-3. Append `{ ticker, name, groupId }` to `SCAN_UNIVERSE`.  
-4. Keep free-tier friendly: prefer liquid names; rely on cache + low concurrency.  
-5. **Catalysts** stay `null` from market APIs — fill later via brief/notes.  
+1. **Liquidity / price** — env `SCAN_MIN_AVG_VOL` (default 750000), `SCAN_MIN_PRICE` (default 5), `SCAN_STAGE1_CAP` (default 800).
+2. **Staleness** — `SCAN_CACHE_STALE_MS` (default 45m).
+3. **Emergency list** — edit `SCAN_UNIVERSE` in `src/data/watchlist.ts` only as a last-resort fallback.
+4. **Catalysts** stay `null` from market APIs — fill later via notes.
 
 ## Metrics & A+ badge
 

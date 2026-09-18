@@ -104,3 +104,27 @@ export async function fetchLiveEarningsBatch(
   }
   return map
 }
+
+
+/** Read server scan cache (Stage-1 Yahoo + Stage-2 deep metrics). */
+export async function fetchDashboardCache(): Promise<unknown> {
+  const res = await fetch('/api/market/dashboard')
+  const body = await res.json()
+  if (!res.ok) {
+    const err = body as { error?: string }
+    throw new Error(err.error || `Dashboard cache failed (${res.status})`)
+  }
+  return body
+}
+
+/** Ask server to refresh the scan in the background. */
+export async function requestScanRefresh(): Promise<unknown> {
+  const res = await fetch('/api/market/scan/refresh', { method: 'POST' })
+  return res.json()
+}
+
+/** Poll scan status (scanning flag, cache age, stage-1 counts). */
+export async function fetchScanStatus(): Promise<unknown> {
+  const res = await fetch('/api/market/scan/status')
+  return res.json()
+}

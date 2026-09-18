@@ -28,3 +28,7 @@ dist-ssr
 !.env.example
 server/prod.mjs
 dist-server
+
+# Server scan cache (regenerated at runtime)
+data/scan-cache.json
+data/*.tmp

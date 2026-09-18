@@ -42,9 +42,18 @@ export function useDashboard() {
 
   const { ingestScanIdeas, ...userWatchlistRest } = useUserWatchlist()
 
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (opts?: { refreshScan?: boolean }) => {
     setLoading(true)
     setError(null)
+    // Initial page load reads cache only. Explicit Refresh asks the server to rescan.
+    if (opts?.refreshScan) {
+      try {
+        await fetch('/api/market/scan/refresh', { method: 'POST' })
+        await new Promise((r) => setTimeout(r, 300))
+      } catch {
+        // Ignore trigger errors — cache read below reports the real problem.
+      }
+    }
     const result = await loadDashboardData()
     setMode(result.mode)
     if (result.ok) {

@@ -10,6 +10,9 @@ interface HeaderProps {
   source?: 'live' | 'demo'
   marketRegime?: MarketRegime | null
   scanUniverseSize?: number
+  stage1Count?: number
+  shortlistCount?: number
+  emergencyFallback?: boolean
   coiledCount?: number
   triggeringCount?: number
 }
@@ -23,6 +26,9 @@ export function Header({
   source,
   marketRegime,
   scanUniverseSize,
+  stage1Count,
+  shortlistCount,
+  emergencyFallback,
   coiledCount,
   triggeringCount,
 }: HeaderProps) {
@@ -99,6 +105,30 @@ export function Header({
                   Scan <span className="text-terminal-fg">{scanUniverseSize}</span>
                 </span>
                 <span className="text-terminal-border-bright">|</span>
+              </>
+            ) : null}
+            {typeof stage1Count === 'number' ? (
+              <>
+                <span className="text-terminal-border-bright">|</span>
+                <span title="Stage-1 Yahoo liquid universe size">
+                  Univ <span className="text-terminal-fg">{stage1Count}</span>
+                </span>
+              </>
+            ) : null}
+            {typeof shortlistCount === 'number' ? (
+              <>
+                <span className="text-terminal-border-bright">|</span>
+                <span title="Stage-2 deep-scan shortlist size">
+                  Deep <span className="text-terminal-fg">{shortlistCount}</span>
+                </span>
+              </>
+            ) : null}
+            {emergencyFallback ? (
+              <>
+                <span className="text-terminal-border-bright">|</span>
+                <span className="text-terminal-amber" title="Yahoo Stage-1 failed; using emergency fixed SCAN_UNIVERSE">
+                  Emergency universe
+                </span>
               </>
             ) : null}
             <span>
