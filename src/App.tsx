@@ -4,9 +4,11 @@ import { FiltersBar } from './components/FiltersBar'
 import { GroupStrength } from './components/GroupStrength'
 import { Header } from './components/Header'
 import { IdeasTable } from './components/IdeasTable'
+import { ResizeHandle } from './components/ResizeHandle'
 import { StatusBanner } from './components/StatusBanner'
 import { WatchlistPanel } from './components/WatchlistPanel'
 import { useDashboard } from './hooks/useDashboard'
+import { useResizablePanels } from './hooks/useResizablePanels'
 
 export default function App() {
   const {
@@ -26,6 +28,8 @@ export default function App() {
     userWatchlist,
   } = useDashboard()
 
+  const { widths: panelWidths, resizeGroups, resizeWatchlist } = useResizablePanels()
+
   const aPlusCount = filteredIdeas.filter((i) => i.isAPlus).length
   const coiledCount = filteredIdeas.filter((i) => i.setupStage === 'coiled').length
   const triggeringCount = filteredIdeas.filter((i) => i.setupStage === 'triggering').length
@@ -38,6 +42,11 @@ export default function App() {
     }
     return map
   }, [data?.ideas])
+
+  const panelStyle = {
+    ['--panel-groups' as string]: `${panelWidths.groups}px`,
+    ['--panel-watchlist' as string]: `${panelWidths.watchlist}px`,
+  }
 
   return (
     /* Mobile: min-h-dvh + document scroll. Desktop (lg): locked h-dvh panel layout. */
@@ -107,7 +116,7 @@ export default function App() {
             </span>
           </div>
         ) : data ? (
-          <div className="dashboard-body flex-1 lg:min-h-0">
+          <div className="dashboard-body flex-1 lg:min-h-0" style={panelStyle}>
             {/* Results first in DOM on mobile via CSS grid areas; groups stay above visually */}
             <aside className="dashboard-groups lg:h-full lg:min-h-0">
               <GroupStrength
@@ -116,6 +125,12 @@ export default function App() {
                 onSelectGroup={(id) => setFilters({ ...filters, groupId: id })}
               />
             </aside>
+
+            <ResizeHandle
+              variant="panel"
+              label="Resize Group Strength panel"
+              onDelta={resizeGroups}
+            />
 
             <section className="dashboard-results flex min-w-0 flex-col lg:h-full lg:min-h-0">
               <IdeasTable
@@ -128,6 +143,13 @@ export default function App() {
                 onTogglePin={userWatchlist.toggle}
               />
             </section>
+
+            <ResizeHandle
+              variant="panel"
+              label="Resize Watchlist panel"
+              invert
+              onDelta={resizeWatchlist}
+            />
 
             <aside className="dashboard-watchlist lg:h-full lg:min-h-0">
               <WatchlistPanel

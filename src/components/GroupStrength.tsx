@@ -1,9 +1,23 @@
-import { useEffect, useState } from 'react'
+import type { ReactNode } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import type { IndustryGroup } from '../types'
 import { fmtPct, pctClass } from '../utils/format'
+import { useResizableColumns } from '../hooks/useResizableColumns'
+import { ResizeHandle } from './ResizeHandle'
 
 const GROUPS_EXPAND_KEY = 'qm-groups-expanded'
+const GROUPS_COL_KEY = 'qm-groups-col-widths'
+
+const DEFAULT_COLS: Record<string, number> = {
+  rank: 36,
+  name: 148,
+  leaders: 58,
+  d1: 52,
+  m1: 52,
+  m3: 52,
+  m6: 52,
+}
 
 interface Props {
   groups: IndustryGroup[]
@@ -23,9 +37,47 @@ function readGroupsExpanded(): boolean {
   return false
 }
 
+function Th({
+  colKey,
+  width,
+  onResize,
+  className = '',
+  title,
+  children,
+  align = 'left',
+}: {
+  colKey: string
+  width: number
+  onResize: (key: string, dx: number) => void
+  className?: string
+  title?: string
+  children: ReactNode
+  align?: 'left' | 'right'
+}) {
+  return (
+    <th
+      className={`qm-th-resizable px-2 py-1.5 font-medium ${align === 'right' ? 'text-right' : ''} ${className}`}
+      style={{ width, minWidth: width, maxWidth: width }}
+      title={title}
+    >
+      {children}
+      <ResizeHandle
+        variant="col"
+        label={`Resize ${colKey} column`}
+        onDelta={(dx) => onResize(colKey, dx)}
+        className="hidden lg:block"
+      />
+    </th>
+  )
+}
+
 export function GroupStrength({ groups, selectedGroupId, onSelectGroup }: Props) {
-  const ranked = [...groups].sort((a, b) => a.rsRank - b.rsRank)
+  const ranked = useMemo(() => [...groups].sort((a, b) => a.rsRank - b.rsRank), [groups])
   const [stripOpen, setStripOpen] = useState(readGroupsExpanded)
+  const { widthOf, resizeColumn } = useResizableColumns(GROUPS_COL_KEY, DEFAULT_COLS, {
+    min: 36,
+    max: 320,
+  })
 
   useEffect(() => {
     try {
@@ -125,31 +177,57 @@ export function GroupStrength({ groups, selectedGroupId, onSelectGroup }: Props)
       </div>
 
       <div className="hidden min-h-0 flex-1 overflow-auto md:block">
-        <table className="w-full text-left text-xs">
+        <table className="w-full table-fixed text-left text-xs" style={{ minWidth: '100%' }}>
+          <colgroup>
+            <col style={{ width: widthOf('rank') }} />
+            <col style={{ width: widthOf('name') }} />
+            <col style={{ width: widthOf('leaders') }} />
+            <col style={{ width: widthOf('d1') }} />
+            <col style={{ width: widthOf('m1') }} />
+            <col style={{ width: widthOf('m3') }} />
+            <col style={{ width: widthOf('m6') }} />
+          </colgroup>
           <thead className="sticky top-0 bg-terminal-elevated text-[10px] uppercase tracking-wide text-terminal-dim">
             <tr>
-              <th className="px-2 py-1.5 font-medium">#</th>
-              <th className="px-2 py-1.5 font-medium">Group</th>
-              <th className="px-2 py-1.5 font-medium text-right">Leaders</th>
-              <th className="px-2 py-1.5 font-medium text-right">1D</th>
-              <th
-                className="px-2 py-1.5 font-medium text-right"
+              <Th colKey="rank" width={widthOf('rank')} onResize={resizeColumn}>
+                #
+              </Th>
+              <Th colKey="name" width={widthOf('name')} onResize={resizeColumn}>
+                Group
+              </Th>
+              <Th colKey="leaders" width={widthOf('leaders')} onResize={resizeColumn} align="right">
+                Leaders
+              </Th>
+              <Th colKey="d1" width={widthOf('d1')} onResize={resizeColumn} align="right">
+                1D
+              </Th>
+              <Th
+                colKey="m1"
+                width={widthOf('m1')}
+                onResize={resizeColumn}
+                align="right"
                 title="Avg member ~21 trading-day return"
               >
                 1M
-              </th>
-              <th
-                className="px-2 py-1.5 font-medium text-right"
+              </Th>
+              <Th
+                colKey="m3"
+                width={widthOf('m3')}
+                onResize={resizeColumn}
+                align="right"
                 title="Avg member ~63 trading-day return"
               >
                 3M
-              </th>
-              <th
-                className="px-2 py-1.5 font-medium text-right"
+              </Th>
+              <Th
+                colKey="m6"
+                width={widthOf('m6')}
+                onResize={resizeColumn}
+                align="right"
                 title="Avg member ~126 trading-day return"
               >
                 6M
-              </th>
+              </Th>
             </tr>
           </thead>
           <tbody>
@@ -164,9 +242,9 @@ export function GroupStrength({ groups, selectedGroupId, onSelectGroup }: Props)
                     active ? 'bg-terminal-blue/10' : ''
                   }`}
                 >
-                  <td className="px-2 py-1.5 font-mono text-terminal-dim">{g.rsRank}</td>
-                  <td className="px-2 py-1.5">
-                    <div className="font-medium text-terminal-fg">{g.name}</div>
+                  <td className="overflow-hidden px-2 py-1.5 font-mono text-terminal-dim">{g.rsRank}</td>
+                  <td className="overflow-hidden px-2 py-1.5">
+                    <div className="truncate font-medium text-terminal-fg">{g.name}</div>
                     <div className="mt-0.5 h-1 w-full max-w-[120px] overflow-hidden rounded-full bg-terminal-border">
                       <div
                         className="h-full rounded-full bg-gradient-to-r from-terminal-green/80 to-terminal-blue/80"
@@ -174,19 +252,19 @@ export function GroupStrength({ groups, selectedGroupId, onSelectGroup }: Props)
                       />
                     </div>
                   </td>
-                  <td className="px-2 py-1.5 text-right font-mono text-terminal-fg">
+                  <td className="overflow-hidden px-2 py-1.5 text-right font-mono text-terminal-fg">
                     {g.leaderCount}
                   </td>
-                  <td className={`px-2 py-1.5 text-right font-mono ${pctClass(g.dayPct)}`}>
+                  <td className={`overflow-hidden px-2 py-1.5 text-right font-mono ${pctClass(g.dayPct)}`}>
                     {fmtPct(g.dayPct)}
                   </td>
-                  <td className={`px-2 py-1.5 text-right font-mono ${pctClass(g.perf1m)}`}>
+                  <td className={`overflow-hidden px-2 py-1.5 text-right font-mono ${pctClass(g.perf1m)}`}>
                     {fmtPct(g.perf1m, 0)}
                   </td>
-                  <td className={`px-2 py-1.5 text-right font-mono ${pctClass(g.perf3m)}`}>
+                  <td className={`overflow-hidden px-2 py-1.5 text-right font-mono ${pctClass(g.perf3m)}`}>
                     {fmtPct(g.perf3m, 0)}
                   </td>
-                  <td className={`px-2 py-1.5 text-right font-mono ${pctClass(g.perf6m)}`}>
+                  <td className={`overflow-hidden px-2 py-1.5 text-right font-mono ${pctClass(g.perf6m)}`}>
                     {fmtPct(g.perf6m, 0)}
                   </td>
                 </tr>

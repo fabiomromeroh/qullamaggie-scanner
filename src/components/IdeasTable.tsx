@@ -1,7 +1,37 @@
+import type { CSSProperties, ReactNode } from 'react'
 import { Pin, PinOff } from 'lucide-react'
 import type { CharacteristicTag, EarningsStatus, SetupStage, TradingIdea } from '../types'
 import { stageLabel } from '../lib/setupStage'
 import { fmtDollarVol, fmtPct, fmtPrice, fmtRvol, pctClass } from '../utils/format'
+import { useResizableColumns } from '../hooks/useResizableColumns'
+import { ResizeHandle } from './ResizeHandle'
+
+const IDEAS_COL_KEY = 'qm-ideas-col-widths'
+
+const DEFAULT_IDEAS_COLS: Record<string, number> = {
+  pin: 36,
+  ticker: 72,
+  name: 120,
+  group: 100,
+  price: 64,
+  dayPct: 56,
+  rvol: 52,
+  adr: 52,
+  hi52: 64,
+  trend: 88,
+  surfer: 72,
+  priorRun: 72,
+  tight: 56,
+  m1: 48,
+  m3: 48,
+  dolVol: 64,
+  stage: 72,
+  setup: 110,
+  score: 64,
+  earn: 64,
+  catalyst: 120,
+  aPlus: 40,
+}
 
 interface Props {
   ideas: TradingIdea[]
@@ -269,6 +299,41 @@ function IdeaCard({
   )
 }
 
+
+function ResizableTh({
+  colKey,
+  width,
+  onResize,
+  className = '',
+  title,
+  children,
+  style,
+}: {
+  colKey: string
+  width: number
+  onResize: (key: string, dx: number) => void
+  className?: string
+  title?: string
+  children: ReactNode
+  style?: CSSProperties
+}) {
+  return (
+    <th
+      className={`qm-th-resizable px-2 py-2 font-medium ${className}`}
+      style={{ width, minWidth: width, ...style }}
+      title={title}
+    >
+      {children}
+      <ResizeHandle
+        variant="col"
+        label={`Resize ${colKey} column`}
+        onDelta={(dx) => onResize(colKey, dx)}
+        className="hidden lg:block"
+      />
+    </th>
+  )
+}
+
 export function IdeasTable({
   ideas,
   selectedTicker,
@@ -278,6 +343,15 @@ export function IdeasTable({
   isOnWatchlist,
   onTogglePin,
 }: Props) {
+  const { widthOf, resizeColumn } = useResizableColumns(IDEAS_COL_KEY, DEFAULT_IDEAS_COLS, {
+    min: 36,
+    max: 360,
+  })
+  const pinW = widthOf('pin')
+  const tickerW = widthOf('ticker')
+  const earnW = widthOf('earn')
+  const aPlusW = widthOf('aPlus')
+
   if (!ideas.length) {
     return (
       <div className="flex h-full min-h-[12rem] items-center justify-center rounded-lg border border-terminal-border bg-terminal-panel text-sm text-terminal-muted">
@@ -314,49 +388,194 @@ export function IdeasTable({
 
       {/* Desktop / tablet: full table with sticky ticker + earn/A+ */}
       <div className="hidden min-h-0 flex-1 overflow-auto md:block">
-        <table className="w-full text-left text-xs">
+        <table className="w-full table-fixed text-left text-xs" style={{ minWidth: '100%' }}>
           <thead className="sticky top-0 z-10 bg-terminal-elevated text-[10px] uppercase tracking-wide text-terminal-dim shadow-[0_1px_0_0_var(--color-terminal-border)]">
             <tr>
-              <th className="sticky left-0 z-20 bg-terminal-elevated px-2 py-2 font-medium w-8" title="Pin to dynamic watchlist">
+              <ResizableTh
+                colKey="pin"
+                width={pinW}
+                onResize={resizeColumn}
+                className="sticky left-0 z-20 bg-terminal-elevated"
+                style={{ left: 0 }}
+                title="Pin to dynamic watchlist"
+              >
                 ★
-              </th>
-              <th className="sticky left-8 z-20 bg-terminal-elevated px-2 py-2 font-medium">Ticker</th>
-              <th className="hidden px-2 py-2 font-medium xl:table-cell">Name</th>
-              <th className="hidden px-2 py-2 font-medium lg:table-cell">Group</th>
-              <th className="px-2 py-2 font-medium text-right">Price</th>
-              <th className="px-2 py-2 font-medium text-right">Day%</th>
-              <th className="px-2 py-2 font-medium text-right">RVOL</th>
-              <th className="hidden px-2 py-2 font-medium text-right lg:table-cell">ADR%</th>
-              <th className="hidden px-2 py-2 font-medium text-right lg:table-cell">% 52w Hi</th>
-              <th className="hidden px-2 py-2 font-medium xl:table-cell">Trend</th>
-              <th className="hidden px-2 py-2 font-medium xl:table-cell">Surfer</th>
-              <th
-                className="hidden px-2 py-2 font-medium text-right xl:table-cell"
+              </ResizableTh>
+              <ResizableTh
+                colKey="ticker"
+                width={tickerW}
+                onResize={resizeColumn}
+                className="sticky z-20 bg-terminal-elevated"
+                style={{ left: pinW }}
+              >
+                Ticker
+              </ResizableTh>
+              <ResizableTh
+                colKey="name"
+                width={widthOf('name')}
+                onResize={resizeColumn}
+                className="hidden xl:table-cell"
+              >
+                Name
+              </ResizableTh>
+              <ResizableTh
+                colKey="group"
+                width={widthOf('group')}
+                onResize={resizeColumn}
+                className="hidden lg:table-cell"
+              >
+                Group
+              </ResizableTh>
+              <ResizableTh
+                colKey="price"
+                width={widthOf('price')}
+                onResize={resizeColumn}
+                className="text-right"
+              >
+                Price
+              </ResizableTh>
+              <ResizableTh
+                colKey="dayPct"
+                width={widthOf('dayPct')}
+                onResize={resizeColumn}
+                className="text-right"
+              >
+                Day%
+              </ResizableTh>
+              <ResizableTh
+                colKey="rvol"
+                width={widthOf('rvol')}
+                onResize={resizeColumn}
+                className="text-right"
+              >
+                RVOL
+              </ResizableTh>
+              <ResizableTh
+                colKey="adr"
+                width={widthOf('adr')}
+                onResize={resizeColumn}
+                className="hidden text-right lg:table-cell"
+              >
+                ADR%
+              </ResizableTh>
+              <ResizableTh
+                colKey="hi52"
+                width={widthOf('hi52')}
+                onResize={resizeColumn}
+                className="hidden text-right lg:table-cell"
+              >
+                % 52w Hi
+              </ResizableTh>
+              <ResizableTh
+                colKey="trend"
+                width={widthOf('trend')}
+                onResize={resizeColumn}
+                className="hidden xl:table-cell"
+              >
+                Trend
+              </ResizableTh>
+              <ResizableTh
+                colKey="surfer"
+                width={widthOf('surfer')}
+                onResize={resizeColumn}
+                className="hidden xl:table-cell"
+              >
+                Surfer
+              </ResizableTh>
+              <ResizableTh
+                colKey="priorRun"
+                width={widthOf('priorRun')}
+                onResize={resizeColumn}
+                className="hidden text-right xl:table-cell"
                 title="Inc% BBO proxy: % from ~63d prior low into recent base high"
               >
                 Prior run%
-              </th>
-              <th className="hidden px-2 py-2 font-medium text-right xl:table-cell" title="Tight-days proxy (last 15)">
+              </ResizableTh>
+              <ResizableTh
+                colKey="tight"
+                width={widthOf('tight')}
+                onResize={resizeColumn}
+                className="hidden text-right xl:table-cell"
+                title="Tight-days proxy (last 15)"
+              >
                 Tight
-              </th>
-              <th className="hidden px-2 py-2 font-medium text-right xl:table-cell">1M</th>
-              <th className="hidden px-2 py-2 font-medium text-right xl:table-cell">3M</th>
-              <th className="hidden px-2 py-2 font-medium text-right xl:table-cell" title="Avg $ volume (DolVol)">
+              </ResizableTh>
+              <ResizableTh
+                colKey="m1"
+                width={widthOf('m1')}
+                onResize={resizeColumn}
+                className="hidden text-right xl:table-cell"
+              >
+                1M
+              </ResizableTh>
+              <ResizableTh
+                colKey="m3"
+                width={widthOf('m3')}
+                onResize={resizeColumn}
+                className="hidden text-right xl:table-cell"
+              >
+                3M
+              </ResizableTh>
+              <ResizableTh
+                colKey="dolVol"
+                width={widthOf('dolVol')}
+                onResize={resizeColumn}
+                className="hidden text-right xl:table-cell"
+                title="Avg $ volume (DolVol)"
+              >
                 DolVol
-              </th>
-              <th className="px-2 py-2 font-medium">Stage</th>
-              <th className="hidden px-2 py-2 font-medium lg:table-cell">Setup</th>
-              <th className="px-2 py-2 font-medium text-center" title="Heuristic kyleScore 3–5">
+              </ResizableTh>
+              <ResizableTh
+                colKey="stage"
+                width={widthOf('stage')}
+                onResize={resizeColumn}
+              >
+                Stage
+              </ResizableTh>
+              <ResizableTh
+                colKey="setup"
+                width={widthOf('setup')}
+                onResize={resizeColumn}
+                className="hidden lg:table-cell"
+              >
+                Setup
+              </ResizableTh>
+              <ResizableTh
+                colKey="score"
+                width={widthOf('score')}
+                onResize={resizeColumn}
+                className="text-center"
+                title="Heuristic kyleScore 3–5"
+              >
                 Score
-              </th>
-              <th
-                className="sticky right-12 z-20 bg-terminal-elevated px-2 py-2 font-medium"
+              </ResizableTh>
+              <ResizableTh
+                colKey="earn"
+                width={earnW}
+                onResize={resizeColumn}
+                className="sticky z-20 bg-terminal-elevated"
+                style={{ right: aPlusW }}
                 title="Earnings proximity: AVOID = same/next trading day"
               >
                 Earn
-              </th>
-              <th className="hidden px-2 py-2 font-medium xl:table-cell">Catalyst</th>
-              <th className="sticky right-0 z-20 bg-terminal-elevated px-2 py-2 font-medium text-center">A+</th>
+              </ResizableTh>
+              <ResizableTh
+                colKey="catalyst"
+                width={widthOf('catalyst')}
+                onResize={resizeColumn}
+                className="hidden xl:table-cell"
+              >
+                Catalyst
+              </ResizableTh>
+              <ResizableTh
+                colKey="aPlus"
+                width={aPlusW}
+                onResize={resizeColumn}
+                className="sticky right-0 z-20 bg-terminal-elevated text-center"
+                style={{ right: 0 }}
+              >
+                A+
+              </ResizableTh>
             </tr>
           </thead>
           <tbody>
@@ -372,7 +591,10 @@ export function IdeasTable({
                     selected ? 'ring-1 ring-inset ring-terminal-blue/50' : ''
                   } ${avoid ? 'opacity-90' : ''}`}
                 >
-                  <td className={`sticky left-0 z-[5] px-2 py-1.5 ${highlight || 'bg-terminal-panel'}`}>
+                  <td
+                    className={`sticky z-[5] overflow-hidden px-2 py-1.5 ${highlight || 'bg-terminal-panel'}`}
+                    style={{ left: 0, width: pinW, minWidth: pinW }}
+                  >
                     <PinButton
                       ticker={idea.ticker}
                       isPinned={isPinned}
@@ -380,33 +602,36 @@ export function IdeasTable({
                       onTogglePin={onTogglePin}
                     />
                   </td>
-                  <td className={`sticky left-8 z-[5] px-2 py-1.5 font-mono font-semibold text-terminal-fg ${highlight || 'bg-terminal-panel'}`}>
+                  <td
+                    className={`sticky z-[5] overflow-hidden px-2 py-1.5 font-mono font-semibold text-terminal-fg ${highlight || 'bg-terminal-panel'}`}
+                    style={{ left: pinW, width: tickerW, minWidth: tickerW }}
+                  >
                     {idea.ticker}
                   </td>
-                  <td className="hidden max-w-[120px] truncate px-2 py-1.5 text-terminal-muted xl:table-cell">
+                  <td className="hidden truncate px-2 py-1.5 text-terminal-muted xl:table-cell">
                     {idea.name}
                   </td>
-                  <td className="hidden max-w-[110px] truncate px-2 py-1.5 text-terminal-muted lg:table-cell">
+                  <td className="hidden truncate px-2 py-1.5 text-terminal-muted lg:table-cell">
                     {idea.groupName}
                   </td>
-                  <td className="px-2 py-1.5 text-right font-mono text-terminal-fg">
+                  <td className="overflow-hidden px-2 py-1.5 text-right font-mono text-terminal-fg">
                     {fmtPrice(idea.price)}
                   </td>
-                  <td className={`px-2 py-1.5 text-right font-mono ${pctClass(idea.dayPct)}`}>
+                  <td className={`overflow-hidden px-2 py-1.5 text-right font-mono ${pctClass(idea.dayPct)}`}>
                     {fmtPct(idea.dayPct)}
                   </td>
                   <td
-                    className={`px-2 py-1.5 text-right font-mono ${
+                    className={`overflow-hidden px-2 py-1.5 text-right font-mono ${
                       idea.rvol >= 1.5 ? 'text-terminal-amber' : 'text-terminal-fg'
                     }`}
                   >
                     {fmtRvol(idea.rvol)}
                   </td>
-                  <td className="hidden px-2 py-1.5 text-right font-mono text-terminal-fg lg:table-cell">
+                  <td className="hidden overflow-hidden px-2 py-1.5 text-right font-mono text-terminal-fg lg:table-cell">
                     {idea.adrPct.toFixed(1)}%
                   </td>
                   <td
-                    className={`hidden px-2 py-1.5 text-right font-mono lg:table-cell ${
+                    className={`hidden overflow-hidden px-2 py-1.5 text-right font-mono lg:table-cell ${
                       Math.abs(idea.pctFrom52wHigh) <= 5
                         ? 'text-terminal-green'
                         : 'text-terminal-muted'
@@ -414,44 +639,47 @@ export function IdeasTable({
                   >
                     {fmtPct(idea.pctFrom52wHigh)}
                   </td>
-                  <td className="hidden px-2 py-1.5 xl:table-cell">
+                  <td className="hidden overflow-hidden px-2 py-1.5 xl:table-cell">
                     <TrendBadges idea={idea} />
                   </td>
-                  <td className="hidden px-2 py-1.5 xl:table-cell">
+                  <td className="hidden overflow-hidden px-2 py-1.5 xl:table-cell">
                     <SurferBadges idea={idea} />
                   </td>
-                  <td className={`hidden px-2 py-1.5 text-right font-mono xl:table-cell ${pctClass(idea.priorRunPct)}`}>
+                  <td className={`hidden overflow-hidden px-2 py-1.5 text-right font-mono xl:table-cell ${pctClass(idea.priorRunPct)}`}>
                     {fmtPct(idea.priorRunPct, 0)}
                   </td>
                   <td
-                    className="hidden px-2 py-1.5 text-right font-mono text-terminal-muted xl:table-cell"
+                    className="hidden overflow-hidden px-2 py-1.5 text-right font-mono text-terminal-muted xl:table-cell"
                     title={`tightDays=${idea.tightDays} · baseLengthDays=${idea.baseLengthDays}`}
                   >
                     {idea.tightDays}
                     <span className="text-terminal-dim">/{idea.baseLengthDays}</span>
                   </td>
-                  <td className={`hidden px-2 py-1.5 text-right font-mono xl:table-cell ${pctClass(idea.perf1M)}`}>
+                  <td className={`hidden overflow-hidden px-2 py-1.5 text-right font-mono xl:table-cell ${pctClass(idea.perf1M)}`}>
                     {fmtPct(idea.perf1M, 0)}
                   </td>
-                  <td className={`hidden px-2 py-1.5 text-right font-mono xl:table-cell ${pctClass(idea.perf3M)}`}>
+                  <td className={`hidden overflow-hidden px-2 py-1.5 text-right font-mono xl:table-cell ${pctClass(idea.perf3M)}`}>
                     {fmtPct(idea.perf3M, 0)}
                   </td>
-                  <td className="hidden px-2 py-1.5 text-right font-mono text-terminal-muted xl:table-cell">
+                  <td className="hidden overflow-hidden px-2 py-1.5 text-right font-mono text-terminal-muted xl:table-cell">
                     {fmtDollarVol(idea.dollarVolume || idea.avgDollarVol)}
                   </td>
-                  <td className="px-2 py-1.5">
+                  <td className="overflow-hidden px-2 py-1.5">
                     <StageBadge stage={idea.setupStage} />
                   </td>
-                  <td className="hidden px-2 py-1.5 lg:table-cell">
+                  <td className="hidden overflow-hidden px-2 py-1.5 lg:table-cell">
                     <SetupBadge type={idea.setupType} />
                   </td>
-                  <td className="px-2 py-1.5 text-center">
+                  <td className="overflow-hidden px-2 py-1.5 text-center">
                     <KyleStars score={idea.kyleScore} />
                   </td>
-                  <td className={`sticky right-12 z-[5] px-2 py-1.5 ${highlight || 'bg-terminal-panel'}`}>
+                  <td
+                    className={`sticky z-[5] overflow-hidden px-2 py-1.5 ${highlight || 'bg-terminal-panel'}`}
+                    style={{ right: aPlusW, width: earnW, minWidth: earnW }}
+                  >
                     <EarningsBadge idea={idea} />
                   </td>
-                  <td className="hidden max-w-[140px] truncate px-2 py-1.5 xl:table-cell">
+                  <td className="hidden truncate px-2 py-1.5 xl:table-cell">
                     {idea.catalyst ? (
                       <span className="text-terminal-green" title={idea.catalyst}>
                         {idea.catalyst}
@@ -460,7 +688,10 @@ export function IdeasTable({
                       <span className="text-terminal-dim">—</span>
                     )}
                   </td>
-                  <td className={`sticky right-0 z-[5] px-2 py-1.5 text-center ${highlight || 'bg-terminal-panel'}`}>
+                  <td
+                    className={`sticky right-0 z-[5] overflow-hidden px-2 py-1.5 text-center ${highlight || 'bg-terminal-panel'}`}
+                    style={{ right: 0, width: aPlusW, minWidth: aPlusW }}
+                  >
                     <APlusCell idea={idea} />
                   </td>
                 </tr>

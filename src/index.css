@@ -66,6 +66,75 @@
   }
 }
 
+/* While dragging, avoid text selection + show resize cursor globally */
+body.qm-resizing {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+body.qm-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
+/* --- Resize handles (desktop only; parent also toggles visibility) --- */
+.qm-resize-handle {
+  touch-action: none;
+  flex-shrink: 0;
+}
+.qm-resize-handle--panel {
+  display: none;
+  width: 6px;
+  margin: 0 -3px;
+  position: relative;
+  z-index: 20;
+  cursor: col-resize;
+  align-self: stretch;
+}
+.qm-resize-handle--panel::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  background: transparent;
+  border-radius: 1px;
+  transition: background 0.15s ease;
+}
+.qm-resize-handle--panel:hover::after,
+.qm-resize-handle--panel:active::after,
+body.qm-resizing .qm-resize-handle--panel::after {
+  background: var(--color-terminal-blue);
+  opacity: 0.7;
+}
+
+.qm-resize-handle--col {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 5;
+}
+.qm-resize-handle--col::after {
+  content: "";
+  position: absolute;
+  top: 20%;
+  bottom: 20%;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  background: transparent;
+  border-radius: 1px;
+}
+.qm-resize-handle--col:hover::after,
+.qm-resize-handle--col:active::after {
+  background: var(--color-terminal-blue);
+  opacity: 0.8;
+}
+
 /* Mobile-first: single column, content-sized rows, results dominate */
 .dashboard-body {
   display: grid;
@@ -103,7 +172,7 @@
   }
 }
 
-/* Desktop: locked viewport panels (unchanged behavior) */
+/* Desktop: locked viewport panels + resizable columns via CSS vars */
 @media (min-width: 1024px) {
   html,
   body,
@@ -113,30 +182,47 @@
   }
 
   .dashboard-body {
+    display: flex;
+    flex-direction: row;
     flex: 1;
     min-height: 0;
-    grid-template-columns: minmax(220px, 250px) minmax(0, 1fr) minmax(240px, 280px);
-    grid-template-rows: minmax(0, 1fr);
-    grid-template-areas: "groups results watchlist";
-    gap: 0.75rem;
+    gap: 0;
   }
 
   .dashboard-groups {
+    grid-area: unset;
     max-height: none;
     height: 100%;
     min-height: 0;
+    width: var(--panel-groups, 340px);
+    flex: 0 0 var(--panel-groups, 340px);
+    min-width: 0;
   }
 
-  .dashboard-results,
-  .dashboard-watchlist {
+  .dashboard-results {
+    grid-area: unset;
     height: 100%;
     min-height: 0;
+    flex: 1 1 auto;
+    min-width: 360px;
+  }
+
+  .dashboard-watchlist {
+    grid-area: unset;
+    height: 100%;
+    min-height: 0;
+    width: var(--panel-watchlist, 280px);
+    flex: 0 0 var(--panel-watchlist, 280px);
+    min-width: 0;
+  }
+
+  .qm-resize-handle--panel {
+    display: block;
   }
 }
 
-/* Extra-wide desktops: slightly wider side panels; center still takes the rest */
-@media (min-width: 1536px) {
-  .dashboard-body {
-    grid-template-columns: minmax(240px, 280px) minmax(0, 1fr) minmax(260px, 320px);
-  }
+/* Table header cells that host column resize handles */
+th.qm-th-resizable {
+  position: relative;
+  overflow: visible;
 }
