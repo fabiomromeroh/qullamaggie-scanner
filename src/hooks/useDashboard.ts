@@ -1,9 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { loadDashboardData } from '../adapters/marketData'
+import { fetchScanStatus } from '../adapters/providers/liveFetch'
 import { stageSortRank } from '../lib/setupStage'
 import type { DashboardData, IdeaFilters, TradingIdea } from '../types'
 import { DEFAULT_FILTERS } from '../types'
 import { useUserWatchlist } from './useUserWatchlist'
+
+const SCAN_POLL_MS = 3000
+const SCAN_POLL_CAP_MS = 3 * 60 * 1000
 
 function matchesFilters(idea: TradingIdea, f: IdeaFilters): boolean {
   // Hard gate: never show names below the daily 200-SMA as setups.
@@ -36,11 +40,17 @@ export function useDashboard() {
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [scanning, setScanning] = useState(false)
+  const [scanMessage, setScanMessage] = useState<string | null>(null)
   const [mode, setMode] = useState<'live' | 'demo'>('live')
   const [filters, setFilters] = useState<IdeaFilters>({ ...DEFAULT_FILTERS })
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null)
 
   const { ingestScanIdeas, ...userWatchlistRest } = useUserWatchlist()
+  const pollStartedAt = useRef<number | null>(null)
+  const reloadRef = useRef<(opts?: { refreshScan?: boolean }) => Promise<void>>(
+    async () => undefined,
+  )
 
   const reload = useCallback(async (opts?: { refreshScan?: boolean }) => {
     setLoading(true)
@@ -59,18 +69,106 @@ export function useDashboard() {
     if (result.ok) {
       setData(result.data)
       setError(null)
+      setScanning(false)
+      setScanMessage(null)
+      pollStartedAt.current = null
       ingestScanIdeas(result.data.ideas)
+    } else if (result.scanning) {
+      // Cold start: do not treat as fatal LIVE ERROR — poll until cache is ready.
+      setData(null)
+      setError(null)
+      setScanning(true)
+      setScanMessage(result.error || 'Scanning US market…')
+      setSelectedTicker(null)
+      if (pollStartedAt.current == null) {
+        pollStartedAt.current = Date.now()
+      }
     } else {
       setData(null)
       setError(result.error)
+      setScanning(false)
+      setScanMessage(null)
+      pollStartedAt.current = null
       setSelectedTicker(null)
     }
     setLoading(false)
   }, [ingestScanIdeas])
 
+  reloadRef.current = reload
+
   useEffect(() => {
     void reload()
   }, [reload])
+
+  // Poll scan status while warming; cap ~3 min then surface a clear retry.
+  useEffect(() => {
+    if (!scanning) return
+
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout> | null = null
+
+    const tick = async () => {
+      if (cancelled) return
+      const started = pollStartedAt.current ?? Date.now()
+      if (pollStartedAt.current == null) pollStartedAt.current = started
+      const elapsed = Date.now() - started
+
+      if (elapsed >= SCAN_POLL_CAP_MS) {
+        setScanning(false)
+        setScanMessage(null)
+        setError(
+          'Market scan is taking longer than expected. Click Retry — the server may still be warming on a free-tier cold start.',
+        )
+        pollStartedAt.current = null
+        return
+      }
+
+      try {
+        const status = await fetchScanStatus()
+        if (cancelled) return
+        const hasCache = Boolean(
+          status.hasCache ||
+            (status.cacheAsOf && status.cacheAgeMs != null),
+        )
+        if (!status.scanning && hasCache) {
+          await reloadRef.current()
+          return
+        }
+        if (!status.scanning && !hasCache) {
+          setScanning(false)
+          setScanMessage(null)
+          setError(
+            status.lastError ||
+              'Scan finished but cache is still empty. Click Retry to try again.',
+          )
+          pollStartedAt.current = null
+          return
+        }
+        setScanMessage(
+          status.stage1Count != null
+            ? `Scanning US market… Stage 1 found ${status.stage1Count} names`
+            : 'Scanning US market…',
+        )
+      } catch {
+        // Keep polling through transient status failures.
+      }
+
+      if (!cancelled) {
+        timer = setTimeout(() => {
+          void tick()
+        }, SCAN_POLL_MS)
+      }
+    }
+
+    timer = setTimeout(() => {
+      void tick()
+    }, SCAN_POLL_MS)
+
+    return () => {
+      cancelled = true
+      if (timer) clearTimeout(timer)
+    }
+  }, [scanning])
 
   const filteredIdeas = useMemo(() => {
     if (!data) return []
@@ -106,6 +204,8 @@ export function useDashboard() {
     data,
     loading,
     error,
+    scanning,
+    scanMessage,
     mode,
     filters,
     setFilters,

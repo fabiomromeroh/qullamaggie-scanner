@@ -1,6 +1,10 @@
 /**
  * Persistent scan-result cache for the dashboard.
  * Written by the server scan engine; read by GET /api/market/dashboard.
+ *
+ * Disk cache is lost on Render free restart/sleep. We also keep the last
+ * successful payload in process memory so a mid-process miss still serves
+ * data until the next rescan finishes.
  */
 import {
   existsSync,
@@ -40,6 +44,7 @@ export type ScanStatus = {
   lastError: string | null
   cacheAgeMs: number | null
   cacheAsOf: string | null
+  hasCache: boolean
   stage1Source: string | null
   stage1Count: number | null
   stage15Count: number | null
@@ -49,6 +54,9 @@ export type ScanStatus = {
 
 const DEFAULT_CACHE_PATH = resolve(process.cwd(), 'data', 'scan-cache.json')
 const STALE_MS = Number(process.env.SCAN_CACHE_STALE_MS || 45 * 60 * 1000)
+
+/** Last successful dashboard kept in-process (survives disk wipe while process lives). */
+let memoryCache: ScanCachePayload | null = null
 
 export function cachePath(): string {
   return process.env.SCAN_CACHE_PATH
@@ -60,7 +68,7 @@ export function getStaleMs(): number {
   return STALE_MS
 }
 
-export function loadScanCache(): ScanCachePayload | null {
+function loadScanCacheFromDisk(): ScanCachePayload | null {
   const path = cachePath()
   if (!existsSync(path)) return null
   try {
@@ -73,7 +81,17 @@ export function loadScanCache(): ScanCachePayload | null {
   }
 }
 
+export function loadScanCache(): ScanCachePayload | null {
+  const fromDisk = loadScanCacheFromDisk()
+  if (fromDisk) {
+    memoryCache = fromDisk
+    return fromDisk
+  }
+  return memoryCache
+}
+
 export function saveScanCache(payload: ScanCachePayload): void {
+  memoryCache = payload
   const path = cachePath()
   mkdirSync(dirname(path), { recursive: true })
   const tmp = `${path}.${process.pid}.tmp`
@@ -112,6 +130,7 @@ export function getScanRuntimeStatus(): ScanStatus {
     lastError,
     cacheAgeMs: cacheAgeMs(cache),
     cacheAsOf: cache?.asOf ?? null,
+    hasCache: Boolean(cache?.ideas?.length),
     stage1Source: cache?.meta?.stage1Source ?? null,
     stage1Count: cache?.meta?.stage1Count ?? null,
     stage15Count: cache?.meta?.stage15Count ?? null,

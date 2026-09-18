@@ -8,6 +8,10 @@
  */
 import type { DashboardData } from '../types'
 import { DEMO_DASHBOARD } from '../data/demoData'
+import {
+  fetchDashboardCache,
+  ScanWarmingError,
+} from './providers/liveFetch'
 
 export interface MarketDataAdapter {
   readonly name: string
@@ -36,26 +40,18 @@ export class DemoMarketAdapter implements MarketDataAdapter {
   }
 }
 
-
-
 export class LiveMarketAdapter implements MarketDataAdapter {
   readonly name = 'live'
 
   async fetch(): Promise<DashboardData> {
     // Server owns the Yahoo Stage-1 + deep Stage-2 scan; UI only reads the cache.
-    const res = await fetch('/api/market/dashboard')
-    const body = (await res.json()) as DashboardData & {
+    const result = await fetchDashboardCache()
+    if (result.kind === 'scanning') {
+      throw new ScanWarmingError(result.message || 'Scanning US market…')
+    }
+    const body = result.body as DashboardData & {
       error?: string
       status?: unknown
-    }
-    if (res.status === 503) {
-      throw new Error(
-        body.error ||
-          'Live scan cache is warming up — click Refresh in a minute (server-side Yahoo screen in progress).',
-      )
-    }
-    if (!res.ok) {
-      throw new Error(body.error || `Dashboard cache failed (${res.status})`)
     }
     if (!body.ideas?.length) {
       throw new Error('Live scan cache returned no ideas')
@@ -66,7 +62,6 @@ export class LiveMarketAdapter implements MarketDataAdapter {
     }
   }
 }
-
 
 function resolveAdapter(): MarketDataAdapter {
   const mode = (import.meta.env.VITE_MARKET_DATA_MODE as string | undefined) ?? 'live'
@@ -81,6 +76,7 @@ export type LoadDashboardResult =
       usedFallback: false
       error: string | null
       mode: 'live' | 'demo'
+      scanning: false
     }
   | {
       ok: false
@@ -88,10 +84,20 @@ export type LoadDashboardResult =
       usedFallback: false
       error: string
       mode: 'live' | 'demo'
+      scanning: true
+    }
+  | {
+      ok: false
+      data: null
+      usedFallback: false
+      error: string
+      mode: 'live' | 'demo'
+      scanning: false
     }
 
 /**
  * Load dashboard data. Live failures return an error — never DEMO rows.
+ * Cold-start scanning is reported separately so the UI can poll without a LIVE ERROR.
  * Demo loads only when VITE_MARKET_DATA_MODE=demo.
  */
 export async function loadDashboardData(): Promise<LoadDashboardResult> {
@@ -99,15 +105,26 @@ export async function loadDashboardData(): Promise<LoadDashboardResult> {
   const mode = preferred.name === 'demo' ? 'demo' : 'live'
   try {
     const data = await preferred.fetch()
-    return { ok: true, data, usedFallback: false, error: null, mode }
+    return { ok: true, data, usedFallback: false, error: null, mode, scanning: false }
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown adapter error'
+    if (err instanceof ScanWarmingError || (err as { scanning?: boolean })?.scanning) {
+      return {
+        ok: false,
+        data: null,
+        usedFallback: false,
+        error: message,
+        mode,
+        scanning: true,
+      }
+    }
     return {
       ok: false,
       data: null,
       usedFallback: false,
       error: message,
       mode,
+      scanning: false,
     }
   }
 }

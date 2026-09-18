@@ -2,9 +2,11 @@ interface Props {
   mode: 'live' | 'demo'
   source?: 'live' | 'demo'
   error: string | null
+  scanning?: boolean
+  scanMessage?: string | null
 }
 
-export function StatusBanner({ mode, source, error }: Props) {
+export function StatusBanner({ mode, source, error, scanning, scanMessage }: Props) {
   if (mode === 'demo' || source === 'demo') {
     return (
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-terminal-amber/30 bg-terminal-amber-dim px-3 py-1.5 text-xs sm:gap-3 sm:px-4">
@@ -13,6 +15,19 @@ export function StatusBanner({ mode, source, error }: Props) {
         </span>
         <span className="min-w-0 text-terminal-amber">
           Explicit demo mode — seed data only, not live quotes.
+        </span>
+      </div>
+    )
+  }
+
+  if (scanning) {
+    return (
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-terminal-blue/40 bg-terminal-blue/10 px-3 py-1.5 text-xs sm:gap-3 sm:px-4">
+        <span className="rounded bg-terminal-blue px-1.5 py-0.5 font-mono font-bold tracking-wide text-terminal-bg">
+          SCANNING
+        </span>
+        <span className="min-w-0 text-terminal-muted">
+          {scanMessage || 'Scanning US market…'} Cold start on free tier can take 30–60s.
         </span>
       </div>
     )

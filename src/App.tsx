@@ -13,6 +13,8 @@ export default function App() {
     data,
     loading,
     error,
+    scanning,
+    scanMessage,
     mode,
     filters,
     setFilters,
@@ -40,7 +42,7 @@ export default function App() {
   return (
     /* Mobile: min-h-dvh + document scroll. Desktop (lg): locked h-dvh panel layout. */
     <div className="flex min-h-dvh flex-col lg:h-dvh lg:min-h-0 lg:overflow-hidden">
-      <StatusBanner mode={mode} source={data?.source} error={error} />
+      <StatusBanner mode={mode} source={data?.source} error={error} scanning={scanning} scanMessage={scanMessage} />
       <Header
         asOf={data?.asOf ?? new Date().toISOString()}
         ideaCount={filteredIdeas.length}
@@ -97,9 +99,12 @@ export default function App() {
       ) : null}
 
       <main className="mx-auto flex w-full max-w-none flex-1 flex-col p-2 sm:p-3 lg:min-h-0">
-        {loading && !data ? (
-          <div className="flex flex-1 items-center justify-center py-16 text-sm text-terminal-muted lg:py-0">
-            Scanning live universe for Kyle / Qullamaggie setups…
+        {(loading || scanning) && !data ? (
+          <div className="flex flex-1 flex-col items-center justify-center gap-2 py-16 text-sm text-terminal-muted lg:py-0">
+            <span>{scanMessage || 'Scanning US market…'}</span>
+            <span className="text-xs text-terminal-dim">
+              Free-tier cold start can take 30–60s while the background scan fills the cache.
+            </span>
           </div>
         ) : data ? (
           <div className="dashboard-body flex-1 lg:min-h-0">

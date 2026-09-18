@@ -1034,10 +1034,12 @@ if (url.pathname === '/api/market/dashboard') {
         const cache = loadScanCache()
         if (!cache) {
           void triggerScan('dashboard-miss')
-          res.statusCode = 503
+          // 202 Accepted: scan kicked off — not a fatal error for the UI.
+          res.statusCode = 202
           res.end(
             JSON.stringify({
-              error: 'Scan cache empty — background scan started',
+              scanning: true,
+              message: 'Scan cache empty — background scan started',
               status: getScanRuntimeStatus(),
             }),
           )

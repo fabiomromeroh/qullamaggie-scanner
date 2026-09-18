@@ -106,15 +106,69 @@ export async function fetchLiveEarningsBatch(
 }
 
 
+export class ScanWarmingError extends Error {
+  readonly scanning = true as const
+  constructor(message: string) {
+    super(message)
+    this.name = 'ScanWarmingError'
+  }
+}
+
+export interface ScanStatusPayload {
+  scanning: boolean
+  startedAt: string | null
+  finishedAt: string | null
+  lastError: string | null
+  cacheAgeMs: number | null
+  cacheAsOf: string | null
+  hasCache?: boolean
+  stage1Source: string | null
+  stage1Count: number | null
+  stage15Count: number | null
+  shortlistCount: number | null
+  emergencyFallback: boolean
+}
+
+export type DashboardCacheResult =
+  | { kind: 'ready'; body: unknown }
+  | { kind: 'scanning'; message: string; status?: ScanStatusPayload }
+
+function isScanningBody(body: unknown): body is {
+  scanning?: boolean
+  message?: string
+  error?: string
+  status?: ScanStatusPayload
+} {
+  return Boolean(body) && typeof body === 'object'
+}
+
 /** Read server scan cache (Stage-1 Yahoo + Stage-2 deep metrics). */
-export async function fetchDashboardCache(): Promise<unknown> {
+export async function fetchDashboardCache(): Promise<DashboardCacheResult> {
   const res = await fetch('/api/market/dashboard')
   const body = await res.json()
+  // Cold start: cache empty, background scan started (202) — or legacy 503.
+  if (
+    res.status === 202 ||
+    (isScanningBody(body) && body.scanning === true) ||
+    (res.status === 503 &&
+      isScanningBody(body) &&
+      typeof body.error === 'string' &&
+      /scan cache empty|warming/i.test(body.error))
+  ) {
+    const msg =
+      (isScanningBody(body) && (body.message || body.error)) ||
+      'Scanning US market…'
+    return {
+      kind: 'scanning',
+      message: msg,
+      status: isScanningBody(body) ? body.status : undefined,
+    }
+  }
   if (!res.ok) {
     const err = body as { error?: string }
     throw new Error(err.error || `Dashboard cache failed (${res.status})`)
   }
-  return body
+  return { kind: 'ready', body }
 }
 
 /** Ask server to refresh the scan in the background. */
@@ -124,7 +178,7 @@ export async function requestScanRefresh(): Promise<unknown> {
 }
 
 /** Poll scan status (scanning flag, cache age, stage-1 counts). */
-export async function fetchScanStatus(): Promise<unknown> {
+export async function fetchScanStatus(): Promise<ScanStatusPayload> {
   const res = await fetch('/api/market/scan/status')
-  return res.json()
+  return (await res.json()) as ScanStatusPayload
 }
