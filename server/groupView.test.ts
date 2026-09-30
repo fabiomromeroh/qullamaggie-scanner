@@ -2,14 +2,28 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { test } from 'node:test'
-import { matchesFilters } from '../src/lib/ideaFilters.ts'
+import { passesFilters } from '../src/lib/ideaFilters.ts'
 import { groupViewFilterNote, selectGroupViewRows, type GroupViewRow } from '../src/lib/groupView.ts'
-import { DEFAULT_FILTERS, type IdeaFilters, type SetupStage, type TradingIdea } from '../src/types/index.ts'
+import {
+  ALL_SETUP_TYPES,
+  DEFAULT_FILTERS,
+  GROUP_VIEW_DEFAULT_FILTERS,
+  type IdeaFilters,
+  type SetupStage,
+  type TradingIdea,
+} from '../src/types/index.ts'
 
 /**
  * Real-data sample trimmed from
  * GET /api/groups/semiconductors/stocks?period=3m
  * (qullamaggie-scanner-b29q.onrender.com). Finviz 3M order.
+ *
+ * PR #5 applied a group filter only when it differed from DEFAULT_FILTERS, so
+ * a control that landed back on the scanner default (stages coiled+triggering,
+ * Require 50 SMA, every setup type) did nothing. Group view now starts from
+ * GROUP_VIEW_DEFAULT_FILTERS and passesFilters applies every control immediately.
+ * Above 200 DMA is on in that baseline, so AVGO and MCHP (below the 200-day SMA)
+ * are hidden until the chip is turned off.
  */
 const FINVIZ_3M_ORDER = [
   'SWKS',
@@ -34,9 +48,10 @@ const FINVIZ_3M_ORDER = [
   'SIMO',
 ] as const
 
+const ABOVE_200_ORDER = FINVIZ_3M_ORDER.filter((ticker) => ticker !== 'AVGO' && ticker !== 'MCHP')
+
 interface SampleIdea extends GroupViewRow {
   groupId: string
-  aboveSma200: boolean
 }
 
 const fixture = JSON.parse(
@@ -45,6 +60,15 @@ const fixture = JSON.parse(
   label: string
   finvizPerf: Record<string, number | null>
   ideas: SampleIdea[]
+}
+
+function tickers(rows: readonly { ticker: string }[]): string[] {
+  return rows.map((idea) => idea.ticker)
+}
+
+function hiddenTickers(selected: { rows: readonly { ticker: string }[] }): string[] {
+  const shown = new Set(tickers(selected.rows))
+  return fixture.ideas.map((idea) => idea.ticker).filter((ticker) => !shown.has(ticker)).sort()
 }
 
 function asScannerIdea(row: SampleIdea): TradingIdea {
@@ -57,6 +81,7 @@ function row(ticker: string, extra: Partial<GroupViewRow> = {}): GroupViewRow {
     name: ticker,
     groupName: 'Semiconductors',
     setupStage: 'watching',
+    aboveSma200: true,
     aboveSma50: true,
     aboveSma10: true,
     aboveSma20: true,
@@ -93,182 +118,301 @@ function scannerIdea(partial: Partial<TradingIdea>): TradingIdea {
   } as TradingIdea
 }
 
-test('real semiconductor sample: default filters keep all 20 in Finviz 3M order', () => {
+test('group-view baseline shows 18 of 20 and keeps Finviz 3M order', () => {
   assert.match(fixture.label, /Real-data sample/)
   assert.equal(fixture.ideas.length, 20)
   const shuffled = [...fixture.ideas].reverse()
-  const selected = selectGroupViewRows(shuffled, DEFAULT_FILTERS, fixture.finvizPerf)
+  const selected = selectGroupViewRows(shuffled, GROUP_VIEW_DEFAULT_FILTERS, fixture.finvizPerf)
   assert.equal(selected.total, 20)
-  assert.equal(selected.hiddenCount, 0)
-  assert.deepEqual(
-    selected.rows.map((idea) => idea.ticker),
-    [...FINVIZ_3M_ORDER],
-  )
+  assert.equal(selected.rows.length, 18)
+  assert.equal(selected.hiddenCount, 2)
+  assert.deepEqual(hiddenTickers(selected), ['AVGO', 'MCHP'])
+  assert.deepEqual(tickers(selected.rows), [...ABOVE_200_ORDER])
   assert.equal(selected.rows[4]?.ticker, 'AMD')
-  const avgo = selected.rows.findIndex((idea) => idea.ticker === 'AVGO')
-  const umc = selected.rows.findIndex((idea) => idea.ticker === 'UMC')
-  assert.ok(avgo !== -1 && avgo < umc)
-  assert.equal(selected.rows[avgo]?.aboveSma200, false)
+  assert.equal(
+    groupViewFilterNote(selected.rows.length, selected.total, selected.hiddenCount),
+    'Showing 18 of 20 group stocks (filters hiding 2)',
+  )
+  for (const ticker of ['AVGO', 'MCHP'] as const) {
+    const idea = fixture.ideas.find((row) => row.ticker === ticker)
+    assert.equal(idea?.aboveSma200, false)
+    assert.ok(idea?.characteristics.includes('Below 200MA'))
+  }
   assert.deepEqual(
     shuffled.map((idea) => idea.ticker),
     [...FINVIZ_3M_ORDER].reverse(),
   )
+  for (const idea of fixture.ideas) {
+    const pass = passesFilters(idea, GROUP_VIEW_DEFAULT_FILTERS, { groupView: true })
+    const one = selectGroupViewRows([idea], GROUP_VIEW_DEFAULT_FILTERS, fixture.finvizPerf)
+    assert.equal(one.rows.length === 1, pass, idea.ticker)
+  }
 })
 
-test('real semiconductor sample: a changed minRvol hides rows and reports hiddenCount', () => {
-  const filters: IdeaFilters = { ...DEFAULT_FILTERS, minRvol: 1.5 }
-  const selected = selectGroupViewRows(fixture.ideas, filters, fixture.finvizPerf)
-  assert.deepEqual(
-    selected.rows.map((idea) => idea.ticker),
-    ['QRVO'],
-  )
-  assert.equal(selected.total, 20)
-  assert.equal(selected.hiddenCount, 19)
-  assert.equal(selected.rows.length + selected.hiddenCount, selected.total)
-  assert.ok(selected.rows.every((idea) => idea.rvol >= 1.5))
-  assert.equal(
-    groupViewFilterNote(selected.rows.length, selected.total, selected.hiddenCount),
-    'Showing 1 of 20 group stocks (filters hiding 19)',
-  )
-})
-
-test('real semiconductor sample: search always applies and a changed stage list filters', () => {
-  const searched = selectGroupViewRows(
+test('requireAbove200 off shows all 20 group members', () => {
+  const selected = selectGroupViewRows(
     fixture.ideas,
-    { ...DEFAULT_FILTERS, search: 'amd' },
+    { ...GROUP_VIEW_DEFAULT_FILTERS, requireAbove200: false },
     fixture.finvizPerf,
   )
-  assert.deepEqual(
-    searched.rows.map((idea) => idea.ticker),
-    ['AMD'],
-  )
-  assert.equal(searched.hiddenCount, 19)
+  assert.equal(selected.rows.length, 20)
+  assert.equal(selected.hiddenCount, 0)
+  assert.equal(selected.total, 20)
+  assert.deepEqual(tickers(selected.rows), [...FINVIZ_3M_ORDER])
+  assert.equal(groupViewFilterNote(20, 20, 0), null)
+  assert.equal(selected.rows.find((idea) => idea.ticker === 'AVGO')?.aboveSma200, false)
+  assert.equal(selected.rows.find((idea) => idea.ticker === 'MCHP')?.aboveSma200, false)
+})
 
-  const stages: SetupStage[] = ['watching']
+test('group view applies a value equal to the scanner default and a non-default', () => {
+  // stages coiled+triggering equals DEFAULT_FILTERS.stages. PR #5 skipped that,
+  // so watching names stayed visible. It now hides them immediately.
+  const stagesBack = selectGroupViewRows(
+    fixture.ideas,
+    { ...GROUP_VIEW_DEFAULT_FILTERS, stages: ['coiled', 'triggering'] },
+    fixture.finvizPerf,
+  )
+  assert.ok(stagesBack.rows.every((idea) => idea.setupStage !== 'watching'))
+  assert.ok(stagesBack.rows.some((idea) => idea.ticker === 'NVDA'))
+  assert.ok(!stagesBack.rows.some((idea) => idea.ticker === 'AMD'))
+  assert.ok(stagesBack.hiddenCount > 2)
+
+  const stagesDefault = selectGroupViewRows(
+    fixture.ideas,
+    { ...GROUP_VIEW_DEFAULT_FILTERS, stages: ['watching', 'coiled', 'triggering'] },
+    fixture.finvizPerf,
+  )
+  assert.equal(stagesDefault.rows.length, 18)
+  assert.ok(stagesDefault.rows.some((idea) => idea.ticker === 'AMD'))
+
+  const coiled: SetupStage[] = ['coiled']
   const staged = selectGroupViewRows(
     fixture.ideas,
-    { ...DEFAULT_FILTERS, stages },
+    { ...GROUP_VIEW_DEFAULT_FILTERS, stages: coiled },
     fixture.finvizPerf,
   )
-  assert.ok(staged.rows.some((idea) => idea.ticker === 'AMD'))
-  assert.ok(!staged.rows.some((idea) => idea.ticker === 'SWKS'))
+  assert.ok(staged.rows.length > 0)
+  assert.ok(staged.rows.every((idea) => idea.setupStage === 'coiled'))
+  assert.ok(staged.rows.some((idea) => idea.ticker === 'SWKS'))
+  assert.ok(!staged.rows.some((idea) => idea.ticker === 'AMD'))
   assert.ok(staged.hiddenCount > 0)
-  assert.ok(staged.rows.every((idea) => idea.setupStage === 'watching'))
+
+  // Require 50 SMA equals the scanner default (true). With Above 200 DMA off,
+  // AVGO (below 50 and below 200) hides and MCHP (above 50, below 200) stays.
+  const smaOff = selectGroupViewRows(
+    fixture.ideas,
+    { ...GROUP_VIEW_DEFAULT_FILTERS, requireAbove200: false, requireSma50: false },
+    fixture.finvizPerf,
+  )
+  assert.ok(smaOff.rows.some((idea) => idea.ticker === 'AVGO'))
+  const smaOn = selectGroupViewRows(
+    fixture.ideas,
+    { ...GROUP_VIEW_DEFAULT_FILTERS, requireAbove200: false, requireSma50: true },
+    fixture.finvizPerf,
+  )
+  assert.ok(!smaOn.rows.some((idea) => idea.ticker === 'AVGO'))
+  assert.ok(smaOn.rows.some((idea) => idea.ticker === 'MCHP'))
+  assert.equal(smaOn.rows.length, 19)
 })
 
-test('copied default stage list is not treated as a user change', () => {
-  const filters: IdeaFilters = {
-    ...DEFAULT_FILTERS,
-    stages: ['triggering', 'coiled'],
-    setupTypes: [...DEFAULT_FILTERS.setupTypes],
-    earningsStatuses: [...DEFAULT_FILTERS.earningsStatuses],
-  }
-  const selected = selectGroupViewRows(fixture.ideas, filters, fixture.finvizPerf)
-  assert.equal(selected.hiddenCount, 0)
-  assert.equal(selected.rows[4]?.ticker, 'AMD')
-  assert.equal(groupViewFilterNote(20, 20, 0), null)
+test('group view: min RVOL, search, and the other controls apply at once', () => {
+  const minDefault = selectGroupViewRows(
+    fixture.ideas,
+    { ...GROUP_VIEW_DEFAULT_FILTERS, minRvol: 0 },
+    fixture.finvizPerf,
+  )
+  assert.equal(minDefault.rows.length, 18)
+  const minTight = selectGroupViewRows(
+    fixture.ideas,
+    { ...GROUP_VIEW_DEFAULT_FILTERS, minRvol: 1.5 },
+    fixture.finvizPerf,
+  )
+  assert.deepEqual(tickers(minTight.rows), ['QRVO'])
+  assert.equal(minTight.hiddenCount, 19)
+  assert.equal(
+    groupViewFilterNote(minTight.rows.length, minTight.total, minTight.hiddenCount),
+    'Showing 1 of 20 group stocks (filters hiding 19)',
+  )
+
+  const searched = selectGroupViewRows(
+    fixture.ideas,
+    { ...GROUP_VIEW_DEFAULT_FILTERS, search: 'amd' },
+    fixture.finvizPerf,
+  )
+  assert.deepEqual(tickers(searched.rows), ['AMD'])
+  assert.equal(searched.hiddenCount, 19)
+  const searchCleared = selectGroupViewRows(
+    fixture.ideas,
+    { ...GROUP_VIEW_DEFAULT_FILTERS, search: '' },
+    fixture.finvizPerf,
+  )
+  assert.equal(searchCleared.rows.length, 18)
+
+  const nearHigh = selectGroupViewRows(
+    fixture.ideas,
+    { ...GROUP_VIEW_DEFAULT_FILTERS, maxPctFromHigh: 5 },
+    fixture.finvizPerf,
+  )
+  assert.ok(nearHigh.rows.some((idea) => idea.ticker === 'NVDA'))
+  assert.ok(!nearHigh.rows.some((idea) => idea.ticker === 'QCOM'))
+  const anyDistance = selectGroupViewRows(
+    fixture.ideas,
+    { ...GROUP_VIEW_DEFAULT_FILTERS, maxPctFromHigh: 100 },
+    fixture.finvizPerf,
+  )
+  assert.ok(anyDistance.rows.some((idea) => idea.ticker === 'QCOM'))
+
+  const continuation = selectGroupViewRows(
+    fixture.ideas,
+    { ...GROUP_VIEW_DEFAULT_FILTERS, setupTypes: ['Continuation'] },
+    fixture.finvizPerf,
+  )
+  assert.ok(!continuation.rows.some((idea) => idea.ticker === 'QRVO'))
+  const allTypes = selectGroupViewRows(
+    fixture.ideas,
+    { ...GROUP_VIEW_DEFAULT_FILTERS, setupTypes: [...ALL_SETUP_TYPES] },
+    fixture.finvizPerf,
+  )
+  assert.ok(allTypes.rows.some((idea) => idea.ticker === 'QRVO'))
+  assert.equal(allTypes.rows.length, 18)
+
+  const aPlus = selectGroupViewRows(
+    fixture.ideas,
+    { ...GROUP_VIEW_DEFAULT_FILTERS, aPlusOnly: true },
+    fixture.finvizPerf,
+  )
+  assert.ok(aPlus.rows.some((idea) => idea.ticker === 'QRVO'))
+  assert.ok(!aPlus.rows.some((idea) => idea.ticker === 'SWKS'))
+  assert.ok(aPlus.rows.every((idea) => idea.isAPlus))
+  const notAPlus = selectGroupViewRows(
+    fixture.ideas,
+    { ...GROUP_VIEW_DEFAULT_FILTERS, aPlusOnly: false },
+    fixture.finvizPerf,
+  )
+  assert.ok(notAPlus.rows.some((idea) => idea.ticker === 'SWKS'))
+
+  const clearOnly = selectGroupViewRows(
+    fixture.ideas,
+    { ...GROUP_VIEW_DEFAULT_FILTERS, earningsStatuses: ['clear'] },
+    fixture.finvizPerf,
+  )
+  assert.ok(!clearOnly.rows.some((idea) => idea.ticker === 'MU'))
+  const allEarnings = selectGroupViewRows(
+    fixture.ideas,
+    { ...GROUP_VIEW_DEFAULT_FILTERS, earningsStatuses: ['clear', 'alert', 'avoid'] },
+    fixture.finvizPerf,
+  )
+  assert.ok(allEarnings.rows.some((idea) => idea.ticker === 'MU'))
+
+  const catalyst = selectGroupViewRows(
+    fixture.ideas,
+    { ...GROUP_VIEW_DEFAULT_FILTERS, hasCatalyst: true },
+    fixture.finvizPerf,
+  )
+  assert.equal(catalyst.rows.length, 0)
+  assert.equal(catalyst.hiddenCount, 20)
+  const noCatalystGate = selectGroupViewRows(
+    fixture.ideas,
+    { ...GROUP_VIEW_DEFAULT_FILTERS, hasCatalyst: false },
+    fixture.finvizPerf,
+  )
+  assert.equal(noCatalystGate.rows.length, 18)
+
+  const surfer = selectGroupViewRows(
+    fixture.ideas,
+    { ...GROUP_VIEW_DEFAULT_FILTERS, requireSma10: true },
+    fixture.finvizPerf,
+  )
+  assert.ok(!surfer.rows.some((idea) => idea.ticker === 'SWKS'))
+  assert.ok(surfer.rows.every((idea) => idea.aboveSma10))
+  const surferOff = selectGroupViewRows(
+    fixture.ideas,
+    { ...GROUP_VIEW_DEFAULT_FILTERS, requireSma10: false },
+    fixture.finvizPerf,
+  )
+  assert.ok(surferOff.rows.some((idea) => idea.ticker === 'SWKS'))
+
+  const sma20 = selectGroupViewRows(
+    fixture.ideas,
+    { ...GROUP_VIEW_DEFAULT_FILTERS, requireAbove200: false, requireSma20: true },
+    fixture.finvizPerf,
+  )
+  assert.ok(!sma20.rows.some((idea) => idea.ticker === 'AVGO'))
+  assert.ok(sma20.rows.some((idea) => idea.ticker === 'MCHP'))
+  const sma20Off = selectGroupViewRows(
+    fixture.ideas,
+    { ...GROUP_VIEW_DEFAULT_FILTERS, requireAbove200: false, requireSma20: false },
+    fixture.finvizPerf,
+  )
+  assert.ok(sma20Off.rows.some((idea) => idea.ticker === 'AVGO'))
+
+  // groupId selects the payload; it is not a second row filter.
+  const wrongGroup = selectGroupViewRows(
+    fixture.ideas,
+    { ...GROUP_VIEW_DEFAULT_FILTERS, groupId: 'not-a-real-group' },
+    fixture.finvizPerf,
+  )
+  assert.deepEqual(tickers(wrongGroup.rows), [...ABOVE_200_ORDER])
 })
 
 test('group view orders null performance last and breaks ties by ticker', () => {
   const ideas = [row('ZZZ'), row('MMM'), row('AAA'), row('BBB')]
   const perf: Record<string, number | null> = { ZZZ: 5, MMM: null, AAA: 5 }
-  const selected = selectGroupViewRows(ideas, DEFAULT_FILTERS, perf)
-  assert.deepEqual(
-    selected.rows.map((idea) => idea.ticker),
-    ['AAA', 'ZZZ', 'BBB', 'MMM'],
-  )
+  const selected = selectGroupViewRows(ideas, GROUP_VIEW_DEFAULT_FILTERS, perf)
+  assert.deepEqual(tickers(selected.rows), ['AAA', 'ZZZ', 'BBB', 'MMM'])
   assert.equal(selected.hiddenCount, 0)
 
   const zeros = selectGroupViewRows(
     [row('NIL'), row('NEG'), row('ZERO'), row('HIGH')],
-    DEFAULT_FILTERS,
+    GROUP_VIEW_DEFAULT_FILTERS,
     { NIL: null, NEG: -2, ZERO: 0, HIGH: 3 },
   )
-  assert.deepEqual(
-    zeros.rows.map((idea) => idea.ticker),
-    ['HIGH', 'ZERO', 'NEG', 'NIL'],
-  )
+  assert.deepEqual(tickers(zeros.rows), ['HIGH', 'ZERO', 'NEG', 'NIL'])
 })
 
-test('normal scanner filters (groupView=false) are unchanged', () => {
+test('normal scanner defaults still hide below-200, watching, and below-50', () => {
   const groups = [{ id: 'semiconductors', name: 'Semiconductors', rsRank: 1, description: 'Semiconductors' }]
   assert.equal(
-    matchesFilters(
+    passesFilters(
       scannerIdea({ aboveSma200: false, aboveSma50: true, setupStage: 'coiled' }),
       DEFAULT_FILTERS,
-      null,
-      [],
-      false,
     ),
     false,
   )
   assert.equal(
-    matchesFilters(
+    passesFilters(
       scannerIdea({ aboveSma200: true, aboveSma50: true, setupStage: 'watching' }),
       DEFAULT_FILTERS,
-      null,
-      [],
-      false,
     ),
     false,
   )
   assert.equal(
-    matchesFilters(
+    passesFilters(
       scannerIdea({ aboveSma200: true, aboveSma50: false, setupStage: 'coiled' }),
       DEFAULT_FILTERS,
-      null,
-      [],
-      false,
     ),
     false,
   )
   assert.equal(
-    matchesFilters(
+    passesFilters(
       scannerIdea({ aboveSma200: true, aboveSma50: true, setupStage: 'coiled' }),
       DEFAULT_FILTERS,
-      null,
-      [],
-      false,
     ),
     true,
   )
   assert.equal(
-    matchesFilters(
-      scannerIdea({ ticker: 'AMD', name: 'Advanced Micro Devices, Inc.' }),
-      { ...DEFAULT_FILTERS, search: 'nope' },
-      null,
-      [],
-      false,
-    ),
-    false,
-  )
-  assert.equal(
-    matchesFilters(
-      scannerIdea({ ticker: 'AMD', name: 'Advanced Micro Devices, Inc.' }),
-      { ...DEFAULT_FILTERS, search: 'amd' },
-      null,
-      [],
-      false,
-    ),
-    true,
-  )
-  assert.equal(
-    matchesFilters(
+    passesFilters(
       scannerIdea({ groupId: 'other', groupName: 'Other', setupStage: 'coiled' }),
       { ...DEFAULT_FILTERS, groupId: 'semiconductors' },
-      'fallback',
-      groups,
-      false,
+      { groupSource: 'fallback', groups },
     ),
     false,
   )
   assert.equal(
-    matchesFilters(
+    passesFilters(
       scannerIdea({ groupId: 'semiconductors', groupName: 'Semiconductors', setupStage: 'coiled' }),
       { ...DEFAULT_FILTERS, groupId: 'semiconductors' },
-      'fallback',
-      groups,
-      false,
+      { groupView: true, groupSource: 'fallback', groups },
     ),
     true,
   )
@@ -277,18 +421,30 @@ test('normal scanner filters (groupView=false) are unchanged', () => {
   const avgo = fixture.ideas.find((idea) => idea.ticker === 'AVGO')
   const swks = fixture.ideas.find((idea) => idea.ticker === 'SWKS')
   assert.ok(amd && avgo && swks)
-  assert.equal(matchesFilters(asScannerIdea(amd), DEFAULT_FILTERS, null, [], false), false)
-  assert.equal(matchesFilters(asScannerIdea(avgo), DEFAULT_FILTERS, null, [], false), false)
-  assert.equal(matchesFilters(asScannerIdea(swks), DEFAULT_FILTERS, null, [], false), true)
-  // Historical groupView=true path still exempts below-200 and still drops watching names.
-  assert.equal(matchesFilters(asScannerIdea(amd), DEFAULT_FILTERS, null, [], true), false)
-  assert.equal(matchesFilters(asScannerIdea(avgo), DEFAULT_FILTERS, null, [], true), true)
-  const oldShown = fixture.ideas.filter((idea) =>
-    matchesFilters(asScannerIdea(idea), DEFAULT_FILTERS, null, [], true),
+  assert.equal(passesFilters(asScannerIdea(amd), DEFAULT_FILTERS), false)
+  assert.equal(passesFilters(asScannerIdea(avgo), DEFAULT_FILTERS), false)
+  assert.equal(passesFilters(asScannerIdea(swks), DEFAULT_FILTERS), true)
+  // groupView no longer exempts below-200 names from stage or SMA gates.
+  assert.equal(passesFilters(asScannerIdea(amd), DEFAULT_FILTERS, { groupView: true }), false)
+  assert.equal(passesFilters(asScannerIdea(avgo), DEFAULT_FILTERS, { groupView: true }), false)
+  const normalDefaults = fixture.ideas.filter((idea) =>
+    passesFilters(asScannerIdea(idea), DEFAULT_FILTERS, { groupView: true }),
   )
-  assert.equal(oldShown.length, 8)
   assert.deepEqual(
-    oldShown.map((idea) => idea.ticker).sort(),
-    ['ASX', 'AVGO', 'MCHP', 'NVDA', 'QRVO', 'SMTC', 'SWKS', 'TSM'],
+    normalDefaults.map((idea) => idea.ticker).sort(),
+    ['ASX', 'NVDA', 'QRVO', 'SMTC', 'SWKS', 'TSM'],
   )
+})
+
+test('passing the scanner defaults into group view now filters, it does not no-op', () => {
+  const filters: IdeaFilters = {
+    ...DEFAULT_FILTERS,
+    stages: ['triggering', 'coiled'],
+    setupTypes: [...DEFAULT_FILTERS.setupTypes],
+    earningsStatuses: [...DEFAULT_FILTERS.earningsStatuses],
+  }
+  const selected = selectGroupViewRows(fixture.ideas, filters, fixture.finvizPerf)
+  assert.deepEqual(tickers(selected.rows), ['SWKS', 'QRVO', 'SMTC', 'NVDA', 'ASX', 'TSM'])
+  assert.equal(selected.hiddenCount, 14)
+  assert.equal(selected.rows[4]?.ticker, 'ASX')
 })

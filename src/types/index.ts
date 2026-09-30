@@ -306,7 +306,12 @@ export interface IdeaFilters {
   setupTypes: SetupType[]
   aPlusOnly: boolean
   hasCatalyst: boolean
-  /** Soft prefer: require price above 50-day SMA (default ON). */
+  /**
+   * Above 200 DMA: require price above the 200-day SMA (`aboveSma200`).
+   * Default ON. Older stored objects that omit this field are treated as ON.
+   */
+  requireAbove200: boolean
+  /** Soft prefer: require price above 50-day SMA (default ON in the normal scan). */
   requireSma50: boolean
   /** Optional: require price above 10-day SMA (Kyle 10MA Surfer). */
   requireSma10: boolean
@@ -334,6 +339,7 @@ export const DEFAULT_FILTERS: IdeaFilters = {
   setupTypes: [...ALL_SETUP_TYPES],
   aPlusOnly: false,
   hasCatalyst: false,
+  requireAbove200: true,
   requireSma50: true,
   requireSma10: false,
   requireSma20: false,
@@ -341,4 +347,20 @@ export const DEFAULT_FILTERS: IdeaFilters = {
   earningsStatuses: [...ALL_EARNINGS_STATUSES],
   groupId: null,
   search: '',
+}
+
+/**
+ * Baseline while a Finviz group is selected.
+ * Same gates as {@link DEFAULT_FILTERS} except stage and SMA10/20/50 do not
+ * hide members. Above 200 DMA stays on.
+ */
+export const GROUP_VIEW_DEFAULT_FILTERS: IdeaFilters = {
+  ...DEFAULT_FILTERS,
+  requireAbove200: true,
+  requireSma50: false,
+  requireSma10: false,
+  requireSma20: false,
+  stages: ['watching', 'coiled', 'triggering'],
+  setupTypes: [...ALL_SETUP_TYPES],
+  earningsStatuses: [...ALL_EARNINGS_STATUSES],
 }

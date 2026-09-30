@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { loadDashboardData } from '../adapters/marketData'
 import { fetchScanStatus } from '../adapters/providers/liveFetch'
-import { matchesFilters } from '../lib/ideaFilters'
+import {
+  applyClearGroup,
+  applyFilterChange,
+  applyFilterReset,
+  applyShowAllGroup,
+  cloneIdeaFilters,
+  matchesFilters,
+} from '../lib/ideaFilters'
 import { GROUP_PERIODS, isGroupPeriod, isGroupSlug } from '../lib/groupPeriod'
 import { selectGroupViewRows } from '../lib/groupView'
 import { stageSortRank } from '../lib/setupStage'
@@ -11,7 +18,7 @@ import type {
   GroupStocksResponse,
   IdeaFilters,
 } from '../types'
-import { DEFAULT_FILTERS } from '../types'
+import { DEFAULT_FILTERS, GROUP_VIEW_DEFAULT_FILTERS } from '../types'
 import { useGroups } from './useGroups'
 import { useUserWatchlist } from './useUserWatchlist'
 
@@ -64,7 +71,10 @@ export function useDashboard() {
   const [scanning, setScanning] = useState(false)
   const [scanMessage, setScanMessage] = useState<string | null>(null)
   const [mode, setMode] = useState<'live' | 'demo'>('live')
-  const [filters, setFilters] = useState<IdeaFilters>({ ...DEFAULT_FILTERS })
+  const [scanFilters, setScanFilters] = useState<IdeaFilters>(() => cloneIdeaFilters(DEFAULT_FILTERS))
+  const [groupFilters, setGroupFilters] = useState<IdeaFilters>(() =>
+    cloneIdeaFilters(GROUP_VIEW_DEFAULT_FILTERS),
+  )
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null)
   const [period, setPeriodState] = useState<GroupPeriod>(readStoredPeriod)
   const [groupRetry, setGroupRetry] = useState(0)
@@ -233,18 +243,26 @@ export function useDashboard() {
   const groupsLoading = Boolean(data) && mode !== 'demo' && groupsFetchLoading
 
   // Drop a selection that the current group list cannot honor, without a setState effect.
-  const filtersForView = useMemo(() => {
-    if (!filters.groupId || groupsLoading) return filters
-    if (groupsView.some((group) => group.id === filters.groupId)) return filters
-    return { ...filters, groupId: null }
-  }, [filters, groupsLoading, groupsView])
+  const resolvedGroupId = useMemo(() => {
+    const id = scanFilters.groupId
+    if (!id || groupsLoading) return id
+    if (groupsView.some((group) => group.id === id)) return id
+    return null
+  }, [scanFilters.groupId, groupsLoading, groupsView])
 
-  const groupSlug = filtersForView.groupId
+  const groupSlug = resolvedGroupId
   const groupViewActive =
     mode !== 'demo' &&
     groupsMeta?.source === 'finviz' &&
     Boolean(groupSlug) &&
     isGroupSlug(groupSlug ?? '')
+
+  const filters = useMemo(() => {
+    if (groupViewActive) return { ...groupFilters, groupId: resolvedGroupId }
+    return { ...scanFilters, groupId: resolvedGroupId }
+  }, [groupViewActive, groupFilters, scanFilters, resolvedGroupId])
+
+  const filtersBaseline = groupViewActive ? GROUP_VIEW_DEFAULT_FILTERS : DEFAULT_FILTERS
 
   useEffect(() => {
     if (!groupViewActive || !groupSlug) return
@@ -317,8 +335,8 @@ export function useDashboard() {
 
   const groupRows = useMemo(() => {
     if (!groupView?.ideas) return null
-    return selectGroupViewRows(groupView.ideas, filtersForView, groupView.finvizPerf)
-  }, [groupView, filtersForView])
+    return selectGroupViewRows(groupView.ideas, filters, groupView.finvizPerf)
+  }, [groupView, filters])
 
   const filteredIdeas = useMemo(() => {
     if (groupView) return groupRows?.rows ?? []
@@ -326,7 +344,7 @@ export function useDashboard() {
     const downtrend = data.marketRegime?.stDirection === 'Downtrend'
     const groupSource = groupsMeta?.source ?? null
     return data.ideas
-      .filter((i) => matchesFilters(i, filtersForView, groupSource, groupsView))
+      .filter((i) => matchesFilters(i, filters, groupSource, groupsView))
       .sort((a, b) => {
         // Earnings avoid sinks to bottom (hard fail for entry)
         const ea = a.earningsStatus === 'avoid' ? 1 : 0
@@ -343,7 +361,7 @@ export function useDashboard() {
         if (downtrend && b.setupStage === 'triggering' && a.setupStage !== 'triggering') return -1
         return b.rvol - a.rvol
       })
-  }, [data, filtersForView, groupsMeta, groupsView, groupView, groupRows])
+  }, [data, filters, groupsMeta, groupsView, groupView, groupRows])
 
   const selectedIdea = useMemo(() => {
     if (!selectedTicker) return null
@@ -365,20 +383,34 @@ export function useDashboard() {
     }
   }, [])
 
+  const setFilters = useCallback((next: IdeaFilters) => {
+    const result = applyFilterChange(
+      { scan: scanFilters, group: groupFilters },
+      next,
+      groupViewActive,
+    )
+    setScanFilters(result.scan)
+    setGroupFilters(result.group)
+  }, [scanFilters, groupFilters, groupViewActive])
+
+  const resetFilters = useCallback(() => {
+    const result = applyFilterReset({ scan: scanFilters, group: groupFilters })
+    setScanFilters(result.scan)
+    setGroupFilters(result.group)
+  }, [scanFilters, groupFilters])
+
   const resetGroup = useCallback(() => {
-    setFilters((current) => ({ ...current, groupId: null }))
+    const result = applyClearGroup({ scan: scanFilters, group: groupFilters })
+    setScanFilters(result.scan)
+    setGroupFilters(result.group)
     setGroupStocks(null)
-  }, [])
+  }, [scanFilters, groupFilters])
 
   const showAllGroupStocks = useCallback(() => {
-    setFilters((current) => ({
-      ...DEFAULT_FILTERS,
-      groupId: current.groupId,
-      setupTypes: [...DEFAULT_FILTERS.setupTypes],
-      stages: [...DEFAULT_FILTERS.stages],
-      earningsStatuses: [...DEFAULT_FILTERS.earningsStatuses],
-    }))
-  }, [])
+    const result = applyShowAllGroup({ scan: scanFilters, group: groupFilters })
+    setScanFilters(result.scan)
+    setGroupFilters(result.group)
+  }, [scanFilters, groupFilters])
 
   const retryGroup = useCallback(() => {
     setGroupStocks(null)
@@ -392,8 +424,10 @@ export function useDashboard() {
     scanning,
     scanMessage,
     mode,
-    filters: filtersForView,
+    filters,
+    filtersBaseline,
     setFilters,
+    resetFilters,
     filteredIdeas,
     selectedIdea,
     selectedTicker,

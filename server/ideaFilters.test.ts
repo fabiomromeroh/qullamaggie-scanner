@@ -1,0 +1,465 @@
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { test } from 'node:test'
+import {
+  ABOVE_200_DMA_LABEL,
+  ABOVE_200_DMA_TOOLTIP,
+  SHOW_ALL_GROUP_LABEL,
+  applyClearGroup,
+  applyFilterChange,
+  applyFilterReset,
+  applyShowAllGroup,
+  cloneIdeaFilters,
+  countActiveFilters,
+  matchesFilters,
+  migrateStoredFilters,
+  passesFilters,
+  resetFilters,
+  showAllGroupFilters,
+  type DashboardFilterState,
+} from '../src/lib/ideaFilters.ts'
+import {
+  ALL_EARNINGS_STATUSES,
+  ALL_SETUP_TYPES,
+  DEFAULT_FILTERS,
+  GROUP_VIEW_DEFAULT_FILTERS,
+  type IdeaFilters,
+  type TradingIdea,
+} from '../src/types/index.ts'
+
+function idea(partial: Partial<TradingIdea> = {}): TradingIdea {
+  return {
+    ticker: 'AAA',
+    name: 'Aaa Corp',
+    groupId: 'semiconductors',
+    groupName: 'Semiconductors',
+    aboveSma200: true,
+    aboveSma50: true,
+    aboveSma10: true,
+    aboveSma20: true,
+    setupStage: 'coiled',
+    rvol: 2,
+    pctFrom52wHigh: -1,
+    setupType: 'Continuation',
+    isAPlus: false,
+    earningsStatus: 'clear',
+    catalyst: null,
+    characteristics: ['20MA Surfer'],
+    ...partial,
+  } as TradingIdea
+}
+
+function filters(partial: Partial<IdeaFilters> = {}): IdeaFilters {
+  return { ...cloneIdeaFilters(DEFAULT_FILTERS), ...partial }
+}
+
+test('passesFilters truth table for each normal-scan control', () => {
+  const groups = [{ id: 'semiconductors', name: 'Semiconductors', rsRank: 1, description: 'Semiconductors' }]
+  const cases: { name: string; row: TradingIdea; f: IdeaFilters; pass: boolean; groupView?: boolean }[] = [
+    { name: 'defaults pass a coiled name above 200 and 50', row: idea(), f: filters(), pass: true },
+    {
+      name: 'requireAbove200 on hides below 200',
+      row: idea({ aboveSma200: false }),
+      f: filters({ requireAbove200: true }),
+      pass: false,
+    },
+    {
+      name: 'requireAbove200 off shows below 200 when other gates pass',
+      row: idea({ aboveSma200: false, aboveSma50: true, setupStage: 'coiled' }),
+      f: filters({ requireAbove200: false }),
+      pass: true,
+    },
+    {
+      name: 'requireSma50 on',
+      row: idea({ aboveSma50: false }),
+      f: filters({ requireSma50: true }),
+      pass: false,
+    },
+    {
+      name: 'requireSma50 off',
+      row: idea({ aboveSma50: false }),
+      f: filters({ requireSma50: false }),
+      pass: true,
+    },
+    {
+      name: 'requireSma10 on',
+      row: idea({ aboveSma10: false }),
+      f: filters({ requireSma10: true }),
+      pass: false,
+    },
+    {
+      name: 'requireSma10 off',
+      row: idea({ aboveSma10: false }),
+      f: filters({ requireSma10: false }),
+      pass: true,
+    },
+    {
+      name: 'requireSma20 on',
+      row: idea({ aboveSma20: false }),
+      f: filters({ requireSma20: true }),
+      pass: false,
+    },
+    {
+      name: 'requireSma20 off',
+      row: idea({ aboveSma20: false }),
+      f: filters({ requireSma20: false }),
+      pass: true,
+    },
+    {
+      name: 'stages exclude watching',
+      row: idea({ setupStage: 'watching' }),
+      f: filters({ stages: ['coiled', 'triggering'] }),
+      pass: false,
+    },
+    {
+      name: 'stages include watching',
+      row: idea({ setupStage: 'watching' }),
+      f: filters({ stages: ['watching', 'coiled', 'triggering'] }),
+      pass: true,
+    },
+    {
+      name: 'empty stages do not hide',
+      row: idea({ setupStage: 'watching' }),
+      f: filters({ stages: [] }),
+      pass: true,
+    },
+    {
+      name: 'minRvol hides',
+      row: idea({ rvol: 1 }),
+      f: filters({ minRvol: 1.5 }),
+      pass: false,
+    },
+    {
+      name: 'minRvol allows',
+      row: idea({ rvol: 2 }),
+      f: filters({ minRvol: 1.5 }),
+      pass: true,
+    },
+    {
+      name: 'minRvol 0 allows',
+      row: idea({ rvol: 0 }),
+      f: filters({ minRvol: 0 }),
+      pass: true,
+    },
+    {
+      name: 'maxPctFromHigh hides',
+      row: idea({ pctFrom52wHigh: -10 }),
+      f: filters({ maxPctFromHigh: 5 }),
+      pass: false,
+    },
+    {
+      name: 'maxPctFromHigh allows a near high',
+      row: idea({ pctFrom52wHigh: -1 }),
+      f: filters({ maxPctFromHigh: 5 }),
+      pass: true,
+    },
+    {
+      name: 'maxPctFromHigh 100 allows a deep name',
+      row: idea({ pctFrom52wHigh: -80 }),
+      f: filters({ maxPctFromHigh: 100 }),
+      pass: true,
+    },
+    {
+      name: 'setup type mismatch',
+      row: idea({ setupType: 'Continuation' }),
+      f: filters({ setupTypes: ['Range Breakout'] }),
+      pass: false,
+    },
+    {
+      name: 'setup type match',
+      row: idea({ setupType: 'Continuation' }),
+      f: filters({ setupTypes: [...ALL_SETUP_TYPES] }),
+      pass: true,
+    },
+    {
+      name: 'A+ only hides',
+      row: idea({ isAPlus: false }),
+      f: filters({ aPlusOnly: true }),
+      pass: false,
+    },
+    {
+      name: 'A+ only allows',
+      row: idea({ isAPlus: true }),
+      f: filters({ aPlusOnly: true }),
+      pass: true,
+    },
+    {
+      name: 'earnings status hides avoid',
+      row: idea({ earningsStatus: 'avoid' }),
+      f: filters({ earningsStatuses: ['clear'] }),
+      pass: false,
+    },
+    {
+      name: 'earnings status all allows avoid',
+      row: idea({ earningsStatus: 'avoid' }),
+      f: filters({ earningsStatuses: [...ALL_EARNINGS_STATUSES] }),
+      pass: true,
+    },
+    {
+      name: 'catalyst required and missing',
+      row: idea({ catalyst: null }),
+      f: filters({ hasCatalyst: true }),
+      pass: false,
+    },
+    {
+      name: 'catalyst present',
+      row: idea({ catalyst: 'FDA' }),
+      f: filters({ hasCatalyst: true }),
+      pass: true,
+    },
+    {
+      name: 'catalyst not required',
+      row: idea({ catalyst: null }),
+      f: filters({ hasCatalyst: false }),
+      pass: true,
+    },
+    {
+      name: 'search miss',
+      row: idea({ ticker: 'AMD', name: 'Advanced Micro Devices' }),
+      f: filters({ search: 'nope' }),
+      pass: false,
+    },
+    {
+      name: 'search hit on ticker',
+      row: idea({ ticker: 'AMD', name: 'Advanced Micro Devices' }),
+      f: filters({ search: 'amd' }),
+      pass: true,
+    },
+    {
+      name: 'search hit on characteristic',
+      row: idea({ characteristics: ['Below 200MA'] }),
+      f: filters({ search: 'below 200' }),
+      pass: true,
+    },
+    {
+      name: 'empty search allows',
+      row: idea(),
+      f: filters({ search: '' }),
+      pass: true,
+    },
+    {
+      name: 'fallback groupId mismatch',
+      row: idea({ groupId: 'other', groupName: 'Other' }),
+      f: filters({ groupId: 'semiconductors' }),
+      pass: false,
+    },
+    {
+      name: 'fallback groupId match',
+      row: idea({ groupId: 'semiconductors' }),
+      f: filters({ groupId: 'semiconductors' }),
+      pass: true,
+    },
+  ]
+
+  for (const entry of cases) {
+    const options = entry.f.groupId
+      ? { groupView: entry.groupView, groupSource: 'fallback' as const, groups }
+      : { groupView: entry.groupView }
+    assert.equal(passesFilters(entry.row, entry.f, options), entry.pass, entry.name)
+    assert.equal(
+      matchesFilters(entry.row, entry.f, options.groupSource ?? null, groups, entry.groupView ?? false),
+      entry.pass,
+      `${entry.name} matchesFilters`,
+    )
+  }
+
+  assert.equal(
+    passesFilters(
+      idea({ groupId: 'other', groupName: 'Other' }),
+      filters({ groupId: 'semiconductors' }),
+      { groupView: true, groupSource: 'fallback', groups },
+    ),
+    true,
+  )
+  assert.equal(
+    passesFilters(
+      idea({ groupId: 'semiconductors', groupName: 'Semiconductors' }),
+      filters({ groupId: 'semiconductors' }),
+      { groupSource: 'finviz', groups },
+    ),
+    true,
+  )
+  assert.equal(
+    passesFilters(
+      idea({ groupId: 'other', groupName: 'Other Industry' }),
+      filters({ groupId: 'semiconductors' }),
+      { groupSource: 'finviz', groups },
+    ),
+    false,
+  )
+})
+
+test('requireAbove200 and aboveSma200 missing fields do not throw', () => {
+  const below = idea()
+  delete (below as { aboveSma200?: boolean }).aboveSma200
+  assert.equal(passesFilters(below, filters({ requireAbove200: true })), false)
+  assert.equal(passesFilters(below, filters({ requireAbove200: false })), true)
+
+  const legacy = filters()
+  delete (legacy as { requireAbove200?: boolean }).requireAbove200
+  assert.equal(passesFilters(idea({ aboveSma200: false }), legacy), false)
+  assert.equal(passesFilters(idea({ aboveSma200: true }), legacy), true)
+  assert.equal(passesFilters(idea({ characteristics: undefined }), filters({ search: 'aaa' })), true)
+})
+
+test('migrateStoredFilters fills requireAbove200 and rejects bad shapes', () => {
+  const stored: Record<string, unknown> = { ...DEFAULT_FILTERS, minRvol: 1.25, search: 'nvda' }
+  delete stored.requireAbove200
+  const migrated = migrateStoredFilters(stored)
+  assert.equal(migrated.requireAbove200, true)
+  assert.equal(migrated.minRvol, 1.25)
+  assert.equal(migrated.search, 'nvda')
+  assert.equal(migrated.requireSma50, true)
+  assert.deepEqual(migrated.stages, ['coiled', 'triggering'])
+  assert.equal(countActiveFilters(migrated), 2)
+
+  assert.equal(migrateStoredFilters({ requireAbove200: false }).requireAbove200, false)
+  assert.equal(migrateStoredFilters({ requireAbove200: true }).requireAbove200, true)
+  assert.equal(migrateStoredFilters({ requireAbove200: 'yes' }).requireAbove200, true)
+  assert.equal(migrateStoredFilters({ requireAbove200: 0 }).requireAbove200, true)
+  assert.equal(migrateStoredFilters(null).requireAbove200, true)
+  assert.equal(migrateStoredFilters(undefined).minRvol, 0)
+  assert.equal(migrateStoredFilters('nope').requireAbove200, true)
+  assert.equal(migrateStoredFilters([]).requireSma50, true)
+  assert.deepEqual(migrateStoredFilters({ stages: 'coiled' }).stages, ['coiled', 'triggering'])
+  assert.deepEqual(migrateStoredFilters({ stages: ['watching', 'nope'] }).stages, ['watching'])
+  assert.deepEqual(migrateStoredFilters({ stages: [] }).stages, ['coiled', 'triggering'])
+  assert.equal(migrateStoredFilters({ groupId: '' }).groupId, null)
+  assert.equal(migrateStoredFilters({ groupId: 4 }).groupId, null)
+  assert.equal(migrateStoredFilters({ minRvol: Number.NaN }).minRvol, 0)
+
+  const explicit = migrateStoredFilters({
+    ...DEFAULT_FILTERS,
+    requireAbove200: false,
+    stages: ['watching'],
+    requireSma50: false,
+  })
+  assert.equal(explicit.requireAbove200, false)
+  assert.deepEqual(explicit.stages, ['watching'])
+  assert.equal(explicit.requireSma50, false)
+  assert.deepEqual(migrateStoredFilters(explicit), explicit)
+})
+
+test('active-filter counter and reset include Above 200 DMA', () => {
+  assert.equal(ABOVE_200_DMA_LABEL, 'Above 200 DMA')
+  assert.equal(countActiveFilters(DEFAULT_FILTERS), 0)
+  assert.equal(countActiveFilters(GROUP_VIEW_DEFAULT_FILTERS, GROUP_VIEW_DEFAULT_FILTERS), 0)
+
+  const off = { ...DEFAULT_FILTERS, requireAbove200: false }
+  assert.equal(countActiveFilters(off), 1)
+  assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, requireAbove200: false, minRvol: 2 }), 2)
+
+  const legacy = { ...DEFAULT_FILTERS } as IdeaFilters
+  delete (legacy as { requireAbove200?: boolean }).requireAbove200
+  assert.equal(countActiveFilters(legacy), 0)
+
+  const restored = resetFilters(off)
+  assert.equal(restored.requireAbove200, true)
+  assert.equal(countActiveFilters(restored), 0)
+
+  const groupDirty: IdeaFilters = {
+    ...GROUP_VIEW_DEFAULT_FILTERS,
+    requireAbove200: false,
+    groupId: 'semiconductors',
+    minRvol: 1.5,
+  }
+  assert.equal(countActiveFilters(groupDirty, GROUP_VIEW_DEFAULT_FILTERS), 3)
+  const groupRestored = resetFilters(groupDirty, GROUP_VIEW_DEFAULT_FILTERS)
+  assert.equal(groupRestored.requireAbove200, true)
+  assert.equal(groupRestored.requireSma50, false)
+  assert.equal(groupRestored.minRvol, 0)
+  assert.equal(groupRestored.groupId, 'semiconductors')
+  assert.deepEqual([...groupRestored.stages].sort(), ['coiled', 'triggering', 'watching'])
+  assert.equal(countActiveFilters(groupRestored, GROUP_VIEW_DEFAULT_FILTERS), 1)
+
+  const showAll = showAllGroupFilters()
+  assert.equal(showAll.requireAbove200, false)
+  assert.equal(showAll.requireSma50, false)
+  assert.equal(showAll.requireSma10, false)
+  assert.equal(showAll.requireSma20, false)
+  assert.equal(showAll.minRvol, 0)
+  assert.equal(showAll.maxPctFromHigh, 100)
+  assert.equal(showAll.aPlusOnly, false)
+  assert.equal(showAll.hasCatalyst, false)
+  assert.equal(showAll.search, '')
+  assert.equal(showAll.setupTypes.length, ALL_SETUP_TYPES.length)
+  assert.equal(showAll.stages.length, 3)
+  assert.equal(showAll.earningsStatuses.length, ALL_EARNINGS_STATUSES.length)
+  assert.equal(countActiveFilters(showAll, GROUP_VIEW_DEFAULT_FILTERS), 1)
+})
+
+test('group edits do not clobber scan filters; reset and show-all are separate', () => {
+  let state: DashboardFilterState = {
+    scan: cloneIdeaFilters({ ...DEFAULT_FILTERS, minRvol: 2, stages: ['coiled'] }),
+    group: cloneIdeaFilters(GROUP_VIEW_DEFAULT_FILTERS),
+  }
+  state = applyFilterChange(state, { ...state.scan, groupId: 'semiconductors' }, false)
+  assert.equal(state.scan.minRvol, 2)
+  assert.deepEqual(state.scan.stages, ['coiled'])
+  assert.equal(state.scan.groupId, 'semiconductors')
+  assert.equal(state.group.requireAbove200, true)
+  assert.equal(state.group.requireSma50, false)
+  assert.equal(state.group.minRvol, 0)
+  assert.deepEqual([...state.group.stages].sort(), ['coiled', 'triggering', 'watching'])
+
+  state = applyFilterChange(
+    state,
+    { ...state.group, groupId: 'semiconductors', minRvol: 1.5, requireAbove200: false },
+    true,
+  )
+  assert.equal(state.scan.minRvol, 2)
+  assert.equal(state.scan.requireAbove200, true)
+  assert.equal(state.group.minRvol, 1.5)
+  assert.equal(state.group.requireAbove200, false)
+  assert.equal(state.group.groupId, null)
+
+  state = applyFilterChange(state, { ...state.group, groupId: 'software', minRvol: 9 }, true)
+  assert.equal(state.scan.groupId, 'software')
+  assert.equal(state.scan.minRvol, 2)
+  assert.equal(state.group.minRvol, 0)
+  assert.equal(state.group.requireAbove200, true)
+
+  state = applyShowAllGroup(state)
+  assert.equal(state.group.requireAbove200, false)
+  assert.equal(state.scan.minRvol, 2)
+  assert.equal(state.scan.groupId, 'software')
+
+  state = applyFilterReset(state)
+  assert.equal(state.scan.minRvol, 0)
+  assert.equal(state.scan.requireSma50, true)
+  assert.equal(state.scan.requireAbove200, true)
+  assert.deepEqual(state.scan.stages, ['coiled', 'triggering'])
+  assert.equal(state.scan.groupId, 'software')
+  assert.equal(state.group.requireAbove200, true)
+  assert.equal(state.group.requireSma50, false)
+
+  state = applyClearGroup(state)
+  assert.equal(state.scan.groupId, null)
+  assert.equal(state.scan.requireSma50, true)
+  assert.equal(state.group.requireAbove200, true)
+  assert.equal(state.group.requireSma50, false)
+})
+
+test('UI copy and README use the single Above 200 DMA label', () => {
+  const root = process.cwd()
+  const bar = readFileSync(resolve(root, 'src/components/FiltersBar.tsx'), 'utf8')
+  const table = readFileSync(resolve(root, 'src/components/IdeasTable.tsx'), 'utf8')
+  const readme = readFileSync(resolve(root, 'README.md'), 'utf8')
+  assert.equal(ABOVE_200_DMA_LABEL, 'Above 200 DMA')
+  assert.match(ABOVE_200_DMA_TOOLTIP, /Price above the 200-day SMA — below-200 names are not valid setups/)
+  assert.match(
+    ABOVE_200_DMA_TOOLTIP,
+    /normal scan prefilters below-200 names server-side; toggle off only reveals names present in the payload, group view includes them/,
+  )
+  assert.match(bar, /ABOVE_200_DMA_LABEL/)
+  assert.match(bar, /ABOVE_200_DMA_TOOLTIP/)
+  assert.equal(SHOW_ALL_GROUP_LABEL, 'Show all (incl. below 200 DMA)')
+  assert.match(table, /SHOW_ALL_GROUP_LABEL/)
+  assert.match(readme, /Above 200 DMA/)
+  assert.match(readme, /ONE filter/)
+  assert.match(
+    readme,
+    /normal scan prefilters below-200 names server-side; toggle off only reveals names present in the payload, group view includes them/,
+  )
+})

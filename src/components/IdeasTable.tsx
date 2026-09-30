@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react'
 import { Pin, PinOff } from 'lucide-react'
 import type { CharacteristicTag, EarningsStatus, SetupStage, TradingIdea } from '../types'
+import { SHOW_ALL_GROUP_LABEL } from '../lib/ideaFilters'
 import { groupViewFilterNote } from '../lib/groupView'
 import { stageLabel } from '../lib/setupStage'
 import { fmtDollarVol, fmtPct, fmtPrice, fmtRvol, pctClass } from '../utils/format'
@@ -52,9 +53,9 @@ export interface GroupViewBanner {
   shownCount?: number
   /** Scored group members before client filters. */
   total?: number
-  /** Rows removed by a filter the user changed from its default. */
+  /** Rows removed by the active group filters, including Above 200 DMA. */
   hiddenCount?: number
-  /** Restore default scanner filters while keeping this group selected. */
+  /** Most permissive group filters, including names below the 200-day SMA. */
   onShowAll?: () => void
 }
 
@@ -97,7 +98,10 @@ function TrendBadges({ idea }: { idea: TradingIdea }) {
           &gt;200
         </span>
       ) : (
-        <span className="inline-block whitespace-nowrap rounded border border-terminal-red/40 bg-terminal-red-dim px-1.5 py-0.5 text-[10px] text-terminal-red">
+        <span
+          className="inline-block whitespace-nowrap rounded border border-terminal-red/40 bg-terminal-red-dim px-1.5 py-0.5 text-[10px] text-terminal-red"
+          title="Below 200MA — price is below the 200-day SMA. Not a valid setup."
+        >
           &lt;200
         </span>
       )}
@@ -151,7 +155,7 @@ function StageBadge({ stage, aboveSma200 = true }: { stage: SetupStage; aboveSma
     return (
       <span
         className="inline-block whitespace-nowrap rounded border border-terminal-red/40 bg-terminal-red-dim px-1.5 py-0.5 text-[10px] text-terminal-red"
-        title="Price is below the 200-day SMA. Shown because this group list keeps names the scan would drop."
+        title="Below 200MA — price is below the 200-day SMA. Not a valid setup."
       >
         Below 200
       </span>
@@ -449,7 +453,7 @@ function GroupBannerBar({ banner }: { banner: GroupViewBanner }) {
               onClick={banner.onShowAll}
               className="min-h-8 shrink-0 rounded border border-terminal-border-bright bg-terminal-panel px-2 text-[10px] font-medium text-terminal-fg hover:text-terminal-blue"
             >
-              Show all
+              {SHOW_ALL_GROUP_LABEL}
             </button>
           ) : null}
         </span>

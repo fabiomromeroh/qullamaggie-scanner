@@ -1,17 +1,19 @@
-import type { IdeaFilters, SetupStage, SetupType, EarningsStatus } from '../types'
-import { DEFAULT_FILTERS } from '../types'
+import type { EarningsStatus, IdeaFilters, SetupStage, SetupType } from '../types'
+import { passesFilters } from './ideaFilters'
 
 /**
  * Rows for a Finviz group drill-down.
- * Preference filters apply only when they differ from DEFAULT_FILTERS.
- * Search always applies. Order is the selected period's performance
- * (`finvizPerf`): descending, nulls last, ticker ascending on a tie.
+ * Every filter on the group-view state applies immediately (there is no
+ * "only if it differs from the scanner defaults" skip). `groupId` is not a
+ * row filter here. Order is the selected period's performance (`finvizPerf`):
+ * descending, nulls last, ticker ascending on a tie.
  */
 export interface GroupViewRow {
   ticker: string
   name: string
   groupName: string
   setupStage: SetupStage
+  aboveSma200: boolean
   aboveSma50: boolean
   aboveSma10: boolean
   aboveSma20: boolean
@@ -39,58 +41,8 @@ export function groupViewFilterNote(
   return `Showing ${shown} of ${total} group stocks (filters hiding ${hiddenCount})`
 }
 
-function sameMembers(a: readonly string[], b: readonly string[]): boolean {
-  if (a.length !== b.length) return false
-  const left = [...a].sort()
-  const right = [...b].sort()
-  for (let i = 0; i < left.length; i += 1) {
-    if (left[i] !== right[i]) return false
-  }
-  return true
-}
-
-function matchesSearch(idea: GroupViewRow, search: string): boolean {
-  if (!search) return true
-  const q = search.toLowerCase()
-  const hay =
-    `${idea.ticker} ${idea.name} ${idea.groupName} ${idea.setupStage} ${idea.characteristics.join(' ')}`.toLowerCase()
-  return hay.includes(q)
-}
-
 function passesGroupViewFilters(idea: GroupViewRow, filters: IdeaFilters): boolean {
-  if (filters.requireSma50 !== DEFAULT_FILTERS.requireSma50 && filters.requireSma50 && !idea.aboveSma50) {
-    return false
-  }
-  if (filters.requireSma10 !== DEFAULT_FILTERS.requireSma10 && filters.requireSma10 && !idea.aboveSma10) {
-    return false
-  }
-  if (filters.requireSma20 !== DEFAULT_FILTERS.requireSma20 && filters.requireSma20 && !idea.aboveSma20) {
-    return false
-  }
-  if (!sameMembers(filters.stages, DEFAULT_FILTERS.stages)) {
-    if (filters.stages.length && !filters.stages.includes(idea.setupStage)) return false
-  }
-  if (filters.minRvol !== DEFAULT_FILTERS.minRvol && idea.rvol < filters.minRvol) return false
-  if (filters.maxPctFromHigh !== DEFAULT_FILTERS.maxPctFromHigh) {
-    const distance = Math.abs(Math.min(0, idea.pctFrom52wHigh))
-    if (distance > filters.maxPctFromHigh) return false
-  }
-  if (!sameMembers(filters.setupTypes, DEFAULT_FILTERS.setupTypes) && !filters.setupTypes.includes(idea.setupType)) {
-    return false
-  }
-  if (filters.aPlusOnly !== DEFAULT_FILTERS.aPlusOnly && filters.aPlusOnly && !idea.isAPlus) return false
-  if (
-    !sameMembers(filters.earningsStatuses ?? [], DEFAULT_FILTERS.earningsStatuses) &&
-    filters.earningsStatuses?.length &&
-    !filters.earningsStatuses.includes(idea.earningsStatus)
-  ) {
-    return false
-  }
-  if (filters.hasCatalyst !== DEFAULT_FILTERS.hasCatalyst && filters.hasCatalyst && !idea.catalyst) {
-    return false
-  }
-  if (!matchesSearch(idea, filters.search)) return false
-  return true
+  return passesFilters(idea, filters, { groupView: true })
 }
 
 function periodPerf(
