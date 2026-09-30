@@ -31,6 +31,7 @@ import {
   isCacheStale,
   loadScanCache,
   saveScanCache,
+  SCAN_CACHE_SCHEMA,
   type ScanCachePayload,
 } from './scanCache.ts'
 
@@ -59,6 +60,9 @@ function snapToBars(snap: SymbolSnapshot): SymbolBars {
     bars: snap.bars,
     price: snap.price,
     prevClose: snap.prevClose,
+    regularMarketTime: snap.regularMarketTime,
+    gmtoffset: snap.gmtoffset,
+    exchangeTimezoneName: snap.exchangeTimezoneName,
     provider: snap.provider,
   }
 }
@@ -315,6 +319,7 @@ export async function runFullScan(): Promise<ScanCachePayload> {
     scanFailCount: failCount,
     scanBelow200Count: below200,
     meta: {
+      schemaVersion: SCAN_CACHE_SCHEMA,
       stage1Source,
       stage1Count: stage1Hits.length,
       stage15Count,

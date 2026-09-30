@@ -34,6 +34,7 @@ Do **not** commit `.env` (it is gitignored). Secrets stay on Render.
 - Serves the Vite `dist/` SPA.
 - Proxies live market data at `/api/market/*` (health, snapshot, dashboard, scan).
 - Serves leading industry groups at `GET /api/groups` (Finviz performance view, 12-minute memory cache). If Finviz fails and a previous payload exists, that payload is returned with `stale: true`. With no cache, the response falls back to the internal scan ranking (`source: "fallback"`).
+- Ignores scan caches from before schema 2 (`SCAN_CACHE_SCHEMA` in `server/scanCache.ts`). That bump drops `dayPct` values taken from Yahoo's pre-range `chartPreviousClose`; startup runs a fresh scan instead of serving them.
 
 ## 4. Local production smoke test
 
