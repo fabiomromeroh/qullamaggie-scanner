@@ -86,11 +86,108 @@ function sessionDateKey(
   return null
 }
 
-function priceSessionDate(input: ResolvePrevCloseInput, gmtoffset: number | null): string | null {
+export type PriceClock = Pick<
+  ResolvePrevCloseInput,
+  'regularMarketTime' | 'gmtoffset' | 'exchangeTimezoneName' | 'currentTradingPeriod'
+>
+
+function priceSessionDate(input: PriceClock, gmtoffset: number | null): string | null {
   const zone = input.exchangeTimezoneName
   const fromTrade = sessionDateKey(input.regularMarketTime, zone, gmtoffset)
   if (fromTrade) return fromTrade
   return sessionDateKey(input.currentTradingPeriod?.regular?.start, zone, gmtoffset)
+}
+
+function clockOffset(input: PriceClock): number | null {
+  return (
+    (typeof input.gmtoffset === 'number' && Number.isFinite(input.gmtoffset)
+      ? input.gmtoffset
+      : null) ??
+    (typeof input.currentTradingPeriod?.regular?.gmtoffset === 'number'
+      ? input.currentTradingPeriod.regular.gmtoffset
+      : null)
+  )
+}
+
+export function filterPerfBars<T extends PrevCloseBar>(bars: T[]): T[] {
+  return bars
+    .filter((bar) => Number.isFinite(bar.t) && Number.isFinite(bar.c) && bar.c > 0)
+    .sort((a, b) => a.t - b.t)
+}
+
+/**
+ * Index of the last completed bar strictly before the session that produced
+ * `price`. `series` is already filtered and sorted. Null when that bar does
+ * not exist.
+ *
+ * The last bar is the price session when its close equals `price` or its
+ * exchange date matches the price timestamp. When the last bar's date is
+ * strictly earlier, that bar is already a completed session before `price`.
+ * With no usable clock, the last bar is treated as the price session.
+ */
+function immediatePriorIndex(
+  series: PrevCloseBar[],
+  price: number,
+  input: PriceClock,
+): number | null {
+  if (!series.length) return null
+  const gmtoffset = clockOffset(input)
+  const zone = input.exchangeTimezoneName
+  const priceDate = priceSessionDate(input, gmtoffset)
+
+  if (series.length === 1) {
+    const only = series[0]!
+    const onlyDate = sessionDateKey(only.t, zone, gmtoffset)
+    if (
+      priceDate &&
+      onlyDate &&
+      onlyDate < priceDate &&
+      !(price > 0 && pricesEqual(price, only.c))
+    ) {
+      return 0
+    }
+    return null
+  }
+
+  const last = series[series.length - 1]!
+  const lastDate = sessionDateKey(last.t, zone, gmtoffset)
+  if (price > 0 && pricesEqual(price, last.c)) return series.length - 2
+  if (priceDate && lastDate && lastDate === priceDate) return series.length - 2
+  if (priceDate && lastDate && lastDate < priceDate) return series.length - 1
+  return series.length - 2
+}
+
+export interface PriceSessionPlacement<T extends PrevCloseBar = PrevCloseBar> {
+  series: T[]
+  /** Index of the session that produced `price`, or `series.length` when that bar is absent. */
+  priceIndex: number
+}
+
+export function placePriceSession<T extends PrevCloseBar>(
+  bars: T[],
+  price: number,
+  input: PriceClock = {},
+): PriceSessionPlacement<T> | null {
+  const series = filterPerfBars(bars)
+  const prior = immediatePriorIndex(series, price, input)
+  if (prior == null) return null
+  return { series, priceIndex: prior + 1 }
+}
+
+/** Close `sessions` completed daily bars before the session that produced `price`. */
+export function closeSessionsBeforePrice(
+  bars: PrevCloseBar[],
+  price: number,
+  sessions: number,
+  input: PriceClock = {},
+): number | null {
+  if (!Number.isInteger(sessions) || sessions < 1) return null
+  const placed = placePriceSession(bars, price, input)
+  if (!placed) return null
+  const idx = placed.priceIndex - sessions
+  if (idx < 0 || idx >= placed.series.length) return null
+  const close = placed.series[idx]!.c
+  return close > 0 ? close : null
 }
 
 function barDerivedPrevClose(
@@ -98,41 +195,9 @@ function barDerivedPrevClose(
   price: number,
   input: ResolvePrevCloseInput,
 ): number | null {
-  if (!series.length) return null
-  const gmtoffset =
-    (typeof input.gmtoffset === 'number' && Number.isFinite(input.gmtoffset)
-      ? input.gmtoffset
-      : null) ??
-    (typeof input.currentTradingPeriod?.regular?.gmtoffset === 'number'
-      ? input.currentTradingPeriod.regular.gmtoffset
-      : null)
-  const zone = input.exchangeTimezoneName
-  const priceDate = priceSessionDate(input, gmtoffset)
-
-  if (series.length === 1) {
-    const only = series[0]!
-    const onlyDate = sessionDateKey(only.t, zone, gmtoffset)
-    // The lone bar is the prior session; today's price is not in the series.
-    if (
-      priceDate &&
-      onlyDate &&
-      onlyDate < priceDate &&
-      !(price > 0 && pricesEqual(price, only.c))
-    ) {
-      return only.c
-    }
-    return null
-  }
-
-  const last = series[series.length - 1]!
-  const prior = series[series.length - 2]!
-  const lastDate = sessionDateKey(last.t, zone, gmtoffset)
-  // The print is the last bar's close, so that bar is the session that produced price
-  // even if the exchange clock has already rolled to the next session.
-  if (price > 0 && pricesEqual(price, last.c)) return prior.c
-  if (priceDate && lastDate && lastDate === priceDate) return prior.c
-  if (priceDate && lastDate && lastDate < priceDate) return last.c
-  return prior.c
+  const idx = immediatePriorIndex(series, price, input)
+  if (idx == null) return null
+  return series[idx]!.c
 }
 
 /**

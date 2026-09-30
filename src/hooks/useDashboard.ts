@@ -40,7 +40,7 @@ function isGroupStocksResponse(value: unknown): value is GroupStocksResponse {
   if (!value || typeof value !== 'object') return false
   const body = value as Partial<GroupStocksResponse>
   return (
-    body.source === 'finviz' &&
+    (body.source === 'finviz' || body.source === 'snapshot') &&
     typeof body.slug === 'string' &&
     typeof body.label === 'string' &&
     typeof body.period === 'string' &&
@@ -264,6 +264,7 @@ export function useDashboard() {
         stale: groupsPayload.stale,
         fetchedAt: groupsPayload.fetchedAt,
         sourceUrl: groupsPayload.sourceUrl,
+        membership: groupsPayload.membership,
       }
     }
     if (mode !== 'demo' && groupsFetchLoading) return null
@@ -354,6 +355,9 @@ export function useDashboard() {
       parsedCount: match?.data?.parsedCount ?? null,
       finvizPerf: match?.data?.finvizPerf ?? null,
       ideas: match?.data?.ideas ?? null,
+      source: match?.data?.source ?? null,
+      membershipGeneratedAt: match?.data?.membership?.generatedAt ?? null,
+      membershipStale: Boolean(match?.data?.membership?.stale),
     }
   }, [groupViewActive, groupSlug, groupsView, groupStocks, period])
 

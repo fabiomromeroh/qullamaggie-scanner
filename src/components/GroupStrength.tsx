@@ -28,7 +28,7 @@ const DEFAULT_COLS: Record<string, number> = {
   m6: 52,
 }
 
-type GroupsMeta = Pick<GroupsResponse, 'source' | 'stale' | 'fetchedAt'>
+type GroupsMeta = Pick<GroupsResponse, 'source' | 'stale' | 'fetchedAt' | 'membership'>
 type GroupSortKey = 'rank' | 'name' | 'leaders' | '1d' | '1w' | '1m' | '3m' | '6m'
 type SortDir = 'asc' | 'desc'
 type SortState = { key: GroupSortKey; dir: SortDir }
@@ -155,7 +155,7 @@ function sortGroups(
 }
 
 const LEADER_HELP =
-  'A leader is a stock in this group’s Finviz top list (price > $5, average volume > 750K, ordered by the selected period) whose selected-period performance is above 0 and that also appears in the current scan (above the 200-day SMA). Shown as in-scan / parsed, for example 3/20.'
+  'A leader is one of the top 20 membership-snapshot names in this group (price > $5 and average volume > 750K when the snapshot was built) whose selected-period performance is above 0 and that also appears in the current scan (above the 200-day SMA). Performance is computed from those members with market-data providers (Yahoo, then Finnhub/Stooq), not Finviz’s live screener, and can differ slightly from Finviz (4-week / 13-week / 26-week versus 21 / 63 / 126 sessions; 1W is 5 sessions). Shown as in-scan / names with data, for example 3/20.'
 
 function leaderTooltip(entry: GroupLeadersEntry, periodLabel: string): string {
   const lines = [
@@ -171,7 +171,8 @@ function leaderTooltip(entry: GroupLeadersEntry, periodLabel: string): string {
   } else {
     lines.push(`${entry.inScanCount}/${entry.parsedCount} in the current scan.`)
   }
-  if (entry.stale) lines.push('Finviz list is stale.')
+  if (entry.membership?.stale) lines.push('Membership snapshot is more than 14 days old.')
+  if (entry.stale) lines.push('Leader list is stale.')
   for (const row of entry.top5) {
     const perf = row.perf == null ? '—' : fmtPct(row.perf)
     const mark = row.inScan == null ? '' : row.inScan ? ' · in scan' : ' · not in scan'
@@ -199,11 +200,21 @@ function leaderCell(
       ? { text: '…', title: 'Loading leaders…' }
       : { text: '·', title: 'Leaders load for the first 25 groups in the current sort.' }
   }
+  if (entry.pending) {
+    return { text: '…', title: 'Computing leaders from snapshot members…' }
+  }
   if (entry.error && entry.leaders.length === 0) {
     return { text: '—', title: entry.error }
   }
   if (entry.parsedCount === 0) {
-    return { text: '—', title: entry.error || 'Finviz returned no names for this group.' }
+    return {
+      text: '—',
+      title:
+        entry.error ||
+        (entry.memberCount
+          ? 'No performance data for snapshot members in this period.'
+          : 'No snapshot members for this group.'),
+    }
   }
   if (entry.inScanCount == null) {
     const peek = entry.top5[0]?.ticker
@@ -218,8 +229,14 @@ function leaderCell(
   }
 }
 
+function snapshotDay(iso: string): string {
+  const match = /^(\d{4}-\d{2}-\d{2})/.exec(iso)
+  return match?.[1] ?? iso
+}
+
 function GroupsMetaLine({ meta }: { meta: GroupsMeta }) {
   const updated = formatUpdatedHm(meta.fetchedAt)
+  const membershipDay = meta.membership?.generatedAt ? snapshotDay(meta.membership.generatedAt) : null
   return (
     <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px] font-normal normal-case tracking-normal text-terminal-dim">
       {meta.source === 'fallback' ? (
@@ -233,6 +250,17 @@ function GroupsMetaLine({ meta }: { meta: GroupsMeta }) {
         </span>
       ) : null}
       {updated ? <span>updated {updated}</span> : null}
+      {meta.source === 'finviz' && membershipDay ? (
+        <span className="text-terminal-muted">Membership: snapshot {membershipDay}</span>
+      ) : null}
+      {meta.source === 'finviz' && meta.membership?.stale ? (
+        <span
+          className="rounded bg-terminal-amber-dim px-1 py-px font-medium uppercase tracking-wide text-terminal-amber"
+          title="Membership snapshot is older than 14 days"
+        >
+          stale
+        </span>
+      ) : null}
     </p>
   )
 }
@@ -622,7 +650,7 @@ export function GroupStrength({
                   g.leaderCount,
                   finviz,
                 )
-                const peek = entry?.top5.slice(0, 2).map((row) => row.ticker) ?? []
+                const peek = entry?.pending ? [] : (entry?.top5.slice(0, 2).map((row) => row.ticker) ?? [])
                 return (
                   <tr
                     key={g.id}

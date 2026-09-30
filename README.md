@@ -109,8 +109,8 @@ Payloads are stamped with `SCAN_CACHE_SCHEMA` (`server/scanCache.ts`). Schema 2 
 | `GET /api/market/health` | Key presence + cascade (no secrets) |
 | `GET /api/market/snapshot?symbol=` | On-demand single-symbol cascade |
 | `GET /api/groups` | Leading industry groups (Finviz live, or internal fallback) |
-| `GET /api/groups/leaders?period=&slugs=` | Finviz top stocks for up to 12 group slugs (lazy; see below) |
-| `GET /api/groups/:slug/stocks?period=` | That group's Finviz top list, scored with the same Stage-2 pipeline as the scan |
+| `GET /api/groups/leaders?period=&slugs=` | Top snapshot members for up to 12 group slugs, ranked by computed performance (lazy; may return `pending`) |
+| `GET /api/groups/:slug/stocks?period=` | That group's top 20 snapshot members by the selected period, scored with the same Stage-2 pipeline as the scan |
 
 On server boot: load cache; if missing/stale, start a background scan. UI **Refresh** triggers `POST /api/market/scan/refresh` then reloads the cache.
 
@@ -131,7 +131,7 @@ The panel (**Leading groups · Finviz live**) reads `GET /api/groups`. The serve
 
 - re-ranks the table client-side (that period's performance descending; ties break toward the next-longer period, then the other Finviz performance fields; missing numbers sort last)
 - highlights that period's column when the column exists (1W has no column)
-- chooses the Finviz screener order for leaders and drill-down
+- chooses which performance window ranks leaders and the group drill-down
 - resets the column sort to that period, descending
 
 | Period | Finviz `o=` |
@@ -144,13 +144,64 @@ The panel (**Leading groups · Finviz live**) reads `GET /api/groups`. The serve
 
 **Sortable headers.** Click **#**, **Group**, **Leaders**, **1D**, **1M**, **3M**, or **6M** to sort. Click again to flip direction. The active header shows a chevron. Dragging a column resize handle does not sort (the handle stops the click, and a drag larger than a few pixels is ignored). **Leaders** sorts by the in-scan count; groups whose count is still loading, failed, or unknown sort last in both directions. Column widths stay in `qm-groups-col-widths`. The mobile strip shows the selected period first.
 
-**Leader definition.** A leader is a stock in that group's Finviz top list for the selected period (first page only, at most 20 rows; price &gt; $5 and average volume &gt; 750K, the same Stage-1 liquidity floors as `MIN_PRICE` / `MIN_AVG_DAILY_VOL`) whose selected-period performance is **&gt; 0** and that **also appears in the current scan cache**. Scan membership stands in for "above the 200-day SMA": the cached scan only contains names that already passed Stage 1, Stage 1.5 (above 200 and above 50), and Stage 2. The cell is `N/D` (for example `3/20`), where `D` is how many Finviz rows were actually parsed. The tooltip lists up to five tickers, best selected-period performance first, and marks which are in the scan. One or two of those tickers also sit in small type on the group-name line. While the list is loading the cell is `…`. On error it is `—` and the tooltip carries the error. If the scan cache is not ready, the cell shows the top ticker(s) without a count and the tooltip says the count is unknown. Groups outside the fetch window show `·` rather than spinning. The client requests leaders only for the first 25 groups in the current sort, plus the selected group, in batches of at most 12, and again when the period changes.
+**Leader definition.** A leader is one of the top 20 names in that group's membership snapshot (price &gt; $5 and average volume &gt; 750K at the time the snapshot was built) whose **computed** selected-period performance is **&gt; 0** and that **also appears in the current scan cache**. Scan membership stands in for "above the 200-day SMA": the cached scan only contains names that already passed Stage 1, Stage 1.5 (above 200 and above 50), and Stage 2. The cell is `N/D` (for example `3/18`), where `D` is how many of those top 20 have a real performance number. The tooltip lists up to five tickers, best selected-period performance first, and marks which are in the scan. One or two of those tickers also sit in small type on the group-name line. While the list is loading or the server still has members to price, the cell is `…`. On error it is `—` and the tooltip carries the error. If the scan cache is not ready, the cell shows the top ticker(s) without a count and the tooltip says the count is unknown. Groups outside the fetch window show `·` rather than spinning. The client requests leaders only for the first 25 groups in the current sort, plus the selected group, in batches of at most 12, and again when the period changes. A `pending: true` entry is retried with backoff (3s, then 6s, then 12s, up to 12 attempts).
 
-`GET /api/groups/leaders?period=3m&slugs=a,b` validates `period` (`1d|1w|1m|3m|6m`) and each slug (`[a-z0-9]+`, max 12). Each entry is `{ slug, period, fetchedAt, stale, error?, leaders, top5, inScanCount, parsedCount }`. A leader row is `{ ticker, company, perf, price, changePct, relVolume, avgVolume, inScan }`. `perf` is the selected period's percent (`—` on the page becomes `null`).
+`GET /api/groups/leaders?period=3m&slugs=a,b` validates `period` (`1d|1w|1m|3m|6m`) and each slug (`[a-z0-9]+`, max 12). Each entry is `{ slug, period, fetchedAt, stale, error?, pending?, leaders, top5, inScanCount, parsedCount, memberCount?, membership? }`. A leader row is `{ ticker, company, perf, price, changePct, relVolume, avgVolume, inScan }`. `perf` is the computed selected-period percent (`null` when there are not enough bars). `membership` is `{ source: "snapshot", generatedAt, stale }` when the snapshot was used. See **Membership snapshot** below.
 
-**Group drill-down.** Clicking a Finviz group name (desktop row or mobile card) loads `GET /api/groups/:slug/stocks?period=`. The server takes that same top page, then runs `scoreTickers` — the Stage-2 function the full scan uses (`fetchSymbolSnapshot` → `computeIdeaMetrics` → earnings). Tickers already in the scan cache are reused. Names that fail the scan rules (below the 200-day SMA, or the price/volume screens) are **kept and flagged** (`aboveSma200: false`, characteristic `Below 200MA`, stage badge **Below 200**). They stay visible in this view even when the stage and SMA filters would hide them. Names with no bars go in `failed: [{ ticker, reason }]` and the table shows `N of D tickers had no data`. The response is `{ slug, label, period, order, source: "finviz", fetchedAt, stale, ideas, failed, finvizPerf, parsedCount }`. If Finviz is blocked and there is no cache, the route returns **502** `{ error }` and the table shows that message with **Retry**. No rows are invented. Changing the period reloads the selected group. **Reset** (header, next to the period control, and in the results banner) clears the selection and puts the existing dashboard scan back in the table. It does not start a new scan. The external Finviz icon still opens `screener.ashx?v=111&f=ind_<slug>&o=<period order>`. The ideas filters, sort, resizable columns, and TradingView copy apply to the rows on screen. Finviz's own period percent is on the row tooltip; the 1M / 3M columns stay the scanner's figures. The internal fallback panel still filters by `groupId` and still uses its own leader count (members within 10% of the 52-week high).
+**Group drill-down.** Clicking a Finviz group name (desktop row or mobile card) loads `GET /api/groups/:slug/stocks?period=`. The server ranks that group's snapshot members by the selected period, keeps the top 20 that have a performance number, then runs `scoreTickers` — the Stage-2 function the full scan uses (`fetchSymbolSnapshot` → `computeIdeaMetrics` → earnings). Tickers already in the scan cache are reused. Names that fail the scan rules (below the 200-day SMA, or the price/volume screens) are **kept and flagged** (`aboveSma200: false`, characteristic `Below 200MA`, stage badge **Below 200**). They stay visible in this view even when the stage and SMA filters would hide them. Names with no bars go in `failed: [{ ticker, reason }]` and the table shows `N of D tickers had no data`. The response is `{ slug, label, period, order, source: "snapshot", fetchedAt, stale, ideas, failed, finvizPerf, perfByTicker, parsedCount, membership }`. `source` may still be `"finviz"` when `FINVIZ_SCREENER_LIVE=1` and that fetch succeeds. `finvizPerf` and `perfByTicker` both carry the computed period percent on the snapshot path. If the snapshot is missing, the slug is absent, or every member lacks performance data, the route returns **502** `{ error }` and the table shows that message with **Retry**. No rows are invented. Changing the period reloads the selected group. **Reset** (header, next to the period control, and in the results banner) clears the selection and puts the existing dashboard scan back in the table. It does not start a new scan. The external Finviz icon still opens `screener.ashx?v=111&f=ind_<slug>&o=<period order>` in the browser. The ideas filters, sort, resizable columns, and TradingView copy apply to the rows on screen. The row tooltip shows the computed period percent; the 1M / 3M columns stay the scanner's figures from the scored bars. The banner reads `Group: X · top 20 by <period> perf · membership snapshot <date>`, with an amber **stale** tag when the snapshot is older than 14 days. The internal fallback panel still filters by `groupId` and still uses its own leader count (members within 10% of the 52-week high).
 
-**Finviz request budget.** Groups, the screener, and drill-down share one in-memory queue: concurrency **2**, at least **400 ms** between request starts, **10 s** timeout, desktop Chrome User-Agent, redirects followed. No proxy, cookie, or browser automation. Screener HTML and scored group payloads are cached **12 minutes** per `(slug, order)` and `(slug, period)`. A failed refetch keeps the last good payload and marks it `stale`. In-flight calls for the same key share one request. The server does not walk all ~144 industries up front. A challenge or consent page, or HTTP 403 / 429 / 503, is an error.
+**Finviz request budget.** The groups page (`finviz.com/groups`) is still fetched at request time: concurrency **2**, at least **400 ms** between request starts, **10 s** timeout, desktop Chrome User-Agent, redirects followed. No proxy, cookie, or browser automation. That payload is cached **12 minutes**. A failed refetch keeps the last good groups payload and marks it `stale`. A challenge or consent page, or HTTP 403 / 429 / 503, falls back to the internal ranking when nothing is cached. With `FINVIZ_SCREENER_LIVE` unset, leaders and drill-down make **no** request to `finviz.com/screener.ashx`. Scored group payloads are cached **12 minutes** per `(slug, period, snapshot time)`.
+
+### Membership snapshot
+
+Render's IPs receive **HTTP 403** from `finviz.com/screener.ashx`. The groups page still answers from Render and stays the source of industry performance (1D / 1W / 1M / 3M / 6M columns). Membership is a file built where the screener answers, then read at request time. The build does not use a proxy, a cookie, or a browser, and it does not require Finviz Elite. There is no GitHub Action for this refresh: the available token cannot write workflows, and Finviz was not verified from GitHub runners. Refresh it by hand.
+
+```bash
+npm run build:groups
+```
+
+That runs `scripts/buildGroupMembers.ts` (esbuild, then node). It reads industry slugs and names from the live groups page, then for each slug walks `screener.ashx?v=141` with `f=ind_<slug>,sh_price_o5,sh_avgvol_o750`, pages `r=1`, `r=21`, `r=41`, … until a page has fewer than 20 rows, and stops after 15 pages. The same polite queue as the groups fetch is used (concurrency 2, ≥400 ms gap, desktop Chrome User-Agent, 10 s timeout). A failed page is retried at most twice. A 403, 429, 503, or challenge page aborts the run. The destination `server/data/finviz-group-members.json` is replaced only after every group succeeds (temp file, then rename). An empty Finviz screen (`result_count` 0 and no table) is stored as zero tickers.
+
+The file shape is `{ version: 1, source: "finviz", sourceNote, generatedAt, filters: { minPrice: 5, minAvgVolume: 750000 }, groups: { [slug]: { name, tickers, companies?, count } } }`. Commit the file with the app. Render cannot rebuild it.
+
+**When to refresh.** About weekly. Industry membership drifts slowly. The header and the group banner show `Membership: snapshot YYYY-MM-DD`. Older than **14 days** adds an amber **stale** tag. Leaders still compute from a stale file; the tag is the reminder. A slug that Finviz adds after the snapshot returns `not in membership snapshot; run npm run build:groups` on that entry (leaders) or as the stocks error. A missing or invalid file returns `Membership snapshot missing` / `Membership snapshot invalid` the same way. Nothing is filled in with a guess.
+
+**Period math.** For each snapshot member the server loads one daily-bar snapshot (`fetchSymbolSnapshot`: Yahoo chart, then Finnhub, then Stooq). That one fetch fills every period, so changing 1D / 1W / 1M / 3M / 6M does not fetch again. The quote cache lives about **15 minutes** (a failed symbol about **60 seconds**) and in-flight loads share one call.
+
+Lookback is completed daily bars **before** the session that produced `price`:
+
+| Period | Return |
+|--------|--------|
+| 1D | `price / prevClose − 1`, with `prevClose` from `resolvePrevClose` (the prior session close; Yahoo `chartPreviousClose` on a 1-year chart is about a year ago and is not used) |
+| 1W | price vs the close **5** sessions back |
+| 1M | **21** sessions |
+| 3M | **63** sessions |
+| 6M | **126** sessions |
+
+Finviz's own columns are Perf Week, Perf Month (about 4 weeks), Perf Quart (13 weeks) and Perf Half (26 weeks), roughly 5 / 20 / 65 / 130 sessions. A few percentage points of difference versus Finviz is expected. Too few bars returns `null` (shown as `—`). Relative volume, when present, is the price-session share volume divided by the mean of the 20 completed bars before it and is **not** scaled up for the portion of the session still ahead, so an intraday print sits below Finviz's relative volume. Average volume is the mean of up to 63 daily bars. The scan cache's idea perf fields are a different window and are not copied; bars already in the market-data cache are reused.
+
+Members are ordered by that percent descending, nulls last, ticker ascending on a tie. The leader pool is the top 20.
+
+**Request-time cost.** One leaders call prices cached symbols immediately and starts at most **40** uncached symbols or about **8 seconds**, with **4** workers and a **50 ms** gap. Groups that still have unpriced members come back `{ pending: true }` with an empty leader list so the UI keeps showing `…` and polls. Drill-down of a single group prices every member of that group, then scores the top 20. After the scan cache exists, a background warm-up (at most **2** workers, **200 ms** gap) prices members of the top **25** industries by the current Finviz 3-month figure. It never blocks the scan. `GROUP_WARMUP=0` turns it off. The default is on.
+
+On Render's free tier a cold instance has an empty quote cache and the dyno may be asleep. The first leaders paint can take several poll rounds (each round up to about 8 seconds, plus Yahoo latency) before the visible groups finish. Warm-up shortens the next load of the top 25 while the process stays up. A sleeping free instance pays the cold cost again.
+
+**Env**
+
+| Variable | Default | Effect |
+|----------|---------|--------|
+| `GROUP_WARMUP` | on | `0` disables the background member warm-up |
+| `FINVIZ_SCREENER_LIVE` | off | `1` tries `finviz.com/screener.ashx` first for leaders and drill-down, then uses the snapshot if that fetch fails. Leave unset in production |
+| `GROUP_MEMBERS_PATH` | `server/data/finviz-group-members.json` | Override the snapshot path |
+
+**Limitations of the snapshot path**
+
+- Performance is computed here. It can differ from Finviz's 4-week / 13-week / 26-week figures by a few points, and 1W is 5 sessions.
+- A cold leaders request for many groups is bounded per call and finishes across polls. It is not a single instant answer.
+- "In the scan" is membership in the cached full scan, which is also above the 50-day SMA. It is not a fresh 200-SMA check of every snapshot ticker outside that cache.
+- Names Finviz adds to an industry show up after the next `npm run build:groups`. Until then that slug errors.
+- The 15-page cap is 300 names. A group that still had a full page at the cap is stored with `truncated: true`.
+- Provider failures stay as `null` performance or, on drill-down when nobody in the group has a number, as an error. No figure is estimated.
 
 ### Rate limits / free tier
 
@@ -163,9 +214,12 @@ The panel (**Leading groups · Finviz live**) reads `GET /api/groups`. The serve
 | Snapshot cache TTL | 10 min | `MARKET_CACHE_TTL_MS` |
 | Scan cache stale | 45 min | `SCAN_CACHE_STALE_MS` |
 | Cascade | Yahoo-first on bulk scan | Finnhub still used when helpful |
-| Finviz cache | 12 min | Groups, screener page per `(slug, order)`, scored group per `(slug, period)` |
-| Finviz concurrency | 2 | Shared queue, 400 ms minimum gap, 10 s timeout |
-| Leaders batch | 12 slugs | Client asks only for the visible window (about 25) plus the selected group |
+| Finviz groups cache | 12 min | `finviz.com/groups` only, unless `FINVIZ_SCREENER_LIVE=1` |
+| Finviz concurrency | 2 | Groups fetch (and the snapshot build): 400 ms minimum gap, 10 s timeout |
+| Member quote cache | 15 min | One daily-bar snapshot covers every leader period. Failures expire in 60 s |
+| Leaders budget | 8 s or 40 symbols | Uncached names per leaders call; unfinished groups return `pending` |
+| Group warm-up | top 25, 2 workers | After the scan cache exists. `GROUP_WARMUP=0` disables it |
+| Leaders batch | 12 slugs | Client asks only for the visible window (about 25) plus the selected group, and polls pending slugs |
 
 ### Limitations
 
@@ -173,10 +227,11 @@ The panel (**Leading groups · Finviz live**) reads `GET /api/groups`. The serve
 - Stage-1 liquidity uses **share volume**, not dollar volume (Yahoo screener field `avgdailyvol3m`).
 - Stage-1 is capped (~800); Stage 1.5 further shrinks the deep-scan budget via SMA quotes.
 - Near-high / momentum narrowing is intentionally light in Stage 1 so coiled bases are not missed; Stage 1.5 enforces above-200 **and** above-50; Stage 2 + UI filters refine.
-- Finviz HTML can change or block the request. A block is shown as an error. There is no estimated leader list.
-- The screener parser maps columns by header text. A missing expected header fails the parse. Only the first page (≤20 rows) is read.
-- "In the scan" is membership in the cached full scan, which is also above the 50-day SMA. It is not a fresh 200-SMA check of every Finviz ticker outside that cache.
-- Group drill-down can take a while: each ticker not already in the scan cache goes through the market-data cascade. Provider keys are optional; Yahoo is tried first on that path.
+- Finviz HTML for the groups page can change or block the request. A block is shown as fallback or an error. Leader counts are computed from the membership snapshot, not estimated.
+- The screener parser (snapshot build, and the optional live path) maps columns by header text. A missing expected header fails the parse. The build walks every page until a short page or 15 pages. Request-time leaders do not call the screener unless `FINVIZ_SCREENER_LIVE=1`.
+- "In the scan" is membership in the cached full scan, which is also above the 50-day SMA. It is not a fresh 200-SMA check of every snapshot ticker outside that cache.
+- Group drill-down prices every snapshot member of that one group, then scores the top 20. Names already in the scan cache skip the scorer. Provider keys are optional; Yahoo is tried first. A cold group can take a while.
+- The membership file goes stale as industries change. Refresh with `npm run build:groups` about weekly. See **Membership snapshot**.
 - The 1W period ranks and fetches leaders, but it has no table column.
 
 ## Setup readiness stages
@@ -249,9 +304,15 @@ Use only for local UI work. Default when unset: **`live`**.
 | `server/finvizGroups.ts` | Finviz leading-groups fetch, 12-minute cache, `/api/groups` routes |
 | `server/finvizParse.ts` | Pure `FinvizInitGroupsPerformance` parser |
 | `server/finvizHttp.ts` | Shared Finviz fetch queue (concurrency 2, 400 ms gap, 10 s) |
-| `server/finvizScreener.ts` | Performance-screener fetch + leader payload, 12-minute cache |
+| `server/finvizScreener.ts` | Optional live screener fetch (`FINVIZ_SCREENER_LIVE=1` only) |
 | `server/finvizScreenerParse.ts` | Header-driven screener HTML parser |
-| `server/groupStocks.ts` | Group drill-down: screener top list + `scoreTickers`, 12-minute cache |
+| `server/groupMembers.ts` | Snapshot load, validation, staleness, page collection |
+| `server/groupPerformance.ts` | Period returns from provider bars, quote cache, leaders time budget |
+| `server/groupLeaders.ts` | `GET /api/groups/leaders` from the snapshot |
+| `server/groupStocks.ts` | Group drill-down: snapshot top 20 + `scoreTickers`, 12-minute cache |
+| `server/groupWarmup.ts` | Background warm-up of the top 25 groups |
+| `server/data/finviz-group-members.json` | Committed membership snapshot (`npm run build:groups`) |
+| `scripts/buildGroupMembers.ts` | Builds that file from a host that can reach Finviz |
 | `server/fixtures/finviz-screener-performance-sample.html` | Trimmed real screener table used by parser tests |
 | `src/lib/groupPeriod.ts` | Period → Finviz order, slug checks, leader-count definition |
 | `src/hooks/useGroups.ts` | Client poll of `/api/groups` (keeps last good payload) |
@@ -277,7 +338,7 @@ Use only for local UI work. Default when unset: **`live`**.
 | **% from 52w high** | Distance below ~252-day high |
 | **1M / 3M / 6M perf** | Close vs ~21 / ~63 / ~126 trading days ago |
 | **Group 1D / 1W / 1M / 3M / 6M** | Finviz industry performance (3M = 13-week, 6M = 26-week). The panel ranks by the selected period. 1W is on the tooltip, not its own column. Fallback: average of scan members' returns in that internal group |
-| **Leaders `N/D`** | Of the Finviz top `D` names in the group (≤20, price &gt; $5, avg volume &gt; 750K), how many have selected-period performance &gt; 0 and also sit in the current scan cache |
+| **Leaders `N/D`** | Of the top 20 snapshot members with a computed selected-period performance (price &gt; $5 and avg volume &gt; 750K when the snapshot was built), how many are &gt; 0 and also sit in the current scan cache |
 | **earningsDate / daysToEarnings / earningsStatus** | Next earnings from Finnhub calendar (Nasdaq fallback); `avoid` = same/next trading day (hard fail for entry / not A+); `alert` ≈ 2 trading days; `clear` otherwise |
 | **DolVol / Avg $ volume** | 20-day average of close × volume |
 | **SMA200 / SMA50 / SMA20 / SMA10** | Simple moving averages of daily closes |

@@ -32,3 +32,4 @@ dist-server
 # Server scan cache (regenerated at runtime)
 data/scan-cache.json
 data/*.tmp
+server/data/*.tmp

@@ -44,6 +44,9 @@ export interface GroupViewBanner {
   parsedCount: number | null
   onReset: () => void
   onRetry: () => void
+  source?: 'finviz' | 'snapshot' | null
+  membershipGeneratedAt?: string | null
+  membershipStale?: boolean
 }
 
 interface Props {
@@ -229,13 +232,15 @@ function finvizPerfTitle(
   idea: TradingIdea,
   finvizPerf: Record<string, number | null> | null | undefined,
   periodLabel?: string,
+  source?: 'finviz' | 'snapshot' | null,
 ): string | undefined {
   if (!finvizPerf) return undefined
   const key = idea.ticker.toUpperCase()
   if (!(key in finvizPerf) && !(idea.ticker in finvizPerf)) return undefined
   const value = key in finvizPerf ? finvizPerf[key] : finvizPerf[idea.ticker]
   const shown = value == null || !Number.isFinite(value) ? '—' : fmtPct(value)
-  return `Finviz ${periodLabel ?? 'period'} performance: ${shown}`
+  if (source === 'finviz') return `Finviz ${periodLabel ?? 'period'} performance: ${shown}`
+  return `${periodLabel ?? 'Period'} performance from snapshot members via Yahoo/Finnhub, not Finviz's live screener: ${shown}`
 }
 
 function PinButton({
@@ -379,19 +384,33 @@ function ResizableTh({
   )
 }
 
+function snapshotDay(iso: string): string {
+  const match = /^(\d{4}-\d{2}-\d{2})/.exec(iso)
+  return match?.[1] ?? iso
+}
+
 function GroupBannerBar({ banner }: { banner: GroupViewBanner }) {
   const denom = banner.parsedCount ?? 20
   const reasons = banner.failed.map((row) => `${row.ticker}: ${row.reason}`).join('\n')
+  const membershipDay = banner.membershipGeneratedAt ? snapshotDay(banner.membershipGeneratedAt) : null
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-terminal-border bg-terminal-blue/10 px-2 py-1.5 text-[11px] sm:px-3">
       <span className="min-w-0 font-medium text-terminal-fg">
         Group: {banner.label}
         <span className="font-normal text-terminal-muted">
-          {' '}
-          · top {denom} by {banner.periodLabel} perf (Finviz)
+          {membershipDay
+            ? ` · top ${denom} by ${banner.periodLabel} perf · membership snapshot ${membershipDay}`
+            : ` · top ${denom} by ${banner.periodLabel} perf (Finviz)`}
         </span>
-        {banner.stale ? (
-          <span className="ml-1.5 text-terminal-amber" title="Last good Finviz or score cache">
+        {banner.membershipStale ? (
+          <span
+            className="ml-1.5 rounded bg-terminal-amber-dim px-1 py-px text-[10px] font-medium uppercase tracking-wide text-terminal-amber"
+            title="Membership snapshot is older than 14 days"
+          >
+            stale
+          </span>
+        ) : banner.stale ? (
+          <span className="ml-1.5 text-terminal-amber" title="Last good score cache">
             stale
           </span>
         ) : null}
@@ -483,7 +502,7 @@ export function IdeasTable({
             isPinned={isPinned}
             isOnWatchlist={isOnWatchlist}
             onTogglePin={onTogglePin}
-            rowTitle={finvizPerfTitle(idea, finvizPerf, groupBanner?.periodLabel)}
+            rowTitle={finvizPerfTitle(idea, finvizPerf, groupBanner?.periodLabel, groupBanner?.source)}
           />
         ))}
       </div>
@@ -685,7 +704,7 @@ export function IdeasTable({
               const selected = selectedTicker === idea.ticker
               const avoid = idea.earningsStatus === 'avoid'
               const highlight = rowHighlight(idea)
-              const rowTitle = finvizPerfTitle(idea, finvizPerf, groupBanner?.periodLabel)
+              const rowTitle = finvizPerfTitle(idea, finvizPerf, groupBanner?.periodLabel, groupBanner?.source)
               return (
                 <tr
                   key={idea.ticker}

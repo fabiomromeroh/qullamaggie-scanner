@@ -8,6 +8,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createGroupsMiddleware } from './finvizGroups.ts'
+import { startGroupWarmup } from './groupWarmup.ts'
 import {
   createMarketMiddleware,
   getFinnhubKey,
@@ -154,6 +155,7 @@ async function main(): Promise<void> {
 
   const keyPresent = Boolean(getFinnhubKey())
   startBackgroundScanIfNeeded()
+  startGroupWarmup()
 
   console.log(
     JSON.stringify({
