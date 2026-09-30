@@ -1,6 +1,7 @@
 import type { CSSProperties, ReactNode } from 'react'
 import { Pin, PinOff } from 'lucide-react'
 import type { CharacteristicTag, EarningsStatus, SetupStage, TradingIdea } from '../types'
+import { groupViewFilterNote } from '../lib/groupView'
 import { stageLabel } from '../lib/setupStage'
 import { fmtDollarVol, fmtPct, fmtPrice, fmtRvol, pctClass } from '../utils/format'
 import { useResizableColumns } from '../hooks/useResizableColumns'
@@ -47,6 +48,14 @@ export interface GroupViewBanner {
   source?: 'finviz' | 'snapshot' | null
   membershipGeneratedAt?: string | null
   membershipStale?: boolean
+  /** Scored group members currently on screen. */
+  shownCount?: number
+  /** Scored group members before client filters. */
+  total?: number
+  /** Rows removed by a filter the user changed from its default. */
+  hiddenCount?: number
+  /** Restore default scanner filters while keeping this group selected. */
+  onShowAll?: () => void
 }
 
 interface Props {
@@ -393,6 +402,10 @@ function GroupBannerBar({ banner }: { banner: GroupViewBanner }) {
   const denom = banner.parsedCount ?? 20
   const reasons = banner.failed.map((row) => `${row.ticker}: ${row.reason}`).join('\n')
   const membershipDay = banner.membershipGeneratedAt ? snapshotDay(banner.membershipGeneratedAt) : null
+  const filterNote =
+    !banner.loading && !banner.error
+      ? groupViewFilterNote(banner.shownCount ?? 0, banner.total ?? 0, banner.hiddenCount ?? 0)
+      : null
   return (
     <div className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-terminal-border bg-terminal-blue/10 px-2 py-1.5 text-[11px] sm:px-3">
       <span className="min-w-0 font-medium text-terminal-fg">
@@ -425,6 +438,20 @@ function GroupBannerBar({ banner }: { banner: GroupViewBanner }) {
       {banner.failed.length > 0 && !banner.loading && !banner.error ? (
         <span className="text-terminal-amber" title={reasons}>
           {banner.failed.length} of {denom} tickers had no data
+        </span>
+      ) : null}
+      {filterNote ? (
+        <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1 text-terminal-amber">
+          <span>{filterNote}</span>
+          {banner.onShowAll ? (
+            <button
+              type="button"
+              onClick={banner.onShowAll}
+              className="min-h-8 shrink-0 rounded border border-terminal-border-bright bg-terminal-panel px-2 text-[10px] font-medium text-terminal-fg hover:text-terminal-blue"
+            >
+              Show all
+            </button>
+          ) : null}
         </span>
       ) : null}
     </div>
@@ -462,7 +489,13 @@ export function IdeasTable({
             Scan results
           </h2>
           <span className="font-mono text-[10px] text-terminal-dim">
-            {groupBanner?.loading ? 'loading' : `${ideas.length} shown`} · {source === 'demo' ? 'DEMO' : 'LIVE'}
+            {groupBanner?.loading
+              ? 'loading'
+              : groupBanner && (groupBanner.hiddenCount ?? 0) > 0
+                ? `${ideas.length} of ${groupBanner.total ?? ideas.length} shown`
+                : `${ideas.length} shown`}
+            {' · '}
+            {source === 'demo' ? 'DEMO' : 'LIVE'}
           </span>
         </div>
         <CopyForTradingView tickers={tickers} />

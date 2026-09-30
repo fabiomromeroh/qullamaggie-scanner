@@ -8,6 +8,7 @@ import { ResizeHandle } from './components/ResizeHandle'
 import { StatusBanner } from './components/StatusBanner'
 import { WatchlistPanel } from './components/WatchlistPanel'
 import { useDashboard } from './hooks/useDashboard'
+import { groupViewFilterNote } from './lib/groupView'
 import { useResizablePanels } from './hooks/useResizablePanels'
 
 export default function App() {
@@ -33,6 +34,7 @@ export default function App() {
     setPeriod,
     resetGroup,
     retryGroup,
+    showAllGroupStocks,
     groupView,
   } = useDashboard()
 
@@ -164,7 +166,15 @@ export default function App() {
                 isOnWatchlist={userWatchlist.isOnWatchlist}
                 onTogglePin={userWatchlist.toggle}
                 emptyMessage={
-                  selectedGroupUnmatched ? 'No scan ideas match this group.' : undefined
+                  selectedGroupUnmatched
+                    ? 'No scan ideas match this group.'
+                    : groupView && !groupView.loading && !groupView.error
+                      ? (groupViewFilterNote(
+                          groupView.shownCount,
+                          groupView.total,
+                          groupView.hiddenCount,
+                        ) ?? undefined)
+                      : undefined
                 }
                 groupBanner={
                   groupView
@@ -178,6 +188,10 @@ export default function App() {
                         parsedCount: groupView.parsedCount,
                         onReset: resetGroup,
                         onRetry: retryGroup,
+                        onShowAll: showAllGroupStocks,
+                        shownCount: groupView.shownCount,
+                        hiddenCount: groupView.hiddenCount,
+                        total: groupView.total,
                         source: groupView.source,
                         membershipGeneratedAt: groupView.membershipGeneratedAt,
                         membershipStale: groupView.membershipStale,
