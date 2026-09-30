@@ -42,17 +42,41 @@ export interface IndustryGroup {
   id: string
   name: string
   rsRank: number
-  leaderCount: number
-  dayPct: number
-  weekPct: number
-  monthPct: number
-  /** Approx group return ~21 trading days (avg of scan members). */
-  perf1m: number
-  /** Approx group return ~63 trading days. */
-  perf3m: number
-  /** Approx group return ~126 trading days. */
-  perf6m: number
+  /**
+   * Internal ranking: members within 10% of the 52w high.
+   * Finviz: scan ideas whose industry label matches this group.
+   * Absent when that count cannot be computed from real scan data.
+   */
+  leaderCount?: number
+  dayPct?: number
+  weekPct?: number
+  monthPct?: number
+  /** ~21 trading days, or Finviz 1-month performance. */
+  perf1m?: number
+  /** ~63 trading days, or Finviz 13-week performance. */
+  perf3m?: number
+  /** ~126 trading days, or Finviz 6-month performance. */
+  perf6m?: number
+  /** Finviz 1-year performance when the feed includes it. */
+  perf1y?: number
+  /** Finviz year-to-date performance when the feed includes it. */
+  perfYtd?: number
   description: string
+  /** Finviz industry slug (`f=ind_<slug>`). Same as `id` for Finviz rows. */
+  slug?: string
+  source?: 'finviz' | 'internal'
+  /** Relative screener path from the Finviz payload, when present. */
+  screenerUrl?: string
+}
+
+/** `GET /api/groups` payload. */
+export interface GroupsResponse {
+  source: 'finviz' | 'fallback'
+  stale: boolean
+  /** When Finviz was fetched, or when the internal fallback ranking was computed. */
+  fetchedAt: string
+  sourceUrl: string
+  groups: IndustryGroup[]
 }
 
 export interface SparkPoint {

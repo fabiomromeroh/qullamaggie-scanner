@@ -42,6 +42,7 @@ interface Props {
   isPinned?: (ticker: string) => boolean
   isOnWatchlist?: (ticker: string) => boolean
   onTogglePin?: (ticker: string) => void
+  emptyMessage?: string
 }
 
 function SetupBadge({ type }: { type: TradingIdea['setupType'] }) {
@@ -343,6 +344,7 @@ export function IdeasTable({
   isPinned,
   isOnWatchlist,
   onTogglePin,
+  emptyMessage,
 }: Props) {
   const { widthOf, resizeColumn } = useResizableColumns(IDEAS_COL_KEY, DEFAULT_IDEAS_COLS, {
     min: 36,
@@ -371,7 +373,7 @@ export function IdeasTable({
 
       {!ideas.length ? (
         <div className="flex min-h-[12rem] flex-1 items-center justify-center p-4 text-sm text-terminal-muted">
-          No ideas match current filters.
+          {emptyMessage ?? 'No ideas match current filters.'}
         </div>
       ) : (
         <>

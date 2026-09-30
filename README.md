@@ -92,7 +92,7 @@ For each Stage-1.5 survivor (Yahoo-first cascade: Yahoo → Finnhub → Stooq):
 1. Daily bars → Kyle / Qullamaggie proxies (`computeIdeaMetrics`)
 2. Hard gate: **above daily 200 SMA** (recomputed from bars) or excluded
 3. Earnings overlay (Finnhub calendar → Nasdaq)
-4. Dynamic industry groups from Yahoo sector/industry (static `WATCHLIST_GROUPS` when ticker is known)
+4. Industry labels from Yahoo sector/industry (static `WATCHLIST_GROUPS` when the ticker is known). Those labels feed idea `groupId` / `groupName` and the internal group fallback. The Group Strength panel itself uses live Finviz groups (`GET /api/groups`).
 5. QQQ regime from live bars
 
 Results are written to `data/scan-cache.json` (gitignored). Default staleness **45 minutes** (`SCAN_CACHE_STALE_MS`).
@@ -106,8 +106,26 @@ Results are written to `data/scan-cache.json` (gitignored). Default staleness **
 | `POST /api/market/scan/refresh` | Kick background rescan (lock; 202 if started) |
 | `GET /api/market/health` | Key presence + cascade (no secrets) |
 | `GET /api/market/snapshot?symbol=` | On-demand single-symbol cascade |
+| `GET /api/groups` | Leading industry groups (Finviz live, or internal fallback) |
 
 On server boot: load cache; if missing/stale, start a background scan. UI **Refresh** triggers `POST /api/market/scan/refresh` then reloads the cache.
+
+### Group strength — Finviz leading groups
+
+The panel (**Leading groups · Finviz live**) reads `GET /api/groups`. The server fetches the [Finviz industry performance](https://finviz.com/groups?g=industry&v=210&o=-perf13w&st=d1) page with a normal desktop Chrome User-Agent and parses the embedded `FinvizInitGroupsPerformance([...])` JSON. Columns are Finviz's own figures (1D / 1M / 3M is 13-week / 6M, plus 1W, 1Y, and YTD on the tooltip). Missing numbers stay `—`. Nothing is estimated.
+
+| Situation | Response |
+|-----------|----------|
+| Cache younger than **12 minutes** | `source: "finviz"`, `stale: false` |
+| Cache older than that | One shared refetch. Concurrent requests wait on the same fetch |
+| Refetch fails and a previous payload exists | That payload with `stale: true` |
+| Finviz blocked (403 / 429 / 503 or a challenge page), unparseable, or no cache yet | `source: "fallback"` — the existing internal ranking (`buildDynamicGroups` on current scan ideas) |
+
+`fetchedAt` is when Finviz was fetched, or when the fallback ranking was computed. The UI polls about every 5 minutes and keeps the last good payload if a request fails. It shows **Finviz**, an amber **Fallback: internal ranking**, and/or an amber **stale** badge, plus local `updated HH:MM`.
+
+Clicking a group still filters the ideas table. A Finviz group matches a scan idea only when the idea's industry name or id normalizes to the Finviz label or slug (lowercase, non-alphanumerics removed). If none match, the table is empty for that group. Fallback keeps the existing `groupId` drill-down. Each Finviz row links out to `https://finviz.com/screener.ashx?v=111&f=ind_<slug>&o=-perf13w`. That screener page is not scraped.
+
+**Leaders** on a Finviz row is how many current scan ideas match the group. If there is no scan cache to count from, the cell is `—`.
 
 ### Rate limits / free tier
 
@@ -195,6 +213,9 @@ Use only for local UI work. Default when unset: **`live`**.
 | `server/scanEngine.ts` | Stage-1→1.5→2 orchestration + cache writer |
 | `server/scanCache.ts` | `data/scan-cache.json` load/save + scan lock |
 | `server/marketProxy.ts` | Cascade + TTL cache + Vite middleware |
+| `server/finvizGroups.ts` | Finviz leading-groups fetch, 12-minute cache, `GET /api/groups` |
+| `server/finvizParse.ts` | Pure `FinvizInitGroupsPerformance` parser |
+| `src/hooks/useGroups.ts` | Client poll of `/api/groups` (keeps last good payload) |
 | `src/hooks/useDashboard.ts` | Load + filters + stage sort |
 | `src/components/WatchlistPanel.tsx` | Dynamic watchlist UI |
 | `src/components/*` | Header, table, filters, drawer |
@@ -215,7 +236,7 @@ Use only for local UI work. Default when unset: **`live`**.
 | **ADR%** | 20-day average of (high−low)/close × 100 |
 | **% from 52w high** | Distance below ~252-day high |
 | **1M / 3M / 6M perf** | Close vs ~21 / ~63 / ~126 trading days ago |
-| **Group 1M / 3M / 6M** | Average of scan members' 1M/3M/6M returns in that industry (GroupStrength) |
+| **Group 1D / 1M / 3M / 6M** | Finviz industry performance on the leading-groups panel (3M = 13-week). Fallback: average of scan members' returns in that internal group |
 | **earningsDate / daysToEarnings / earningsStatus** | Next earnings from Finnhub calendar (Nasdaq fallback); `avoid` = same/next trading day (hard fail for entry / not A+); `alert` ≈ 2 trading days; `clear` otherwise |
 | **DolVol / Avg $ volume** | 20-day average of close × volume |
 | **SMA200 / SMA50 / SMA20 / SMA10** | Simple moving averages of daily closes |

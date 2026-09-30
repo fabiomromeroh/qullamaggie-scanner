@@ -2,16 +2,19 @@ import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import type { Plugin } from 'vite'
+import { createGroupsMiddleware } from './server/finvizGroups.ts'
 import { createMarketMiddleware, startBackgroundScanIfNeeded } from './server/marketProxy.ts'
 
 function marketDataProxyPlugin(): Plugin {
   return {
     name: 'market-data-proxy',
     configureServer(server) {
+      server.middlewares.use(createGroupsMiddleware())
       server.middlewares.use(createMarketMiddleware())
       startBackgroundScanIfNeeded()
     },
     configurePreviewServer(server) {
+      server.middlewares.use(createGroupsMiddleware())
       server.middlewares.use(createMarketMiddleware())
       startBackgroundScanIfNeeded()
     },

@@ -7,6 +7,7 @@ import http from 'node:http'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createGroupsMiddleware } from './finvizGroups.ts'
 import {
   createMarketMiddleware,
   getFinnhubKey,
@@ -81,14 +82,17 @@ async function main(): Promise<void> {
   }
 
   const market = createMarketMiddleware()
+  const groupsMw = createGroupsMiddleware()
   const host = '0.0.0.0'
   const port = Number(process.env.PORT) || 5173
 
   const server = http.createServer((req, res) => {
     const url = new URL(req.url ?? '/', `http://${host}:${port}`)
+    const pathname = url.pathname.replace(/\/+$/, '') || '/'
 
-    if (url.pathname.startsWith('/api/market')) {
-      void market(
+    if (pathname === '/api/groups' || url.pathname.startsWith('/api/market')) {
+      const handler = pathname === '/api/groups' ? groupsMw : market
+      void handler(
         req,
         {
           get statusCode() {

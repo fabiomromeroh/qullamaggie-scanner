@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronDown, ChevronUp } from 'lucide-react'
-import type { IndustryGroup } from '../types'
+import { ChevronDown, ChevronUp, ExternalLink } from 'lucide-react'
+import type { GroupsResponse, IndustryGroup } from '../types'
 import { fmtPct, pctClass } from '../utils/format'
 import { useResizableColumns } from '../hooks/useResizableColumns'
 import { ResizeHandle } from './ResizeHandle'
@@ -19,10 +19,14 @@ const DEFAULT_COLS: Record<string, number> = {
   m6: 52,
 }
 
+type GroupsMeta = Pick<GroupsResponse, 'source' | 'stale' | 'fetchedAt'>
+
 interface Props {
   groups: IndustryGroup[]
   selectedGroupId: string | null
   onSelectGroup: (id: string | null) => void
+  meta?: GroupsMeta | null
+  loading?: boolean
 }
 
 function readGroupsExpanded(): boolean {
@@ -35,6 +39,61 @@ function readGroupsExpanded(): boolean {
   }
   // Default collapsed on mobile — results dominate the first screenful
   return false
+}
+
+function finite(n: number | undefined): n is number {
+  return typeof n === 'number' && Number.isFinite(n)
+}
+
+function fmtCell(n: number | undefined, digits = 1): string {
+  if (!finite(n)) return '—'
+  return fmtPct(n, digits)
+}
+
+function cellClass(n: number | undefined): string {
+  if (!finite(n)) return 'text-terminal-muted'
+  return pctClass(n)
+}
+
+function formatUpdatedHm(iso: string | undefined): string | null {
+  if (!iso) return null
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return null
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  return `${hh}:${mm}`
+}
+
+function groupTitle(g: IndustryGroup): string {
+  const parts = [g.description]
+  if (g.source === 'finviz' && finite(g.weekPct)) parts.push(`1W ${fmtPct(g.weekPct)}`)
+  parts.push(`1M ${fmtCell(g.perf1m)}`, `3M ${fmtCell(g.perf3m)}`, `6M ${fmtCell(g.perf6m)}`)
+  if (finite(g.perf1y)) parts.push(`1Y ${fmtPct(g.perf1y)}`)
+  if (finite(g.perfYtd)) parts.push(`YTD ${fmtPct(g.perfYtd)}`)
+  return parts.join(' · ')
+}
+
+function finvizScreenerHref(slug: string): string {
+  return `https://finviz.com/screener.ashx?v=111&f=ind_${encodeURIComponent(slug)}&o=-perf13w`
+}
+
+function GroupsMetaLine({ meta }: { meta: GroupsMeta }) {
+  const updated = formatUpdatedHm(meta.fetchedAt)
+  return (
+    <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px] font-normal normal-case tracking-normal text-terminal-dim">
+      {meta.source === 'fallback' ? (
+        <span className="font-medium text-terminal-amber">Fallback: internal ranking</span>
+      ) : (
+        <span>Finviz</span>
+      )}
+      {meta.stale ? (
+        <span className="rounded bg-terminal-amber-dim px-1 py-px font-medium uppercase tracking-wide text-terminal-amber">
+          stale
+        </span>
+      ) : null}
+      {updated ? <span>updated {updated}</span> : null}
+    </p>
+  )
 }
 
 function Th({
@@ -71,13 +130,20 @@ function Th({
   )
 }
 
-export function GroupStrength({ groups, selectedGroupId, onSelectGroup }: Props) {
+export function GroupStrength({
+  groups,
+  selectedGroupId,
+  onSelectGroup,
+  meta = null,
+  loading = false,
+}: Props) {
   const ranked = useMemo(() => [...groups].sort((a, b) => a.rsRank - b.rsRank), [groups])
   const [stripOpen, setStripOpen] = useState(readGroupsExpanded)
   const { widthOf, resizeColumn } = useResizableColumns(GROUPS_COL_KEY, DEFAULT_COLS, {
     min: 36,
     max: 320,
   })
+  const finviz = meta?.source === 'finviz'
 
   useEffect(() => {
     try {
@@ -102,7 +168,7 @@ export function GroupStrength({ groups, selectedGroupId, onSelectGroup }: Props)
             aria-expanded={stripOpen}
           >
             <span className="text-[10px] font-semibold uppercase tracking-wider text-terminal-muted">
-              Groups
+              Leading groups
               {!stripOpen ? (
                 <span className="ml-1.5 font-mono normal-case tracking-normal text-terminal-dim">
                   · top 3 · {topSummary || '—'}
@@ -126,51 +192,76 @@ export function GroupStrength({ groups, selectedGroupId, onSelectGroup }: Props)
           ) : null}
         </div>
 
+        {loading || meta ? (
+          <div className="px-2.5 pb-1">
+            {loading && !meta ? (
+              <p className="text-[10px] text-terminal-dim">Loading…</p>
+            ) : meta ? (
+              <GroupsMetaLine meta={meta} />
+            ) : null}
+          </div>
+        ) : null}
+
         {stripOpen ? (
           <div className="overflow-x-auto p-1.5">
-            <div className="flex gap-1.5 snap-x snap-mandatory">
-              {ranked.map((g) => {
-                const active = selectedGroupId === g.id
-                return (
-                  <button
-                    key={g.id}
-                    type="button"
-                    onClick={() => onSelectGroup(active ? null : g.id)}
-                    title={`${g.description} · 1M ${fmtPct(g.perf1m)} · 3M ${fmtPct(g.perf3m)} · 6M ${fmtPct(g.perf6m)}`}
-                    className={`snap-start shrink-0 min-w-[9.75rem] max-w-[11rem] rounded-md border px-2 py-1 text-left transition-colors ${
-                      active
-                        ? 'border-terminal-blue/50 bg-terminal-blue/10'
-                        : 'border-terminal-border bg-terminal-bg hover:bg-terminal-elevated'
-                    }`}
-                  >
-                    <div className="flex items-center gap-1">
-                      <span className="font-mono text-[9px] text-terminal-dim">#{g.rsRank}</span>
-                      <span className="truncate text-[10px] font-medium leading-tight text-terminal-fg">
-                        {g.name}
-                      </span>
-                    </div>
-                    <div className="mt-0.5 flex flex-nowrap items-center gap-1.5 overflow-visible font-mono text-[9px] leading-tight whitespace-nowrap">
-                      <span className={pctClass(g.perf1m)}>1M {fmtPct(g.perf1m, 0)}</span>
-                      <span className={pctClass(g.perf3m)}>3M {fmtPct(g.perf3m, 0)}</span>
-                      <span className={pctClass(g.perf6m)}>6M {fmtPct(g.perf6m, 0)}</span>
-                    </div>
-                  </button>
-                )
-              })}
-            </div>
+            {ranked.length === 0 ? (
+              <p className="px-1 py-2 text-[10px] text-terminal-dim">
+                {loading ? 'Loading leading groups…' : 'No groups'}
+              </p>
+            ) : (
+              <div className="flex gap-1.5 snap-x snap-mandatory">
+                {ranked.map((g) => {
+                  const active = selectedGroupId === g.id
+                  return (
+                    <button
+                      key={g.id}
+                      type="button"
+                      onClick={() => onSelectGroup(active ? null : g.id)}
+                      title={groupTitle(g)}
+                      className={`snap-start shrink-0 min-w-[9.75rem] max-w-[11rem] rounded-md border px-2 py-1 text-left transition-colors ${
+                        active
+                          ? 'border-terminal-blue/50 bg-terminal-blue/10'
+                          : 'border-terminal-border bg-terminal-bg hover:bg-terminal-elevated'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1">
+                        <span className="font-mono text-[9px] text-terminal-dim">#{g.rsRank}</span>
+                        <span className="truncate text-[10px] font-medium leading-tight text-terminal-fg">
+                          {g.name}
+                        </span>
+                      </div>
+                      <div className="mt-0.5 flex flex-nowrap items-center gap-1.5 overflow-visible font-mono text-[9px] leading-tight whitespace-nowrap">
+                        <span className={cellClass(g.perf1m)}>1M {fmtCell(g.perf1m, 0)}</span>
+                        <span className={cellClass(g.perf3m)}>3M {fmtCell(g.perf3m, 0)}</span>
+                        <span className={cellClass(g.perf6m)}>6M {fmtCell(g.perf6m, 0)}</span>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
           </div>
         ) : null}
       </div>
 
       {/* Desktop header + table */}
-      <div className="hidden shrink-0 items-center justify-between border-b border-terminal-border px-3 py-2 md:flex">
-        <h2 className="text-xs font-semibold uppercase tracking-wider text-terminal-muted">
-          Group strength
-        </h2>
+      <div className="hidden shrink-0 items-center justify-between gap-2 border-b border-terminal-border px-3 py-2 md:flex">
+        <div className="min-w-0">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-terminal-muted">
+            Leading groups · Finviz live
+          </h2>
+          {loading && !meta ? (
+            <p className="mt-0.5 text-[10px] font-normal normal-case tracking-normal text-terminal-dim">
+              Loading…
+            </p>
+          ) : meta ? (
+            <GroupsMetaLine meta={meta} />
+          ) : null}
+        </div>
         <button
           type="button"
           onClick={() => onSelectGroup(null)}
-          className="min-h-8 px-2 text-[10px] text-terminal-dim hover:text-terminal-blue"
+          className="min-h-8 shrink-0 px-2 text-[10px] text-terminal-dim hover:text-terminal-blue"
         >
           Clear
         </button>
@@ -195,10 +286,26 @@ export function GroupStrength({ groups, selectedGroupId, onSelectGroup }: Props)
               <Th colKey="name" width={widthOf('name')} onResize={resizeColumn}>
                 Group
               </Th>
-              <Th colKey="leaders" width={widthOf('leaders')} onResize={resizeColumn} align="right">
+              <Th
+                colKey="leaders"
+                width={widthOf('leaders')}
+                onResize={resizeColumn}
+                align="right"
+                title={
+                  finviz
+                    ? 'Scan ideas whose industry name matches this Finviz group'
+                    : 'Members within 10% of 52-week high'
+                }
+              >
                 Leaders
               </Th>
-              <Th colKey="d1" width={widthOf('d1')} onResize={resizeColumn} align="right">
+              <Th
+                colKey="d1"
+                width={widthOf('d1')}
+                onResize={resizeColumn}
+                align="right"
+                title={finviz ? 'Finviz today change %' : undefined}
+              >
                 1D
               </Th>
               <Th
@@ -206,7 +313,7 @@ export function GroupStrength({ groups, selectedGroupId, onSelectGroup }: Props)
                 width={widthOf('m1')}
                 onResize={resizeColumn}
                 align="right"
-                title="Avg member ~21 trading-day return"
+                title={finviz ? 'Finviz 1-month performance' : 'Avg member ~21 trading-day return'}
               >
                 1M
               </Th>
@@ -215,7 +322,9 @@ export function GroupStrength({ groups, selectedGroupId, onSelectGroup }: Props)
                 width={widthOf('m3')}
                 onResize={resizeColumn}
                 align="right"
-                title="Avg member ~63 trading-day return"
+                title={
+                  finviz ? 'Finviz 13-week performance' : 'Avg member ~63 trading-day return'
+                }
               >
                 3M
               </Th>
@@ -224,52 +333,78 @@ export function GroupStrength({ groups, selectedGroupId, onSelectGroup }: Props)
                 width={widthOf('m6')}
                 onResize={resizeColumn}
                 align="right"
-                title="Avg member ~126 trading-day return"
+                title={
+                  finviz ? 'Finviz 6-month performance' : 'Avg member ~126 trading-day return'
+                }
               >
                 6M
               </Th>
             </tr>
           </thead>
           <tbody>
-            {ranked.map((g) => {
-              const active = selectedGroupId === g.id
-              return (
-                <tr
-                  key={g.id}
-                  onClick={() => onSelectGroup(active ? null : g.id)}
-                  title={`${g.description} · 1M ${fmtPct(g.perf1m)} · 3M ${fmtPct(g.perf3m)} · 6M ${fmtPct(g.perf6m)}`}
-                  className={`cursor-pointer border-t border-terminal-border/60 transition-colors hover:bg-terminal-elevated ${
-                    active ? 'bg-terminal-blue/10' : ''
-                  }`}
-                >
-                  <td className="overflow-hidden px-2 py-1.5 font-mono text-terminal-dim">{g.rsRank}</td>
-                  <td className="overflow-hidden px-2 py-1.5">
-                    <div className="truncate font-medium text-terminal-fg">{g.name}</div>
-                    <div className="mt-0.5 h-1 w-full max-w-[120px] overflow-hidden rounded-full bg-terminal-border">
-                      <div
-                        className="h-full rounded-full bg-gradient-to-r from-terminal-green/80 to-terminal-blue/80"
-                        style={{ width: `${Math.max(8, 100 - (g.rsRank - 1) * 10)}%` }}
-                      />
-                    </div>
-                  </td>
-                  <td className="overflow-hidden px-2 py-1.5 text-right font-mono text-terminal-fg">
-                    {g.leaderCount}
-                  </td>
-                  <td className={`overflow-hidden px-2 py-1.5 text-right font-mono ${pctClass(g.dayPct)}`}>
-                    {fmtPct(g.dayPct)}
-                  </td>
-                  <td className={`overflow-hidden px-2 py-1.5 text-right font-mono ${pctClass(g.perf1m)}`}>
-                    {fmtPct(g.perf1m, 0)}
-                  </td>
-                  <td className={`overflow-hidden px-2 py-1.5 text-right font-mono ${pctClass(g.perf3m)}`}>
-                    {fmtPct(g.perf3m, 0)}
-                  </td>
-                  <td className={`overflow-hidden px-2 py-1.5 text-right font-mono ${pctClass(g.perf6m)}`}>
-                    {fmtPct(g.perf6m, 0)}
-                  </td>
-                </tr>
-              )
-            })}
+            {ranked.length === 0 ? (
+              <tr>
+                <td colSpan={7} className="px-2 py-4 text-center text-terminal-dim">
+                  {loading ? 'Loading leading groups…' : 'No groups'}
+                </td>
+              </tr>
+            ) : (
+              ranked.map((g) => {
+                const active = selectedGroupId === g.id
+                const slug = g.slug || g.id
+                return (
+                  <tr
+                    key={g.id}
+                    onClick={() => onSelectGroup(active ? null : g.id)}
+                    title={groupTitle(g)}
+                    className={`cursor-pointer border-t border-terminal-border/60 transition-colors hover:bg-terminal-elevated ${
+                      active ? 'bg-terminal-blue/10' : ''
+                    }`}
+                  >
+                    <td className="overflow-hidden px-2 py-1.5 font-mono text-terminal-dim">{g.rsRank}</td>
+                    <td className="overflow-hidden px-2 py-1.5">
+                      <div className="flex items-center gap-1">
+                        <div className="min-w-0 flex-1 truncate font-medium text-terminal-fg">{g.name}</div>
+                        {g.source === 'finviz' && slug ? (
+                          <a
+                            href={finvizScreenerHref(slug)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="Open Finviz screener"
+                            aria-label={`Open Finviz screener for ${g.name}`}
+                            className="inline-flex shrink-0 text-terminal-dim hover:text-terminal-blue"
+                            onClick={(event) => event.stopPropagation()}
+                          >
+                            <ExternalLink className="h-3 w-3" aria-hidden />
+                          </a>
+                        ) : null}
+                      </div>
+                      <div className="mt-0.5 h-1 w-full max-w-[120px] overflow-hidden rounded-full bg-terminal-border">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-terminal-green/80 to-terminal-blue/80"
+                          style={{ width: `${Math.max(8, 100 - (g.rsRank - 1) * 10)}%` }}
+                        />
+                      </div>
+                    </td>
+                    <td className="overflow-hidden px-2 py-1.5 text-right font-mono text-terminal-fg">
+                      {g.leaderCount == null ? '—' : g.leaderCount}
+                    </td>
+                    <td className={`overflow-hidden px-2 py-1.5 text-right font-mono ${cellClass(g.dayPct)}`}>
+                      {fmtCell(g.dayPct)}
+                    </td>
+                    <td className={`overflow-hidden px-2 py-1.5 text-right font-mono ${cellClass(g.perf1m)}`}>
+                      {fmtCell(g.perf1m, 0)}
+                    </td>
+                    <td className={`overflow-hidden px-2 py-1.5 text-right font-mono ${cellClass(g.perf3m)}`}>
+                      {fmtCell(g.perf3m, 0)}
+                    </td>
+                    <td className={`overflow-hidden px-2 py-1.5 text-right font-mono ${cellClass(g.perf6m)}`}>
+                      {fmtCell(g.perf6m, 0)}
+                    </td>
+                  </tr>
+                )
+              })
+            )}
           </tbody>
         </table>
       </div>
