@@ -79,6 +79,73 @@ export interface GroupsResponse {
   groups: IndustryGroup[]
 }
 
+/** Leading-groups period. Drives rank, Finviz `o=`, and drill-down. */
+export type GroupPeriod = '1d' | '1w' | '1m' | '3m' | '6m'
+
+/**
+ * One stock from a group's Finviz performance screener (first page, ≤20).
+ * `inScan` is null when the scan cache is not ready.
+ */
+export interface FinvizLeader {
+  ticker: string
+  company: string
+  /** Selected-period performance percent. Null when Finviz shows "—". */
+  perf: number | null
+  price: number | null
+  changePct: number | null
+  relVolume: number | null
+  avgVolume: number | null
+  inScan: boolean | null
+}
+
+/** One slug inside `GET /api/groups/leaders`. */
+export interface GroupLeadersEntry {
+  slug: string
+  period: GroupPeriod
+  fetchedAt: string | null
+  stale: boolean
+  error?: string
+  leaders: FinvizLeader[]
+  /** Up to 5, best selected-period performance first. */
+  top5: FinvizLeader[]
+  /**
+   * How many parsed rows are leaders (perf > 0 and in the current scan).
+   * Null when the scan cache is not ready or the screener failed.
+   */
+  inScanCount: number | null
+  /** Finviz rows actually parsed. Denominator for the "N/20" display. */
+  parsedCount: number
+}
+
+/** `GET /api/groups/leaders?period=&slugs=` */
+export interface GroupLeadersResponse {
+  period: GroupPeriod
+  order: string
+  groups: GroupLeadersEntry[]
+}
+
+export interface GroupStockFailure {
+  ticker: string
+  reason: string
+}
+
+/** `GET /api/groups/:slug/stocks?period=` */
+export interface GroupStocksResponse {
+  slug: string
+  label: string
+  period: GroupPeriod
+  order: string
+  source: 'finviz'
+  fetchedAt: string
+  stale: boolean
+  ideas: TradingIdea[]
+  failed: GroupStockFailure[]
+  /** Selected-period Finviz performance percent, keyed by ticker. Null when Finviz shows "—". */
+  finvizPerf: Record<string, number | null>
+  /** Rows parsed from the Finviz screener page (≤20). */
+  parsedCount: number
+}
+
 export interface SparkPoint {
   d: string
   c: number

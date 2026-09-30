@@ -90,8 +90,12 @@ async function main(): Promise<void> {
     const url = new URL(req.url ?? '/', `http://${host}:${port}`)
     const pathname = url.pathname.replace(/\/+$/, '') || '/'
 
-    if (pathname === '/api/groups' || url.pathname.startsWith('/api/market')) {
-      const handler = pathname === '/api/groups' ? groupsMw : market
+    if (
+      pathname === '/api/groups' ||
+      pathname.startsWith('/api/groups/') ||
+      url.pathname.startsWith('/api/market')
+    ) {
+      const handler = pathname.startsWith('/api/groups') ? groupsMw : market
       void handler(
         req,
         {

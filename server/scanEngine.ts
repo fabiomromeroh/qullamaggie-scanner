@@ -63,6 +63,101 @@ function snapToBars(snap: SymbolSnapshot): SymbolBars {
   }
 }
 
+export interface ScoreTickerFailure {
+  ticker: string
+  reason: string
+}
+
+export interface ScoreTickersOptions {
+  /** Force group id/name (Finviz drill-down). Wins over `describe`. */
+  groupOverride?: { groupId: string; groupName: string }
+  /** Per-symbol name and industry when the caller already knows them. */
+  describe?: (symbol: string) => { name: string; groupId: string; groupName: string }
+  /**
+   * Default false: names below the 200 SMA are counted and dropped before the
+   * earnings pass, matching the full scan. Group drill-down sets true so those
+   * names are returned and flagged (`aboveSma200` false, tag `Below 200MA`).
+   */
+  includeBelowSma200?: boolean
+}
+
+export interface ScoreTickersResult {
+  ideas: TradingIdea[]
+  failed: ScoreTickerFailure[]
+  belowSma200Count: number
+  /** Set when the earnings batch throws. Ideas are still returned without that overlay. */
+  earningsError?: string
+}
+
+/**
+ * Stage-2 scoring used by the full scan and by group drill-down:
+ * fetchSymbolSnapshot → computeIdeaMetrics → fetchEarningsBatch / applyEarningsToIdea.
+ * Concurrency and gap are the scan's STAGE2_* settings. Snapshot cache in
+ * marketProxy is reused when a symbol was fetched recently.
+ */
+export async function scoreTickers(
+  symbols: string[],
+  opts?: ScoreTickersOptions,
+): Promise<ScoreTickersResult> {
+  const includeBelow = opts?.includeBelowSma200 === true
+  const settled = await mapPool(
+    symbols,
+    STAGE2_CONCURRENCY,
+    async (symbol) => {
+      const snap = await fetchSymbolSnapshot(symbol, { preferYahoo: true })
+      const described = opts?.describe?.(symbol)
+      const idea = computeIdeaMetrics(
+        {
+          ticker: symbol,
+          name: described?.name || symbol,
+          groupId: opts?.groupOverride?.groupId ?? described?.groupId ?? 'other',
+          groupName: opts?.groupOverride?.groupName ?? described?.groupName ?? 'Other',
+        },
+        snapToBars(snap),
+      )
+      if (!idea) throw new Error(`Insufficient history for ${symbol}`)
+      return idea
+    },
+    STAGE2_GAP_MS,
+  )
+
+  const ideas: TradingIdea[] = []
+  const failed: ScoreTickerFailure[] = []
+  let belowSma200Count = 0
+  for (let i = 0; i < settled.length; i++) {
+    const result = settled[i]!
+    const symbol = symbols[i]!
+    if (result.status === 'fulfilled') {
+      if (!result.value.aboveSma200) {
+        belowSma200Count += 1
+        if (!includeBelow) continue
+      }
+      ideas.push(result.value)
+    } else {
+      const reason = result.reason instanceof Error ? result.reason.message : String(result.reason)
+      failed.push({ ticker: symbol, reason })
+    }
+  }
+
+  let earningsError: string | undefined
+  try {
+    if (ideas.length) {
+      const earnRows = await fetchEarningsBatch(ideas.map((idea) => idea.ticker))
+      const earnMap = new Map(
+        earnRows.map((row) => [row.symbol.toUpperCase(), row.earningsDate] as const),
+      )
+      for (let i = 0; i < ideas.length; i++) {
+        const ticker = ideas[i]!.ticker.toUpperCase()
+        ideas[i] = applyEarningsToIdea(ideas[i]!, earnMap.get(ticker) ?? null)
+      }
+    }
+  } catch (err) {
+    earningsError = err instanceof Error ? err.message : String(err)
+  }
+
+  return { ideas, failed, belowSma200Count, earningsError }
+}
+
 async function mapPool<T, R>(
   items: T[],
   concurrency: number,
@@ -237,57 +332,24 @@ export async function runFullScan(): Promise<ScanCachePayload> {
     )
   }
 
-  const settled = await mapPool(
-    shortlist,
-    STAGE2_CONCURRENCY,
-    async (hit) => {
-      const snap = await fetchSymbolSnapshot(hit.symbol, { preferYahoo: true })
-      const g = resolveGroup(hitBySym.get(hit.symbol.toUpperCase()), hit.symbol)
-      const idea = computeIdeaMetrics(
-        {
-          ticker: hit.symbol,
-          name: g.name,
-          groupId: g.groupId,
-          groupName: g.groupName,
-        },
-        snapToBars(snap),
-      )
-      if (!idea) throw new Error(`Insufficient history for ${hit.symbol}`)
-      return idea
+  const scored = await scoreTickers(
+    shortlist.map((hit) => hit.symbol),
+    {
+      includeBelowSma200: false,
+      describe(symbol) {
+        const group = resolveGroup(hitBySym.get(symbol.toUpperCase()), symbol)
+        return { name: group.name, groupId: group.groupId, groupName: group.groupName }
+      },
     },
-    STAGE2_GAP_MS,
   )
-
-  const ideas: TradingIdea[] = []
-  let below200 = 0
-  let failCount = 0
-  for (let i = 0; i < settled.length; i++) {
-    const r = settled[i]!
-    const sym = shortlist[i]!.symbol
-    if (r.status === 'fulfilled') {
-      if (!r.value.aboveSma200) {
-        below200 += 1
-        continue
-      }
-      ideas.push(r.value)
-    } else {
-      failCount += 1
-      const msg = r.reason instanceof Error ? r.reason.message : String(r.reason)
-      if (errors.length < 40) errors.push(`${sym}: ${msg}`)
-    }
+  const ideas = scored.ideas
+  const below200 = scored.belowSma200Count
+  const failCount = scored.failed.length
+  for (const failure of scored.failed) {
+    if (errors.length < 40) errors.push(`${failure.ticker}: ${failure.reason}`)
   }
-
-  try {
-    const earnRows = await fetchEarningsBatch(ideas.map((i) => i.ticker))
-    const earnMap = new Map(
-      earnRows.map((e) => [e.symbol.toUpperCase(), e.earningsDate] as const),
-    )
-    for (let i = 0; i < ideas.length; i++) {
-      const t = ideas[i]!.ticker.toUpperCase()
-      ideas[i] = applyEarningsToIdea(ideas[i]!, earnMap.get(t) ?? null)
-    }
-  } catch (err) {
-    errors.push(`earnings: ${err instanceof Error ? err.message : String(err)}`)
+  if (scored.earningsError) {
+    errors.push(`earnings: ${scored.earningsError}`)
   }
 
   let marketRegime = null

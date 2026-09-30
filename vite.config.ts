@@ -9,6 +9,7 @@ function marketDataProxyPlugin(): Plugin {
   return {
     name: 'market-data-proxy',
     configureServer(server) {
+      // /api/groups, /api/groups/leaders, and /api/groups/:slug/stocks
       server.middlewares.use(createGroupsMiddleware())
       server.middlewares.use(createMarketMiddleware())
       startBackgroundScanIfNeeded()
