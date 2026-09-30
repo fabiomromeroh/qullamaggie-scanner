@@ -9,8 +9,9 @@ import { buildDynamicGroups } from './scanEngine.ts'
 import { loadScanCache } from './scanCache.ts'
 import { finvizRowsToGroups, parseFinvizGroupsPerformance } from './finvizParse.ts'
 import { FINVIZ_CACHE_TTL_MS, finvizFetchText, looksLikeFinvizChallenge } from './finvizHttp.ts'
-import { getGroupLeaders } from './finvizScreener.ts'
+import { getGroupLeaders } from './groupLeaders.ts'
 import { getGroupStocks } from './groupStocks.ts'
+import { isMembershipStale, loadMembershipSnapshot } from './groupMembers.ts'
 
 export { finvizRowsToGroups, parseFinvizGroupsPerformance }
 
@@ -89,7 +90,18 @@ function fetchDeduped(): Promise<CachedFinviz> {
   return inFlight
 }
 
+function membershipMeta(): GroupsResponse['membership'] {
+  const loaded = loadMembershipSnapshot()
+  if (!loaded.ok) return undefined
+  return {
+    source: 'snapshot',
+    generatedAt: loaded.snapshot.generatedAt,
+    stale: isMembershipStale(loaded.snapshot.generatedAt),
+  }
+}
+
 function respondFinviz(entry: CachedFinviz, stale: boolean): GroupsResponse {
+  const membership = membershipMeta()
   return {
     source: 'finviz',
     stale,
@@ -97,6 +109,7 @@ function respondFinviz(entry: CachedFinviz, stale: boolean): GroupsResponse {
     sourceUrl: FINVIZ_GROUPS_URL,
     // In-scan leader counts come from GET /api/groups/leaders, not this list.
     groups: entry.groups,
+    ...(membership ? { membership } : {}),
   }
 }
 

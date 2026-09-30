@@ -162,14 +162,16 @@ export interface LeaderCandidate {
 }
 
 /**
- * A leader is a stock in the group's Finviz top list (price > $5, average
- * volume > 750K, ordered by the selected period) whose selected-period
- * performance is > 0 AND that appears in the current scan results.
+ * A leader is a pool member whose selected-period performance is > 0 and that
+ * appears in the current scan results.
  *
- * Scan membership stands in for "above the 200-day SMA": the cached scan only
- * contains names that passed Stage 1, Stage 1.5 (above 200 and above 50), and
- * Stage 2. `inScanCount` is null when `scanTickers` is null (cache not ready).
- * `parsedCount` is the denominator (rows actually parsed, at most 20).
+ * The snapshot path passes pool members that have a performance number (top 20
+ * by the selected period, from names that cleared price > $5 and average
+ * volume > 750K when the membership file was built). The optional live
+ * screener path passes that page's rows. Scan membership stands in for "above
+ * the 200-day SMA": the cached scan only contains names that passed Stage 1,
+ * Stage 1.5 (above 200 and above 50), and Stage 2. `inScanCount` is null when
+ * `scanTickers` is null (cache not ready). `parsedCount` is `rows.length`.
  */
 export function countGroupLeaders(
   rows: LeaderCandidate[],

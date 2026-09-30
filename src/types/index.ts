@@ -77,19 +77,30 @@ export interface GroupsResponse {
   fetchedAt: string
   sourceUrl: string
   groups: IndustryGroup[]
+  /**
+   * Membership file used for leaders and drill-down.
+   * Absent when `server/data/finviz-group-members.json` is missing or invalid.
+   */
+  membership?: {
+    source: 'snapshot'
+    generatedAt: string
+    /** True when `generatedAt` is older than 14 days. */
+    stale: boolean
+  }
 }
 
 /** Leading-groups period. Drives rank, Finviz `o=`, and drill-down. */
 export type GroupPeriod = '1d' | '1w' | '1m' | '3m' | '6m'
 
 /**
- * One stock from a group's Finviz performance screener (first page, ≤20).
+ * One stock in a group's leader pool (top 20 snapshot members by the
+ * selected period, or the live screener page when that option is on).
  * `inScan` is null when the scan cache is not ready.
  */
 export interface FinvizLeader {
   ticker: string
   company: string
-  /** Selected-period performance percent. Null when Finviz shows "—". */
+  /** Selected-period performance percent. Null when it cannot be computed. */
   perf: number | null
   price: number | null
   changePct: number | null
@@ -109,12 +120,22 @@ export interface GroupLeadersEntry {
   /** Up to 5, best selected-period performance first. */
   top5: FinvizLeader[]
   /**
-   * How many parsed rows are leaders (perf > 0 and in the current scan).
-   * Null when the scan cache is not ready or the screener failed.
+   * How many pool members with data are leaders (perf > 0 and in the current scan).
+   * Null when the scan cache is not ready, the group is still computing, or the request failed.
    */
   inScanCount: number | null
-  /** Finviz rows actually parsed. Denominator for the "N/20" display. */
+  /** Pool members that have a real selected-period performance. Denominator for N/D. */
   parsedCount: number
+  /** True while this slug still has snapshot members waiting on market data. */
+  pending?: boolean
+  /** Snapshot members for the slug, before the top-20 cut. */
+  memberCount?: number
+  /** Present on the snapshot path. `stale` means generatedAt is older than 14 days. */
+  membership?: {
+    source: 'snapshot'
+    generatedAt: string
+    stale: boolean
+  }
 }
 
 /** `GET /api/groups/leaders?period=&slugs=` */
@@ -135,15 +156,27 @@ export interface GroupStocksResponse {
   label: string
   period: GroupPeriod
   order: string
-  source: 'finviz'
+  /** `snapshot` is the default. `finviz` only when FINVIZ_SCREENER_LIVE=1 succeeded. */
+  source: 'finviz' | 'snapshot'
   fetchedAt: string
   stale: boolean
   ideas: TradingIdea[]
   failed: GroupStockFailure[]
-  /** Selected-period Finviz performance percent, keyed by ticker. Null when Finviz shows "—". */
+  /**
+   * Selected-period performance percent, keyed by ticker.
+   * Snapshot mode fills this from computed returns (same object as `perfByTicker`).
+   * Null when the window cannot be computed.
+   */
   finvizPerf: Record<string, number | null>
-  /** Rows parsed from the Finviz screener page (≤20). */
+  /** Same map as `finvizPerf` on the snapshot path. */
+  perfByTicker?: Record<string, number | null>
+  /** Names in the ranked pool that were sent to the scorer (≤20). */
   parsedCount: number
+  /** When the membership file was built. `stale` means older than 14 days. */
+  membership?: {
+    generatedAt: string
+    stale: boolean
+  }
 }
 
 export interface SparkPoint {

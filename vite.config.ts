@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import type { Plugin } from 'vite'
 import { createGroupsMiddleware } from './server/finvizGroups.ts'
+import { startGroupWarmup } from './server/groupWarmup.ts'
 import { createMarketMiddleware, startBackgroundScanIfNeeded } from './server/marketProxy.ts'
 
 function marketDataProxyPlugin(): Plugin {
@@ -13,11 +14,13 @@ function marketDataProxyPlugin(): Plugin {
       server.middlewares.use(createGroupsMiddleware())
       server.middlewares.use(createMarketMiddleware())
       startBackgroundScanIfNeeded()
+      startGroupWarmup()
     },
     configurePreviewServer(server) {
       server.middlewares.use(createGroupsMiddleware())
       server.middlewares.use(createMarketMiddleware())
       startBackgroundScanIfNeeded()
+      startGroupWarmup()
     },
   }
 }

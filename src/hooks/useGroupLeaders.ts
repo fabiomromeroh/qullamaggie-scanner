@@ -3,6 +3,11 @@ import { isGroupSlug } from '../lib/groupPeriod'
 import type { GroupLeadersEntry, GroupLeadersResponse, GroupPeriod } from '../types'
 
 const BATCH = 12
+const MAX_ATTEMPTS = 12
+
+function backoffMs(attempt: number): number {
+  return Math.min(12_000, 3_000 * 2 ** Math.min(Math.max(attempt, 1) - 1, 2))
+}
 
 function isLeadersPayload(value: unknown): value is GroupLeadersResponse {
   if (!value || typeof value !== 'object') return false
@@ -65,17 +70,26 @@ export function useGroupLeaders(slugs: string[], period: GroupPeriod, enabled: b
 
   useEffect(() => {
     if (!enabled) return
-    const wanted = slugsRef.current.filter((slug) => isGroupSlug(slug))
-    const missing = wanted.filter((slug) => entriesRef.current[slug] == null)
-    if (missing.length === 0) return
-
     const ac = new AbortController()
-    const batches: string[][] = []
-    for (let i = 0; i < missing.length; i += BATCH) batches.push(missing.slice(i, i + BATCH))
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let cancelled = false
+    const attempts = new Map<string, number>()
+    let known: Record<string, GroupLeadersEntry> = { ...entriesRef.current }
 
-    void (async () => {
-      for (const batch of batches) {
+    const run = async () => {
+      const wanted = slugsRef.current.filter((slug) => isGroupSlug(slug))
+      const todo = wanted.filter((slug) => {
+        const entry = known[slug]
+        if (!entry) return true
+        return entry.pending === true && (attempts.get(slug) ?? 0) < MAX_ATTEMPTS
+      })
+      if (todo.length === 0) return
+
+      let stillPending = false
+      let highest = 0
+      for (let i = 0; i < todo.length; i += BATCH) {
         if (ac.signal.aborted) return
+        const batch = todo.slice(i, i + BATCH)
         const qs = new URLSearchParams({ period, slugs: batch.join(',') })
         try {
           const res = await fetch(`/api/groups/leaders?${qs.toString()}`, { signal: ac.signal })
@@ -87,30 +101,70 @@ export function useGroupLeaders(slugs: string[], period: GroupPeriod, enabled: b
           }
           if (ac.signal.aborted) return
           if (!res.ok || !isLeadersPayload(body)) {
-            setEntries((prev) => stampError(prev, batch, period, errorText(body, res.status)))
+            known = stampError(known, batch, period, errorText(body, res.status))
+            entriesRef.current = known
+            setEntries(known)
             continue
           }
-          setEntries((prev) => {
-            const next = { ...prev }
-            for (const entry of body.groups) {
-              if (entry && entry.slug && entry.period === period) next[entry.slug] = entry
-            }
-            for (const slug of batch) {
-              if (!next[slug]) {
-                next[slug] = stampError({}, [slug], period, 'Leaders response omitted this group')[slug]!
+          const next = { ...known }
+          for (const entry of body.groups) {
+            if (!entry || !entry.slug || entry.period !== period) continue
+            let stored = entry
+            if (entry.pending) {
+              const n = (attempts.get(entry.slug) ?? 0) + 1
+              attempts.set(entry.slug, n)
+              highest = Math.max(highest, n)
+              if (n >= MAX_ATTEMPTS) {
+                stored = {
+                  ...entry,
+                  pending: false,
+                  leaders: [],
+                  top5: [],
+                  inScanCount: null,
+                  parsedCount: 0,
+                  error: 'Leaders still computing after several attempts. Reload to continue.',
+                }
+              } else {
+                stillPending = true
               }
+            } else {
+              attempts.delete(entry.slug)
             }
-            return next
-          })
+            next[entry.slug] = stored
+          }
+          for (const slug of batch) {
+            if (!next[slug]) {
+              next[slug] = stampError({}, [slug], period, 'Leaders response omitted this group')[slug]!
+            }
+          }
+          known = next
+          entriesRef.current = next
+          setEntries(next)
         } catch (err) {
           if (ac.signal.aborted || (err instanceof Error && err.name === 'AbortError')) return
           const message = err instanceof Error ? err.message : 'leaders request failed'
-          setEntries((prev) => stampError(prev, batch, period, message))
+          known = stampError(known, batch, period, message)
+          entriesRef.current = known
+          setEntries(known)
         }
       }
-    })()
+      if (stillPending && !cancelled && !ac.signal.aborted) {
+        timer = setTimeout(() => {
+          if (!cancelled) void run()
+        }, backoffMs(Math.max(1, highest)))
+        if (cancelled) {
+          clearTimeout(timer)
+          timer = undefined
+        }
+      }
+    }
 
-    return () => ac.abort()
+    void run()
+    return () => {
+      cancelled = true
+      ac.abort()
+      if (timer) clearTimeout(timer)
+    }
   }, [enabled, period, slugKey])
 
   return storedPeriod === period ? entries : {}

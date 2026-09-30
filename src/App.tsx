@@ -178,6 +178,9 @@ export default function App() {
                         parsedCount: groupView.parsedCount,
                         onReset: resetGroup,
                         onRetry: retryGroup,
+                        source: groupView.source,
+                        membershipGeneratedAt: groupView.membershipGeneratedAt,
+                        membershipStale: groupView.membershipStale,
                       }
                     : null
                 }
