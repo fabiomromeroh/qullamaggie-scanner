@@ -1,16 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { loadDashboardData } from '../adapters/marketData'
 import { fetchScanStatus } from '../adapters/providers/liveFetch'
-import { ideaMatchesFinvizGroup } from '../lib/groupMatch'
+import { matchesFilters } from '../lib/ideaFilters'
 import { GROUP_PERIODS, isGroupPeriod, isGroupSlug } from '../lib/groupPeriod'
+import { selectGroupViewRows } from '../lib/groupView'
 import { stageSortRank } from '../lib/setupStage'
 import type {
   DashboardData,
   GroupPeriod,
   GroupStocksResponse,
   IdeaFilters,
-  IndustryGroup,
-  TradingIdea,
 } from '../types'
 import { DEFAULT_FILTERS } from '../types'
 import { useGroups } from './useGroups'
@@ -57,51 +56,6 @@ function isGroupStocksResponse(value: unknown): value is GroupStocksResponse {
 
 const SCAN_POLL_MS = 3000
 const SCAN_POLL_CAP_MS = 3 * 60 * 1000
-
-function matchesFilters(
-  idea: TradingIdea,
-  f: IdeaFilters,
-  groupSource: 'finviz' | 'fallback' | null,
-  groups: IndustryGroup[],
-  groupView = false,
-): boolean {
-  const below200 = !idea.aboveSma200
-  // Hard gate on the normal scan. Group drill-down keeps below-200 names and flags them.
-  if (!groupView && below200) return false
-  // Below-200 drill-down rows skip the setup-stage and SMA preference gates so the flag stays visible.
-  const exemptTrendGates = groupView && below200
-  if (!exemptTrendGates) {
-    if (f.requireSma50 && !idea.aboveSma50) return false
-    if (f.requireSma10 && !idea.aboveSma10) return false
-    if (f.requireSma20 && !idea.aboveSma20) return false
-    if (f.stages.length && !f.stages.includes(idea.setupStage)) return false
-  }
-  if (idea.rvol < f.minRvol) return false
-  const distance = Math.abs(Math.min(0, idea.pctFrom52wHigh))
-  if (distance > f.maxPctFromHigh) return false
-  if (!f.setupTypes.includes(idea.setupType)) return false
-  if (f.aPlusOnly && !idea.isAPlus) return false
-  // A+ only never includes earnings avoid (isAPlus already false); still honor status filter
-  if (f.earningsStatuses?.length && !f.earningsStatuses.includes(idea.earningsStatus)) {
-    return false
-  }
-  if (f.hasCatalyst && !idea.catalyst) return false
-  if (!groupView && f.groupId) {
-    if (groupSource === 'finviz') {
-      const group = groups.find((g) => g.id === f.groupId)
-      if (!group || !ideaMatchesFinvizGroup(idea, group)) return false
-    } else if (idea.groupId !== f.groupId) {
-      return false
-    }
-  }
-  if (f.search) {
-    const q = f.search.toLowerCase()
-    const hay =
-      `${idea.ticker} ${idea.name} ${idea.groupName} ${idea.setupStage} ${idea.characteristics.join(' ')}`.toLowerCase()
-    if (!hay.includes(q)) return false
-  }
-  return true
-}
 
 export function useDashboard() {
   const [data, setData] = useState<DashboardData | null>(null)
@@ -361,16 +315,19 @@ export function useDashboard() {
     }
   }, [groupViewActive, groupSlug, groupsView, groupStocks, period])
 
+  const groupRows = useMemo(() => {
+    if (!groupView?.ideas) return null
+    return selectGroupViewRows(groupView.ideas, filtersForView, groupView.finvizPerf)
+  }, [groupView, filtersForView])
+
   const filteredIdeas = useMemo(() => {
-    const usingGroup = groupView != null
-    if (!data && !usingGroup) return []
-    const sourceIdeas = usingGroup ? (groupView?.ideas ?? []) : (data?.ideas ?? [])
-    const downtrend = data?.marketRegime?.stDirection === 'Downtrend'
+    if (groupView) return groupRows?.rows ?? []
+    if (!data) return []
+    const downtrend = data.marketRegime?.stDirection === 'Downtrend'
     const groupSource = groupsMeta?.source ?? null
-    return sourceIdeas
-      .filter((i) => matchesFilters(i, filtersForView, groupSource, groupsView, usingGroup))
+    return data.ideas
+      .filter((i) => matchesFilters(i, filtersForView, groupSource, groupsView))
       .sort((a, b) => {
-        if (usingGroup && a.aboveSma200 !== b.aboveSma200) return a.aboveSma200 ? -1 : 1
         // Earnings avoid sinks to bottom (hard fail for entry)
         const ea = a.earningsStatus === 'avoid' ? 1 : 0
         const eb = b.earningsStatus === 'avoid' ? 1 : 0
@@ -386,7 +343,7 @@ export function useDashboard() {
         if (downtrend && b.setupStage === 'triggering' && a.setupStage !== 'triggering') return -1
         return b.rvol - a.rvol
       })
-  }, [data, filtersForView, groupsMeta, groupsView, groupView])
+  }, [data, filtersForView, groupsMeta, groupsView, groupView, groupRows])
 
   const selectedIdea = useMemo(() => {
     if (!selectedTicker) return null
@@ -411,6 +368,16 @@ export function useDashboard() {
   const resetGroup = useCallback(() => {
     setFilters((current) => ({ ...current, groupId: null }))
     setGroupStocks(null)
+  }, [])
+
+  const showAllGroupStocks = useCallback(() => {
+    setFilters((current) => ({
+      ...DEFAULT_FILTERS,
+      groupId: current.groupId,
+      setupTypes: [...DEFAULT_FILTERS.setupTypes],
+      stages: [...DEFAULT_FILTERS.stages],
+      earningsStatuses: [...DEFAULT_FILTERS.earningsStatuses],
+    }))
   }, [])
 
   const retryGroup = useCallback(() => {
@@ -440,6 +407,14 @@ export function useDashboard() {
     setPeriod,
     resetGroup,
     retryGroup,
-    groupView,
+    showAllGroupStocks,
+    groupView: groupView
+      ? {
+          ...groupView,
+          shownCount: groupRows?.rows.length ?? 0,
+          hiddenCount: groupRows?.hiddenCount ?? 0,
+          total: groupRows?.total ?? 0,
+        }
+      : null,
   }
 }
