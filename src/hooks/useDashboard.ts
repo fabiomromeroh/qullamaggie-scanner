@@ -1,15 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { loadDashboardData } from '../adapters/marketData'
 import { fetchScanStatus } from '../adapters/providers/liveFetch'
+import { ideaMatchesFinvizGroup } from '../lib/groupMatch'
 import { stageSortRank } from '../lib/setupStage'
-import type { DashboardData, IdeaFilters, TradingIdea } from '../types'
+import type { DashboardData, IdeaFilters, IndustryGroup, TradingIdea } from '../types'
 import { DEFAULT_FILTERS } from '../types'
+import { useGroups } from './useGroups'
 import { useUserWatchlist } from './useUserWatchlist'
 
 const SCAN_POLL_MS = 3000
 const SCAN_POLL_CAP_MS = 3 * 60 * 1000
 
-function matchesFilters(idea: TradingIdea, f: IdeaFilters): boolean {
+function matchesFilters(
+  idea: TradingIdea,
+  f: IdeaFilters,
+  groupSource: 'finviz' | 'fallback' | null,
+  groups: IndustryGroup[],
+): boolean {
   // Hard gate: never show names below the daily 200-SMA as setups.
   if (!idea.aboveSma200) return false
   if (f.requireSma50 && !idea.aboveSma50) return false
@@ -26,7 +33,14 @@ function matchesFilters(idea: TradingIdea, f: IdeaFilters): boolean {
     return false
   }
   if (f.hasCatalyst && !idea.catalyst) return false
-  if (f.groupId && idea.groupId !== f.groupId) return false
+  if (f.groupId) {
+    if (groupSource === 'finviz') {
+      const group = groups.find((g) => g.id === f.groupId)
+      if (!group || !ideaMatchesFinvizGroup(idea, group)) return false
+    } else if (idea.groupId !== f.groupId) {
+      return false
+    }
+  }
   if (f.search) {
     const q = f.search.toLowerCase()
     const hay =
@@ -47,6 +61,7 @@ export function useDashboard() {
   const [selectedTicker, setSelectedTicker] = useState<string | null>(null)
 
   const { ingestScanIdeas, ...userWatchlistRest } = useUserWatchlist()
+  const { payload: groupsPayload, loading: groupsFetchLoading } = useGroups()
   const pollStartedAt = useRef<number | null>(null)
   const reloadRef = useRef<(opts?: { refreshScan?: boolean }) => Promise<void>>(
     async () => undefined,
@@ -170,11 +185,53 @@ export function useDashboard() {
     }
   }, [scanning])
 
+  const groupsView = useMemo(() => {
+    if (!data) return []
+    if (mode === 'demo' || !groupsPayload) {
+      if (mode !== 'demo' && groupsFetchLoading) return []
+      return data.groups
+    }
+    if (groupsPayload.source !== 'finviz') return groupsPayload.groups
+    return groupsPayload.groups.map((group) => ({
+      ...group,
+      leaderCount: data.ideas.filter((idea) => ideaMatchesFinvizGroup(idea, group)).length,
+    }))
+  }, [data, mode, groupsPayload, groupsFetchLoading])
+
+  const groupsMeta = useMemo(() => {
+    if (!data) return null
+    if (mode !== 'demo' && groupsPayload) {
+      return {
+        source: groupsPayload.source,
+        stale: groupsPayload.stale,
+        fetchedAt: groupsPayload.fetchedAt,
+        sourceUrl: groupsPayload.sourceUrl,
+      }
+    }
+    if (mode !== 'demo' && groupsFetchLoading) return null
+    return {
+      source: 'fallback' as const,
+      stale: false,
+      fetchedAt: data.asOf,
+      sourceUrl: '',
+    }
+  }, [data, mode, groupsPayload, groupsFetchLoading])
+
+  const groupsLoading = Boolean(data) && mode !== 'demo' && groupsFetchLoading
+
+  // Drop a selection that the current group list cannot honor, without a setState effect.
+  const filtersForView = useMemo(() => {
+    if (!filters.groupId || groupsLoading) return filters
+    if (groupsView.some((group) => group.id === filters.groupId)) return filters
+    return { ...filters, groupId: null }
+  }, [filters, groupsLoading, groupsView])
+
   const filteredIdeas = useMemo(() => {
     if (!data) return []
     const downtrend = data.marketRegime?.stDirection === 'Downtrend'
+    const groupSource = groupsMeta?.source ?? null
     return data.ideas
-      .filter((i) => matchesFilters(i, filters))
+      .filter((i) => matchesFilters(i, filtersForView, groupSource, groupsView))
       .sort((a, b) => {
         // Earnings avoid sinks to bottom (hard fail for entry)
         const ea = a.earningsStatus === 'avoid' ? 1 : 0
@@ -191,7 +248,7 @@ export function useDashboard() {
         if (downtrend && b.setupStage === 'triggering' && a.setupStage !== 'triggering') return -1
         return b.rvol - a.rvol
       })
-  }, [data, filters])
+  }, [data, filtersForView, groupsMeta, groupsView])
 
   const selectedIdea = useMemo(() => {
     if (!data || !selectedTicker) return null
@@ -207,7 +264,7 @@ export function useDashboard() {
     scanning,
     scanMessage,
     mode,
-    filters,
+    filters: filtersForView,
     setFilters,
     filteredIdeas,
     selectedIdea,
@@ -215,5 +272,8 @@ export function useDashboard() {
     setSelectedTicker,
     reload,
     userWatchlist,
+    groups: groupsView,
+    groupsMeta,
+    groupsLoading,
   }
 }

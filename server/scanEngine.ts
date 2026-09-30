@@ -111,7 +111,7 @@ function resolveGroup(
   }
 }
 
-function buildDynamicGroups(ideas: TradingIdea[]): IndustryGroup[] {
+export function buildDynamicGroups(ideas: TradingIdea[]): IndustryGroup[] {
   const byGroup = new Map<string, TradingIdea[]>()
   const names = new Map<string, string>()
   for (const idea of ideas) {
@@ -142,10 +142,11 @@ function buildDynamicGroups(ideas: TradingIdea[]): IndustryGroup[] {
       perf6m,
       description:
         staticDesc ?? `${names.get(id) ?? id} (dynamic from scan survivors)`,
+      source: 'internal',
     })
   }
 
-  groups.sort((a, b) => b.perf3m - a.perf3m || b.perf1m - a.perf1m)
+  groups.sort((a, b) => (b.perf3m ?? 0) - (a.perf3m ?? 0) || (b.perf1m ?? 0) - (a.perf1m ?? 0))
   groups.forEach((g, i) => {
     g.rsRank = i + 1
   })

@@ -9,6 +9,7 @@ import { StatusBanner } from './components/StatusBanner'
 import { WatchlistPanel } from './components/WatchlistPanel'
 import { useDashboard } from './hooks/useDashboard'
 import { useResizablePanels } from './hooks/useResizablePanels'
+import { ideaMatchesFinvizGroup } from './lib/groupMatch'
 
 export default function App() {
   const {
@@ -26,6 +27,9 @@ export default function App() {
     setSelectedTicker,
     reload,
     userWatchlist,
+    groups,
+    groupsMeta,
+    groupsLoading,
   } = useDashboard()
 
   const { widths: panelWidths, resizeGroups, resizeWatchlist } = useResizablePanels()
@@ -34,6 +38,17 @@ export default function App() {
   const coiledCount = filteredIdeas.filter((i) => i.setupStage === 'coiled').length
   const triggeringCount = filteredIdeas.filter((i) => i.setupStage === 'triggering').length
   const isLive = mode === 'live' && data?.source === 'live'
+
+  const selectedGroupUnmatched = useMemo(() => {
+    if (!data || !filters.groupId) return false
+    const group = groups.find((g) => g.id === filters.groupId)
+    if (!group) return true
+    return !data.ideas.some((idea) =>
+      groupsMeta?.source === 'finviz'
+        ? ideaMatchesFinvizGroup(idea, group)
+        : idea.groupId === group.id,
+    )
+  }, [data, filters.groupId, groups, groupsMeta])
 
   const ideasByTicker = useMemo(() => {
     const map = new Map<string, (typeof filteredIdeas)[number]>()
@@ -74,7 +89,7 @@ export default function App() {
           <FiltersBar
             filters={filters}
             onChange={setFilters}
-            groups={data.groups}
+            groups={groups}
             dense
           />
           <div className="mt-1.5 hidden flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-terminal-dim sm:flex">
@@ -120,7 +135,9 @@ export default function App() {
             {/* Results first in DOM on mobile via CSS grid areas; groups stay above visually */}
             <aside className="dashboard-groups lg:h-full lg:min-h-0">
               <GroupStrength
-                groups={data.groups}
+                groups={groups}
+                meta={groupsMeta}
+                loading={groupsLoading}
                 selectedGroupId={filters.groupId}
                 onSelectGroup={(id) => setFilters({ ...filters, groupId: id })}
               />
@@ -128,7 +145,7 @@ export default function App() {
 
             <ResizeHandle
               variant="panel"
-              label="Resize Group Strength panel"
+              label="Resize leading groups panel"
               onDelta={resizeGroups}
             />
 
@@ -141,6 +158,9 @@ export default function App() {
                 isPinned={userWatchlist.isPinned}
                 isOnWatchlist={userWatchlist.isOnWatchlist}
                 onTogglePin={userWatchlist.toggle}
+                emptyMessage={
+                  selectedGroupUnmatched ? 'No scan ideas match this group.' : undefined
+                }
               />
             </section>
 

@@ -32,7 +32,8 @@ Do **not** commit `.env` (it is gitignored). Secrets stay on Render.
 
 - Listens on `process.env.PORT` (Render sets this) or `5173`, host **`0.0.0.0`**.
 - Serves the Vite `dist/` SPA.
-- Proxies live market data at `/api/market/health` and `/api/market/snapshot`.
+- Proxies live market data at `/api/market/*` (health, snapshot, dashboard, scan).
+- Serves leading industry groups at `GET /api/groups` (Finviz performance view, 12-minute memory cache). If Finviz fails and a previous payload exists, that payload is returned with `stale: true`. With no cache, the response falls back to the internal scan ranking (`source: "fallback"`).
 
 ## 4. Local production smoke test
 
@@ -42,6 +43,7 @@ npm run build
 npm run build:server
 PORT=4173 npm start
 # curl http://127.0.0.1:4173/api/market/health
+# curl -sS http://127.0.0.1:4173/api/groups
 ```
 
 Never put the API key in the client bundle; keep it as `FINNHUB_API_KEY` on the server only.

@@ -9,6 +9,7 @@
     "build:server": "esbuild server/prod.ts --bundle --platform=node --format=esm --outfile=server/prod.mjs",
     "start": "node server/prod.mjs",
     "lint": "oxlint",
+    "test": "mkdir -p node_modules/.tmp && esbuild server/finvizParse.test.ts --bundle --platform=node --format=esm --outfile=node_modules/.tmp/finvizParse.test.mjs && node --test node_modules/.tmp/finvizParse.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
