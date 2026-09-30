@@ -7,6 +7,7 @@ import type {
   StDirection,
   TradingIdea,
 } from '../types'
+import { resolvePrevClose } from './prevClose'
 import { setupStageHeuristic } from './setupStage'
 
 export interface DailyBar {
@@ -26,6 +27,11 @@ export interface SymbolBars {
   /** Preferred last price if quote differs from last bar close */
   price?: number
   prevClose?: number
+  /** Unix seconds of the print in `price` (Yahoo `regularMarketTime`). */
+  regularMarketTime?: number
+  /** Exchange UTC offset in seconds (Yahoo `meta.gmtoffset`). */
+  gmtoffset?: number
+  exchangeTimezoneName?: string
   provider: string
 }
 
@@ -325,7 +331,18 @@ export function computeIdeaMetrics(
   const last = bars[bars.length - 1]!
   const prev = bars[bars.length - 2]!
   const price = snap.price ?? last.c
-  const prevClose = snap.prevClose ?? prev.c
+  // Re-resolve so a provider previous close that is really a pre-range
+  // chartPreviousClose cannot survive into dayPct.
+  const prevClose =
+    resolvePrevClose({
+      bars,
+      price,
+      metaPreviousClose: snap.prevClose,
+      range: '1y',
+      regularMarketTime: snap.regularMarketTime,
+      gmtoffset: snap.gmtoffset,
+      exchangeTimezoneName: snap.exchangeTimezoneName,
+    }) ?? prev.c
   const dayPct = pctChange(prevClose, price)
 
   const lookback20 = bars.slice(-21, -1)

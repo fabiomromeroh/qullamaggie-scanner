@@ -16,7 +16,15 @@ import {
 import { dirname, resolve } from 'node:path'
 import type { DashboardData } from '../src/types/index.ts'
 
+/**
+ * Bump when cached idea math changes so old files are not served as fresh.
+ * v2: dayPct uses the prior session close. Yahoo `chartPreviousClose` on a
+ * 1y chart is the close before that range, not yesterday, and poisoned v1.
+ */
+export const SCAN_CACHE_SCHEMA = 2
+
 export interface ScanCacheMeta {
+  schemaVersion?: number
   stage1Source: string
   stage1Count: number
   /** Survivors after Stage 1.5 SMA prefilter (above 200 AND above 50). */
@@ -75,6 +83,7 @@ function loadScanCacheFromDisk(): ScanCachePayload | null {
     const raw = readFileSync(path, 'utf8')
     const data = JSON.parse(raw) as ScanCachePayload
     if (!data || !Array.isArray(data.ideas) || !data.asOf) return null
+    if (data.meta?.schemaVersion !== SCAN_CACHE_SCHEMA) return null
     return data
   } catch {
     return null
@@ -87,10 +96,14 @@ export function loadScanCache(): ScanCachePayload | null {
     memoryCache = fromDisk
     return fromDisk
   }
+  if (memoryCache && memoryCache.meta?.schemaVersion !== SCAN_CACHE_SCHEMA) {
+    memoryCache = null
+  }
   return memoryCache
 }
 
 export function saveScanCache(payload: ScanCachePayload): void {
+  payload.meta.schemaVersion = SCAN_CACHE_SCHEMA
   memoryCache = payload
   const path = cachePath()
   mkdirSync(dirname(path), { recursive: true })

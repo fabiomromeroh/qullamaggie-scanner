@@ -10,6 +10,7 @@
  */
 import { readFileSync, existsSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { resolvePrevClose } from '../src/lib/prevClose.ts'
 import { getScanRuntimeStatus, loadScanCache } from './scanCache.ts'
 import { kickScanOnBoot, triggerScan } from './scanEngine.ts'
 import { refreshYahooCrumb } from './yahooScreener.ts'
@@ -29,6 +30,10 @@ export interface SymbolSnapshot {
   price: number
   prevClose: number
   bars: DailyBar[]
+  /** Unix seconds of `price` when the provider reports it. */
+  regularMarketTime?: number
+  gmtoffset?: number
+  exchangeTimezoneName?: string
   provider: 'finnhub' | 'finnhub+yahoo' | 'yahoo' | 'stooq'
 }
 
@@ -178,11 +183,18 @@ async function finnhubCandles(symbol: string, token: string): Promise<DailyBar[]
   }))
 }
 
-function parseYahooChart(raw: unknown, symbol: string): {
+export function parseYahooChart(
+  raw: unknown,
+  symbol: string,
+  range = '1y',
+): {
   bars: DailyBar[]
   name?: string
   price: number
   prevClose: number
+  regularMarketTime?: number
+  gmtoffset?: number
+  exchangeTimezoneName?: string
 } {
   const data = raw as {
     chart?: {
@@ -193,6 +205,12 @@ function parseYahooChart(raw: unknown, symbol: string): {
           regularMarketPrice?: number
           chartPreviousClose?: number
           previousClose?: number
+          regularMarketTime?: number
+          gmtoffset?: number
+          exchangeTimezoneName?: string
+          currentTradingPeriod?: {
+            regular?: { start?: number; end?: number; gmtoffset?: number }
+          }
         }
         timestamp?: number[]
         indicators?: {
@@ -237,19 +255,27 @@ function parseYahooChart(raw: unknown, symbol: string): {
       ? meta.regularMarketPrice
       : last.c
   const prevClose =
-    typeof meta.previousClose === 'number' && meta.previousClose > 0
-      ? meta.previousClose
-      : typeof meta.chartPreviousClose === 'number' && meta.chartPreviousClose > 0
-        ? meta.chartPreviousClose
-        : bars.length > 1
-          ? bars[bars.length - 2]!.c
-          : last.c
+    resolvePrevClose({
+      bars,
+      price,
+      metaPreviousClose: meta.previousClose,
+      metaChartPreviousClose: meta.chartPreviousClose,
+      range,
+      regularMarketTime: meta.regularMarketTime,
+      gmtoffset: meta.gmtoffset,
+      exchangeTimezoneName: meta.exchangeTimezoneName,
+      currentTradingPeriod: meta.currentTradingPeriod,
+    }) ?? (bars.length > 1 ? bars[bars.length - 2]!.c : last.c)
 
   return {
     bars,
     name: meta.longName || meta.shortName,
     price,
     prevClose,
+    regularMarketTime:
+      typeof meta.regularMarketTime === 'number' ? meta.regularMarketTime : undefined,
+    gmtoffset: typeof meta.gmtoffset === 'number' ? meta.gmtoffset : undefined,
+    exchangeTimezoneName: meta.exchangeTimezoneName,
   }
 }
 
@@ -263,7 +289,7 @@ async function yahooChart(symbol: string): Promise<ReturnType<typeof parseYahooC
       `?interval=1d&range=1y&includePrePost=false`
     try {
       const raw = await fetchJson(url)
-      return parseYahooChart(raw, symbol)
+      return parseYahooChart(raw, symbol, '1y')
     } catch (err) {
       errors.push(`${host}: ${err instanceof Error ? err.message : String(err)}`)
     }
@@ -271,27 +297,65 @@ async function yahooChart(symbol: string): Promise<ReturnType<typeof parseYahooC
   throw new Error(errors.join('; '))
 }
 
+function prevCloseForSnapshot(
+  bars: DailyBar[],
+  price: number,
+  metaPreviousClose: number | null | undefined,
+  clock?: {
+    regularMarketTime?: number
+    gmtoffset?: number
+    exchangeTimezoneName?: string
+  },
+): number {
+  const resolved = resolvePrevClose({
+    bars,
+    price,
+    metaPreviousClose,
+    // Daily history is not a 1d chart; chartPreviousClose must not be used here.
+    range: '1y',
+    regularMarketTime: clock?.regularMarketTime,
+    gmtoffset: clock?.gmtoffset,
+    exchangeTimezoneName: clock?.exchangeTimezoneName,
+  })
+  if (resolved != null && resolved > 0) return resolved
+  const prior = bars.length > 1 ? bars[bars.length - 2]!.c : price
+  return prior > 0 ? prior : price
+}
+
 async function fromFinnhub(symbol: string, token: string): Promise<SymbolSnapshot> {
   const quote = await finnhubQuote(symbol, token)
+  // quote.pc is Finnhub's prior-session close. The helper keeps it when it
+  // agrees with the bars and drops it when it does not.
+  const clock = {
+    regularMarketTime: nowSec(),
+    exchangeTimezoneName: 'America/New_York',
+  }
 
   try {
     const bars = await finnhubCandles(symbol, token)
     return {
       symbol,
       price: quote.c,
-      prevClose: quote.pc,
+      prevClose: prevCloseForSnapshot(bars, quote.c, quote.pc, clock),
       bars,
+      ...clock,
       provider: 'finnhub',
     }
   } catch {
     // Free tier often blocks candles — keep Finnhub quote, fill bars from Yahoo.
     const y = await yahooChart(symbol)
+    const yClock = {
+      regularMarketTime: y.regularMarketTime ?? clock.regularMarketTime,
+      gmtoffset: y.gmtoffset,
+      exchangeTimezoneName: y.exchangeTimezoneName ?? clock.exchangeTimezoneName,
+    }
     return {
       symbol,
       name: y.name,
       price: quote.c,
-      prevClose: quote.pc,
+      prevClose: prevCloseForSnapshot(y.bars, quote.c, quote.pc, yClock),
       bars: y.bars,
+      ...yClock,
       provider: 'finnhub+yahoo',
     }
   }
@@ -305,6 +369,9 @@ async function fromYahoo(symbol: string): Promise<SymbolSnapshot> {
     price: y.price,
     prevClose: y.prevClose,
     bars: y.bars,
+    regularMarketTime: y.regularMarketTime,
+    gmtoffset: y.gmtoffset,
+    exchangeTimezoneName: y.exchangeTimezoneName,
     provider: 'yahoo',
   }
 }
@@ -353,12 +420,14 @@ async function fromStooq(symbol: string): Promise<SymbolSnapshot> {
   if (sliced.length < 25) throw new Error(`Stooq insufficient bars for ${symbol}`)
 
   const last = sliced[sliced.length - 1]!
-  const prev = sliced[sliced.length - 2]!
   return {
     symbol,
     price: last.c,
-    prevClose: prev.c,
+    prevClose: prevCloseForSnapshot(sliced, last.c, undefined, {
+      exchangeTimezoneName: 'America/New_York',
+    }),
     bars: sliced,
+    exchangeTimezoneName: 'America/New_York',
     provider: 'stooq',
   }
 }
@@ -784,8 +853,6 @@ async function fetchYahooSparkSmaBatch(symbols: string[]): Promise<Map<string, Y
           symbol?: string
           close?: (number | null)[]
           fulldayPrice?: number
-          previousClose?: number
-          chartPreviousClose?: number
         }
       >
       for (const [key, data] of Object.entries(raw)) {
@@ -796,10 +863,15 @@ async function fetchYahooSparkSmaBatch(symbols: string[]): Promise<Map<string, Y
         )
         if (closes.length < 50) continue
         const last = closes[closes.length - 1]!
-        const price =
-          numOrNull(data.fulldayPrice) ??
-          numOrNull(data.previousClose) ??
-          last
+        const prior = closes.length > 1 ? closes[closes.length - 2]! : null
+        // Spark `previousClose` is often null on range=1y, and `chartPreviousClose`
+        // is the close before that range (about a year ago). Neither is a live price.
+        let price = numOrNull(data.fulldayPrice) ?? last
+        if (prior != null && prior > 0) {
+          const quoteMove = Math.abs(price / prior - 1)
+          const barMove = Math.abs(last / prior - 1)
+          if (quoteMove > 0.6 && barMove <= 0.15) price = last
+        }
         const quote: YahooSmaQuote = {
           symbol: sym,
           price,

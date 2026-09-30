@@ -97,6 +97,8 @@ For each Stage-1.5 survivor (Yahoo-first cascade: Yahoo → Finnhub → Stooq):
 
 Results are written to `data/scan-cache.json` (gitignored). Default staleness **45 minutes** (`SCAN_CACHE_STALE_MS`).
 
+Payloads are stamped with `SCAN_CACHE_SCHEMA` (`server/scanCache.ts`). Schema 2 discards scans from before the 1D-change fix: Yahoo `chartPreviousClose` on a 1-year chart is the close before that range, not the prior session, so those files stored a wrong `dayPct`. The next start throws them out and runs a fresh scan.
+
 ### API
 
 | Endpoint | Role |
