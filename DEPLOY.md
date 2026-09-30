@@ -34,6 +34,8 @@ Do **not** commit `.env` (it is gitignored). Secrets stay on Render.
 - Serves the Vite `dist/` SPA.
 - Proxies live market data at `/api/market/*` (health, snapshot, dashboard, scan).
 - Serves leading industry groups at `GET /api/groups` (Finviz performance view, 12-minute memory cache). If Finviz fails and a previous payload exists, that payload is returned with `stale: true`. With no cache, the response falls back to the internal scan ranking (`source: "fallback"`).
+- `GET /api/groups/leaders?period=3m&slugs=a,b` returns the Finviz performance-screener top page (≤20, price &gt; $5, average volume &gt; 750K) for up to 12 slugs. Same 12-minute cache, shared with drill-down. Finviz calls are queued (concurrency 2, 400 ms gap). A block or parse failure is an error on that slug, not invented rows.
+- `GET /api/groups/:slug/stocks?period=3m` scores that top list with the scan's Stage-2 pipeline and caches the `TradingIdea[]` for 12 minutes. Names below the 200-day SMA are included and flagged. Names with no data are listed in `failed`. If Finviz is unavailable and nothing is cached, the route returns HTTP 502 `{ "error": "..." }`.
 - Ignores scan caches from before schema 2 (`SCAN_CACHE_SCHEMA` in `server/scanCache.ts`). That bump drops `dayPct` values taken from Yahoo's pre-range `chartPreviousClose`; startup runs a fresh scan instead of serving them.
 
 ## 4. Local production smoke test
@@ -45,6 +47,9 @@ npm run build:server
 PORT=4173 npm start
 # curl http://127.0.0.1:4173/api/market/health
 # curl -sS http://127.0.0.1:4173/api/groups
+# curl -sS "http://127.0.0.1:4173/api/groups/leaders?period=3m&slugs=oilgasrefiningmarketing"
+# The stocks route calls market-data providers and can take a while:
+# curl -sS "http://127.0.0.1:4173/api/groups/oilgasrefiningmarketing/stocks?period=3m"
 ```
 
 Never put the API key in the client bundle; keep it as `FINNHUB_API_KEY` on the server only.

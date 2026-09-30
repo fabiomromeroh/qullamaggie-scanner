@@ -75,6 +75,7 @@ export function ResizeHandle({
       onPointerMove={onPointerMove}
       onPointerUp={end}
       onPointerCancel={end}
+      onClick={(e) => e.stopPropagation()}
     />
   )
 }

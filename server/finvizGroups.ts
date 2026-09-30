@@ -3,11 +3,14 @@
  * Fetches the public performance page with a normal desktop Chrome User-Agent.
  * In-memory TTL cache; stale payload or internal ranking if Finviz fails.
  */
-import type { GroupsResponse, IndustryGroup } from '../src/types/index.ts'
-import { ideaMatchesFinvizGroup } from '../src/lib/groupMatch.ts'
+import type { GroupPeriod, GroupsResponse, IndustryGroup } from '../src/types/index.ts'
+import { isGroupPeriod, isGroupSlug, parseSlugList } from '../src/lib/groupPeriod.ts'
 import { buildDynamicGroups } from './scanEngine.ts'
 import { loadScanCache } from './scanCache.ts'
 import { finvizRowsToGroups, parseFinvizGroupsPerformance } from './finvizParse.ts'
+import { FINVIZ_CACHE_TTL_MS, finvizFetchText, looksLikeFinvizChallenge } from './finvizHttp.ts'
+import { getGroupLeaders } from './finvizScreener.ts'
+import { getGroupStocks } from './groupStocks.ts'
 
 export { finvizRowsToGroups, parseFinvizGroupsPerformance }
 
@@ -15,12 +18,7 @@ export const FINVIZ_GROUPS_URL =
   'https://finviz.com/groups?g=industry&v=210&o=-perf13w&st=d1'
 
 /** Fresh Finviz payload is reused for this long before a refetch. */
-export const FINVIZ_GROUPS_CACHE_TTL_MS = 12 * 60 * 1000
-
-const FINVIZ_FETCH_TIMEOUT_MS = 10_000
-
-const FINVIZ_USER_AGENT =
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+export const FINVIZ_GROUPS_CACHE_TTL_MS = FINVIZ_CACHE_TTL_MS
 
 type MiniReq = { url?: string; method?: string }
 type MiniRes = {
@@ -38,47 +36,27 @@ type CachedFinviz = {
 let cache: CachedFinviz | null = null
 let inFlight: Promise<CachedFinviz> | null = null
 
-function looksLikeChallenge(html: string): boolean {
-  const head = html.slice(0, 20_000).toLowerCase()
-  return (
-    head.includes('just a moment') ||
-    head.includes('cf-browser-verification') ||
-    head.includes('challenge-platform') ||
-    head.includes('attention required') ||
-    head.includes('cf-challenge') ||
-    /<title>[^<]{0,80}cloudflare[^<]*<\/title>/.test(head)
-  )
-}
-
 async function fetchFinvizHtml(): Promise<string> {
-  let res: Response
+  let status: number
+  let html: string
   try {
-    res = await fetch(FINVIZ_GROUPS_URL, {
-      method: 'GET',
-      redirect: 'follow',
-      signal: AbortSignal.timeout(FINVIZ_FETCH_TIMEOUT_MS),
-      headers: {
-        'User-Agent': FINVIZ_USER_AGENT,
-        Accept:
-          'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-      },
-    })
+    const fetched = await finvizFetchText(FINVIZ_GROUPS_URL)
+    status = fetched.status
+    html = fetched.html
   } catch (err) {
-    if (err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
-      throw new Error('Finviz groups request timed out')
-    }
-    throw new Error('Finviz groups request failed')
+    const message = err instanceof Error ? err.message : 'Finviz request failed'
+    if (message === 'Finviz request timed out') throw new Error('Finviz groups request timed out')
+    if (message === 'Finviz request failed') throw new Error('Finviz groups request failed')
+    throw err
   }
 
-  const html = await res.text()
-  if (res.status === 403 || res.status === 429 || res.status === 503) {
-    throw new Error(`Finviz groups blocked (HTTP ${res.status})`)
+  if (status === 403 || status === 429 || status === 503) {
+    throw new Error(`Finviz groups blocked (HTTP ${status})`)
   }
-  if (!res.ok) {
-    throw new Error(`Finviz groups HTTP ${res.status}`)
+  if (status < 200 || status >= 300) {
+    throw new Error(`Finviz groups HTTP ${status}`)
   }
-  if (looksLikeChallenge(html) && !html.includes('FinvizInitGroupsPerformance(')) {
+  if (looksLikeFinvizChallenge(html) && !html.includes('FinvizInitGroupsPerformance(')) {
     throw new Error('Finviz groups blocked (challenge page)')
   }
   return html
@@ -111,22 +89,14 @@ function fetchDeduped(): Promise<CachedFinviz> {
   return inFlight
 }
 
-function withLeaderCounts(groups: IndustryGroup[]): IndustryGroup[] {
-  const ideas = loadScanCache()?.ideas
-  if (!ideas) return groups
-  return groups.map((group) => ({
-    ...group,
-    leaderCount: ideas.filter((idea) => ideaMatchesFinvizGroup(idea, group)).length,
-  }))
-}
-
 function respondFinviz(entry: CachedFinviz, stale: boolean): GroupsResponse {
   return {
     source: 'finviz',
     stale,
     fetchedAt: entry.fetchedAt,
     sourceUrl: FINVIZ_GROUPS_URL,
-    groups: withLeaderCounts(entry.groups),
+    // In-scan leader counts come from GET /api/groups/leaders, not this list.
+    groups: entry.groups,
   }
 }
 
@@ -159,36 +129,86 @@ export async function getIndustryGroups(): Promise<GroupsResponse> {
   }
 }
 
+function sendJson(res: MiniRes, status: number, body: unknown): void {
+  res.statusCode = status
+  res.setHeader('Content-Type', 'application/json; charset=utf-8')
+  res.setHeader('Cache-Control', 'no-store')
+  res.end(JSON.stringify(body))
+}
+
+function readPeriod(url: URL): { ok: true; period: GroupPeriod } | { ok: false; error: string } {
+  const raw = url.searchParams.get('period')
+  if (raw == null || !raw.trim()) return { ok: false, error: 'period is required' }
+  const period = raw.trim().toLowerCase()
+  if (!isGroupPeriod(period)) {
+    return { ok: false, error: 'period must be one of 1d, 1w, 1m, 3m, 6m' }
+  }
+  return { ok: true, period }
+}
+
 export function createGroupsMiddleware() {
   return async function groupsMiddleware(req: MiniReq, res: MiniRes, next: () => void) {
     const url = new URL(req.url ?? '/', 'http://localhost')
     const pathname = url.pathname.replace(/\/+$/, '') || '/'
-    if (pathname !== '/api/groups') {
+    const leaders = pathname === '/api/groups/leaders'
+    const stocksMatch = pathname.match(/^\/api\/groups\/([a-z0-9]+)\/stocks$/i)
+    const list = pathname === '/api/groups'
+    if (!leaders && !stocksMatch && !list) {
       next()
       return
     }
 
     if ((req.method ?? 'GET').toUpperCase() !== 'GET') {
-      res.statusCode = 405
-      res.setHeader('Content-Type', 'application/json; charset=utf-8')
-      res.end(JSON.stringify({ error: 'Method not allowed' }))
+      sendJson(res, 405, { error: 'Method not allowed' })
+      return
+    }
+
+    const periodParsed = leaders || stocksMatch ? readPeriod(url) : null
+    if (periodParsed && !periodParsed.ok) {
+      sendJson(res, 400, { error: periodParsed.error })
       return
     }
 
     try {
+      if (leaders) {
+        const slugs = parseSlugList(url.searchParams.get('slugs'))
+        if (!slugs.ok) {
+          sendJson(res, 400, { error: slugs.error })
+          return
+        }
+        if (!periodParsed || !periodParsed.ok) {
+          sendJson(res, 400, { error: 'period is required' })
+          return
+        }
+        const body = await getGroupLeaders(slugs.slugs, periodParsed.period)
+        sendJson(res, 200, body)
+        return
+      }
+
+      if (stocksMatch) {
+        const slug = (stocksMatch[1] ?? '').toLowerCase()
+        if (!isGroupSlug(slug)) {
+          sendJson(res, 400, { error: 'invalid slug' })
+          return
+        }
+        if (!periodParsed || !periodParsed.ok) {
+          sendJson(res, 400, { error: 'period is required' })
+          return
+        }
+        const groups = await getIndustryGroups()
+        const match = groups.groups.find((group) => (group.slug || group.id) === slug)
+        const label = match?.name ?? slug
+        const body = await getGroupStocks(slug, periodParsed.period, label)
+        sendJson(res, 200, body)
+        return
+      }
+
       const body = await getIndustryGroups()
-      res.statusCode = 200
-      res.setHeader('Content-Type', 'application/json; charset=utf-8')
-      res.setHeader('Cache-Control', 'no-store')
-      res.end(JSON.stringify(body))
+      sendJson(res, 200, body)
     } catch (err) {
-      res.statusCode = 502
-      res.setHeader('Content-Type', 'application/json; charset=utf-8')
-      res.end(
-        JSON.stringify({
-          error: err instanceof Error ? err.message : 'groups error',
-        }),
-      )
+      sendJson(res, 502, {
+        error: err instanceof Error ? err.message : 'groups error',
+      })
     }
   }
 }

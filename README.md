@@ -109,12 +109,14 @@ Payloads are stamped with `SCAN_CACHE_SCHEMA` (`server/scanCache.ts`). Schema 2 
 | `GET /api/market/health` | Key presence + cascade (no secrets) |
 | `GET /api/market/snapshot?symbol=` | On-demand single-symbol cascade |
 | `GET /api/groups` | Leading industry groups (Finviz live, or internal fallback) |
+| `GET /api/groups/leaders?period=&slugs=` | Finviz top stocks for up to 12 group slugs (lazy; see below) |
+| `GET /api/groups/:slug/stocks?period=` | That group's Finviz top list, scored with the same Stage-2 pipeline as the scan |
 
 On server boot: load cache; if missing/stale, start a background scan. UI **Refresh** triggers `POST /api/market/scan/refresh` then reloads the cache.
 
 ### Group strength — Finviz leading groups
 
-The panel (**Leading groups · Finviz live**) reads `GET /api/groups`. The server fetches the [Finviz industry performance](https://finviz.com/groups?g=industry&v=210&o=-perf13w&st=d1) page with a normal desktop Chrome User-Agent and parses the embedded `FinvizInitGroupsPerformance([...])` JSON. Columns are Finviz's own figures (1D / 1M / 3M is 13-week / 6M, plus 1W, 1Y, and YTD on the tooltip). Missing numbers stay `—`. Nothing is estimated.
+The panel (**Leading groups · Finviz live**) reads `GET /api/groups`. The server fetches the [Finviz industry performance](https://finviz.com/groups?g=industry&v=210&o=-perf13w&st=d1) page with a normal desktop Chrome User-Agent and parses the embedded `FinvizInitGroupsPerformance([...])` JSON. Columns are Finviz's own figures (1D / 1M / 3M is 13-week / 6M, plus 1W, 1Y, and YTD on the tooltip). Missing numbers stay `—`. Nothing is estimated. The **1W** figure stays on the row tooltip; the table columns stay **# / Group / Leaders / 1D / 1M / 3M / 6M** so the panel width does not change.
 
 | Situation | Response |
 |-----------|----------|
@@ -125,9 +127,30 @@ The panel (**Leading groups · Finviz live**) reads `GET /api/groups`. The serve
 
 `fetchedAt` is when Finviz was fetched, or when the fallback ranking was computed. The UI polls about every 5 minutes and keeps the last good payload if a request fails. It shows **Finviz**, an amber **Fallback: internal ranking**, and/or an amber **stale** badge, plus local `updated HH:MM`.
 
-Clicking a group still filters the ideas table. A Finviz group matches a scan idea only when the idea's industry name or id normalizes to the Finviz label or slug (lowercase, non-alphanumerics removed). If none match, the table is empty for that group. Fallback keeps the existing `groupId` drill-down. Each Finviz row links out to `https://finviz.com/screener.ashx?v=111&f=ind_<slug>&o=-perf13w`. That screener page is not scraped.
+**Period.** A segmented control in the header (`1D | 1W | 1M | 3M | 6M`, default **3M**) is stored in `localStorage` key `qm-groups-period`. The selected period:
 
-**Leaders** on a Finviz row is how many current scan ideas match the group. If there is no scan cache to count from, the cell is `—`.
+- re-ranks the table client-side (that period's performance descending; ties break toward the next-longer period, then the other Finviz performance fields; missing numbers sort last)
+- highlights that period's column when the column exists (1W has no column)
+- chooses the Finviz screener order for leaders and drill-down
+- resets the column sort to that period, descending
+
+| Period | Finviz `o=` |
+|--------|-------------|
+| 1D | `-change` |
+| 1W | `-perf1w` |
+| 1M | `-perf4w` |
+| 3M | `-perf13w` |
+| 6M | `-perf26w` |
+
+**Sortable headers.** Click **#**, **Group**, **Leaders**, **1D**, **1M**, **3M**, or **6M** to sort. Click again to flip direction. The active header shows a chevron. Dragging a column resize handle does not sort (the handle stops the click, and a drag larger than a few pixels is ignored). **Leaders** sorts by the in-scan count; groups whose count is still loading, failed, or unknown sort last in both directions. Column widths stay in `qm-groups-col-widths`. The mobile strip shows the selected period first.
+
+**Leader definition.** A leader is a stock in that group's Finviz top list for the selected period (first page only, at most 20 rows; price &gt; $5 and average volume &gt; 750K, the same Stage-1 liquidity floors as `MIN_PRICE` / `MIN_AVG_DAILY_VOL`) whose selected-period performance is **&gt; 0** and that **also appears in the current scan cache**. Scan membership stands in for "above the 200-day SMA": the cached scan only contains names that already passed Stage 1, Stage 1.5 (above 200 and above 50), and Stage 2. The cell is `N/D` (for example `3/20`), where `D` is how many Finviz rows were actually parsed. The tooltip lists up to five tickers, best selected-period performance first, and marks which are in the scan. One or two of those tickers also sit in small type on the group-name line. While the list is loading the cell is `…`. On error it is `—` and the tooltip carries the error. If the scan cache is not ready, the cell shows the top ticker(s) without a count and the tooltip says the count is unknown. Groups outside the fetch window show `·` rather than spinning. The client requests leaders only for the first 25 groups in the current sort, plus the selected group, in batches of at most 12, and again when the period changes.
+
+`GET /api/groups/leaders?period=3m&slugs=a,b` validates `period` (`1d|1w|1m|3m|6m`) and each slug (`[a-z0-9]+`, max 12). Each entry is `{ slug, period, fetchedAt, stale, error?, leaders, top5, inScanCount, parsedCount }`. A leader row is `{ ticker, company, perf, price, changePct, relVolume, avgVolume, inScan }`. `perf` is the selected period's percent (`—` on the page becomes `null`).
+
+**Group drill-down.** Clicking a Finviz group name (desktop row or mobile card) loads `GET /api/groups/:slug/stocks?period=`. The server takes that same top page, then runs `scoreTickers` — the Stage-2 function the full scan uses (`fetchSymbolSnapshot` → `computeIdeaMetrics` → earnings). Tickers already in the scan cache are reused. Names that fail the scan rules (below the 200-day SMA, or the price/volume screens) are **kept and flagged** (`aboveSma200: false`, characteristic `Below 200MA`, stage badge **Below 200**). They stay visible in this view even when the stage and SMA filters would hide them. Names with no bars go in `failed: [{ ticker, reason }]` and the table shows `N of D tickers had no data`. The response is `{ slug, label, period, order, source: "finviz", fetchedAt, stale, ideas, failed, finvizPerf, parsedCount }`. If Finviz is blocked and there is no cache, the route returns **502** `{ error }` and the table shows that message with **Retry**. No rows are invented. Changing the period reloads the selected group. **Reset** (header, next to the period control, and in the results banner) clears the selection and puts the existing dashboard scan back in the table. It does not start a new scan. The external Finviz icon still opens `screener.ashx?v=111&f=ind_<slug>&o=<period order>`. The ideas filters, sort, resizable columns, and TradingView copy apply to the rows on screen. Finviz's own period percent is on the row tooltip; the 1M / 3M columns stay the scanner's figures. The internal fallback panel still filters by `groupId` and still uses its own leader count (members within 10% of the 52-week high).
+
+**Finviz request budget.** Groups, the screener, and drill-down share one in-memory queue: concurrency **2**, at least **400 ms** between request starts, **10 s** timeout, desktop Chrome User-Agent, redirects followed. No proxy, cookie, or browser automation. Screener HTML and scored group payloads are cached **12 minutes** per `(slug, order)` and `(slug, period)`. A failed refetch keeps the last good payload and marks it `stale`. In-flight calls for the same key share one request. The server does not walk all ~144 industries up front. A challenge or consent page, or HTTP 403 / 429 / 503, is an error.
 
 ### Rate limits / free tier
 
@@ -140,6 +163,9 @@ Clicking a group still filters the ideas table. A Finviz group matches a scan id
 | Snapshot cache TTL | 10 min | `MARKET_CACHE_TTL_MS` |
 | Scan cache stale | 45 min | `SCAN_CACHE_STALE_MS` |
 | Cascade | Yahoo-first on bulk scan | Finnhub still used when helpful |
+| Finviz cache | 12 min | Groups, screener page per `(slug, order)`, scored group per `(slug, period)` |
+| Finviz concurrency | 2 | Shared queue, 400 ms minimum gap, 10 s timeout |
+| Leaders batch | 12 slugs | Client asks only for the visible window (about 25) plus the selected group |
 
 ### Limitations
 
@@ -147,6 +173,11 @@ Clicking a group still filters the ideas table. A Finviz group matches a scan id
 - Stage-1 liquidity uses **share volume**, not dollar volume (Yahoo screener field `avgdailyvol3m`).
 - Stage-1 is capped (~800); Stage 1.5 further shrinks the deep-scan budget via SMA quotes.
 - Near-high / momentum narrowing is intentionally light in Stage 1 so coiled bases are not missed; Stage 1.5 enforces above-200 **and** above-50; Stage 2 + UI filters refine.
+- Finviz HTML can change or block the request. A block is shown as an error. There is no estimated leader list.
+- The screener parser maps columns by header text. A missing expected header fails the parse. Only the first page (≤20 rows) is read.
+- "In the scan" is membership in the cached full scan, which is also above the 50-day SMA. It is not a fresh 200-SMA check of every Finviz ticker outside that cache.
+- Group drill-down can take a while: each ticker not already in the scan cache goes through the market-data cascade. Provider keys are optional; Yahoo is tried first on that path.
+- The 1W period ranks and fetches leaders, but it has no table column.
 
 ## Setup readiness stages
 
@@ -215,9 +246,16 @@ Use only for local UI work. Default when unset: **`live`**.
 | `server/scanEngine.ts` | Stage-1→1.5→2 orchestration + cache writer |
 | `server/scanCache.ts` | `data/scan-cache.json` load/save + scan lock |
 | `server/marketProxy.ts` | Cascade + TTL cache + Vite middleware |
-| `server/finvizGroups.ts` | Finviz leading-groups fetch, 12-minute cache, `GET /api/groups` |
+| `server/finvizGroups.ts` | Finviz leading-groups fetch, 12-minute cache, `/api/groups` routes |
 | `server/finvizParse.ts` | Pure `FinvizInitGroupsPerformance` parser |
+| `server/finvizHttp.ts` | Shared Finviz fetch queue (concurrency 2, 400 ms gap, 10 s) |
+| `server/finvizScreener.ts` | Performance-screener fetch + leader payload, 12-minute cache |
+| `server/finvizScreenerParse.ts` | Header-driven screener HTML parser |
+| `server/groupStocks.ts` | Group drill-down: screener top list + `scoreTickers`, 12-minute cache |
+| `server/fixtures/finviz-screener-performance-sample.html` | Trimmed real screener table used by parser tests |
+| `src/lib/groupPeriod.ts` | Period → Finviz order, slug checks, leader-count definition |
 | `src/hooks/useGroups.ts` | Client poll of `/api/groups` (keeps last good payload) |
+| `src/hooks/useGroupLeaders.ts` | Lazy `/api/groups/leaders` for the visible groups |
 | `src/hooks/useDashboard.ts` | Load + filters + stage sort |
 | `src/components/WatchlistPanel.tsx` | Dynamic watchlist UI |
 | `src/components/*` | Header, table, filters, drawer |
@@ -238,7 +276,8 @@ Use only for local UI work. Default when unset: **`live`**.
 | **ADR%** | 20-day average of (high−low)/close × 100 |
 | **% from 52w high** | Distance below ~252-day high |
 | **1M / 3M / 6M perf** | Close vs ~21 / ~63 / ~126 trading days ago |
-| **Group 1D / 1M / 3M / 6M** | Finviz industry performance on the leading-groups panel (3M = 13-week). Fallback: average of scan members' returns in that internal group |
+| **Group 1D / 1W / 1M / 3M / 6M** | Finviz industry performance (3M = 13-week, 6M = 26-week). The panel ranks by the selected period. 1W is on the tooltip, not its own column. Fallback: average of scan members' returns in that internal group |
+| **Leaders `N/D`** | Of the Finviz top `D` names in the group (≤20, price &gt; $5, avg volume &gt; 750K), how many have selected-period performance &gt; 0 and also sit in the current scan cache |
 | **earningsDate / daysToEarnings / earningsStatus** | Next earnings from Finnhub calendar (Nasdaq fallback); `avoid` = same/next trading day (hard fail for entry / not A+); `alert` ≈ 2 trading days; `clear` otherwise |
 | **DolVol / Avg $ volume** | 20-day average of close × volume |
 | **SMA200 / SMA50 / SMA20 / SMA10** | Simple moving averages of daily closes |

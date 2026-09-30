@@ -9,7 +9,7 @@
     "build:server": "esbuild server/prod.ts --bundle --platform=node --format=esm --outfile=server/prod.mjs",
     "start": "node server/prod.mjs",
     "lint": "oxlint",
-    "test": "mkdir -p node_modules/.tmp && esbuild server/finvizParse.test.ts --bundle --platform=node --format=esm --outfile=node_modules/.tmp/finvizParse.test.mjs && esbuild server/prevClose.test.ts --bundle --platform=node --format=esm --outfile=node_modules/.tmp/prevClose.test.mjs && node --test node_modules/.tmp/finvizParse.test.mjs node_modules/.tmp/prevClose.test.mjs",
+    "test": "mkdir -p node_modules/.tmp && esbuild server/finvizParse.test.ts server/finvizScreenerParse.test.ts server/prevClose.test.ts --bundle --platform=node --format=esm --out-extension:.js=.mjs --outdir=node_modules/.tmp && node --test node_modules/.tmp/finvizParse.test.mjs node_modules/.tmp/finvizScreenerParse.test.mjs node_modules/.tmp/prevClose.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

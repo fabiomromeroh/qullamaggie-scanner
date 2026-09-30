@@ -34,6 +34,18 @@ const DEFAULT_IDEAS_COLS: Record<string, number> = {
   aPlus: 40,
 }
 
+export interface GroupViewBanner {
+  label: string
+  periodLabel: string
+  loading: boolean
+  error: string | null
+  stale: boolean
+  failed: { ticker: string; reason: string }[]
+  parsedCount: number | null
+  onReset: () => void
+  onRetry: () => void
+}
+
 interface Props {
   ideas: TradingIdea[]
   selectedTicker: string | null
@@ -43,6 +55,10 @@ interface Props {
   isOnWatchlist?: (ticker: string) => boolean
   onTogglePin?: (ticker: string) => void
   emptyMessage?: string
+  /** Set while a Finviz group drill-down owns the results table. */
+  groupBanner?: GroupViewBanner | null
+  /** Selected-period Finviz performance, keyed by ticker. Tooltip only. */
+  finvizPerf?: Record<string, number | null> | null
 }
 
 function SetupBadge({ type }: { type: TradingIdea['setupType'] }) {
@@ -118,7 +134,17 @@ function KyleStars({ score }: { score: number }) {
   )
 }
 
-function StageBadge({ stage }: { stage: SetupStage }) {
+function StageBadge({ stage, aboveSma200 = true }: { stage: SetupStage; aboveSma200?: boolean }) {
+  if (!aboveSma200) {
+    return (
+      <span
+        className="inline-block whitespace-nowrap rounded border border-terminal-red/40 bg-terminal-red-dim px-1.5 py-0.5 text-[10px] text-terminal-red"
+        title="Price is below the 200-day SMA. Shown because this group list keeps names the scan would drop."
+      >
+        Below 200
+      </span>
+    )
+  }
   const styles: Record<SetupStage, string> = {
     triggering: 'bg-terminal-amber/15 text-terminal-amber border-terminal-amber/40',
     coiled: 'bg-terminal-purple/15 text-terminal-purple border-terminal-purple/40',
@@ -193,9 +219,23 @@ function APlusCell({ idea }: { idea: TradingIdea }) {
 function rowHighlight(idea: TradingIdea) {
   const avoid = idea.earningsStatus === 'avoid'
   if (avoid) return 'bg-terminal-red-dim/70'
+  if (!idea.aboveSma200) return 'bg-terminal-red-dim/60'
   if (idea.isAPlus && idea.catalyst) return 'bg-terminal-a-plus-bg/80'
   if (idea.isAPlus) return 'bg-terminal-a-plus-bg/40'
   return ''
+}
+
+function finvizPerfTitle(
+  idea: TradingIdea,
+  finvizPerf: Record<string, number | null> | null | undefined,
+  periodLabel?: string,
+): string | undefined {
+  if (!finvizPerf) return undefined
+  const key = idea.ticker.toUpperCase()
+  if (!(key in finvizPerf) && !(idea.ticker in finvizPerf)) return undefined
+  const value = key in finvizPerf ? finvizPerf[key] : finvizPerf[idea.ticker]
+  const shown = value == null || !Number.isFinite(value) ? '—' : fmtPct(value)
+  return `Finviz ${periodLabel ?? 'period'} performance: ${shown}`
 }
 
 function PinButton({
@@ -240,6 +280,7 @@ function IdeaCard({
   isPinned,
   isOnWatchlist,
   onTogglePin,
+  rowTitle,
 }: {
   idea: TradingIdea
   selected: boolean
@@ -247,12 +288,14 @@ function IdeaCard({
   isPinned?: (ticker: string) => boolean
   isOnWatchlist?: (ticker: string) => boolean
   onTogglePin?: (ticker: string) => void
+  rowTitle?: string
 }) {
   const avoid = idea.earningsStatus === 'avoid'
   return (
     <button
       type="button"
       onClick={() => onSelect(idea.ticker)}
+      title={rowTitle}
       className={`w-full rounded-lg border border-terminal-border/80 px-3 py-2.5 text-left transition-colors active:bg-terminal-elevated ${rowHighlight(idea)} ${
         selected ? 'ring-1 ring-terminal-blue/60' : ''
       } ${avoid ? 'opacity-90' : ''}`}
@@ -262,7 +305,7 @@ function IdeaCard({
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="font-mono text-sm font-bold text-terminal-fg">{idea.ticker}</span>
             <APlusCell idea={idea} />
-            <StageBadge stage={idea.setupStage} />
+            <StageBadge stage={idea.setupStage} aboveSma200={idea.aboveSma200} />
             <EarningsBadge idea={idea} />
           </div>
           <p className="mt-0.5 truncate text-[11px] text-terminal-muted">
@@ -336,6 +379,39 @@ function ResizableTh({
   )
 }
 
+function GroupBannerBar({ banner }: { banner: GroupViewBanner }) {
+  const denom = banner.parsedCount ?? 20
+  const reasons = banner.failed.map((row) => `${row.ticker}: ${row.reason}`).join('\n')
+  return (
+    <div className="flex shrink-0 flex-wrap items-center gap-x-2 gap-y-1 border-b border-terminal-border bg-terminal-blue/10 px-2 py-1.5 text-[11px] sm:px-3">
+      <span className="min-w-0 font-medium text-terminal-fg">
+        Group: {banner.label}
+        <span className="font-normal text-terminal-muted">
+          {' '}
+          · top {denom} by {banner.periodLabel} perf (Finviz)
+        </span>
+        {banner.stale ? (
+          <span className="ml-1.5 text-terminal-amber" title="Last good Finviz or score cache">
+            stale
+          </span>
+        ) : null}
+      </span>
+      <button
+        type="button"
+        onClick={banner.onReset}
+        className="min-h-8 shrink-0 rounded border border-terminal-border-bright bg-terminal-panel px-2 text-[10px] font-medium text-terminal-fg hover:text-terminal-blue"
+      >
+        Reset
+      </button>
+      {banner.failed.length > 0 && !banner.loading && !banner.error ? (
+        <span className="text-terminal-amber" title={reasons}>
+          {banner.failed.length} of {denom} tickers had no data
+        </span>
+      ) : null}
+    </div>
+  )
+}
+
 export function IdeasTable({
   ideas,
   selectedTicker,
@@ -345,6 +421,8 @@ export function IdeasTable({
   isOnWatchlist,
   onTogglePin,
   emptyMessage,
+  groupBanner = null,
+  finvizPerf = null,
 }: Props) {
   const { widthOf, resizeColumn } = useResizableColumns(IDEAS_COL_KEY, DEFAULT_IDEAS_COLS, {
     min: 36,
@@ -365,13 +443,30 @@ export function IdeasTable({
             Scan results
           </h2>
           <span className="font-mono text-[10px] text-terminal-dim">
-            {ideas.length} shown · {source === 'demo' ? 'DEMO' : 'LIVE'}
+            {groupBanner?.loading ? 'loading' : `${ideas.length} shown`} · {source === 'demo' ? 'DEMO' : 'LIVE'}
           </span>
         </div>
         <CopyForTradingView tickers={tickers} />
       </div>
 
-      {!ideas.length ? (
+      {groupBanner ? <GroupBannerBar banner={groupBanner} /> : null}
+
+      {groupBanner?.loading ? (
+        <div className="flex min-h-[12rem] flex-1 items-center justify-center p-4 text-sm text-terminal-muted">
+          Loading group stocks…
+        </div>
+      ) : groupBanner?.error ? (
+        <div className="flex min-h-[12rem] flex-1 flex-col items-center justify-center gap-3 p-4 text-center">
+          <p className="max-w-lg text-sm text-terminal-red">{groupBanner.error}</p>
+          <button
+            type="button"
+            onClick={groupBanner.onRetry}
+            className="min-h-8 rounded border border-terminal-border-bright bg-terminal-elevated px-3 text-xs text-terminal-fg hover:border-terminal-blue"
+          >
+            Retry
+          </button>
+        </div>
+      ) : !ideas.length ? (
         <div className="flex min-h-[12rem] flex-1 items-center justify-center p-4 text-sm text-terminal-muted">
           {emptyMessage ?? 'No ideas match current filters.'}
         </div>
@@ -388,6 +483,7 @@ export function IdeasTable({
             isPinned={isPinned}
             isOnWatchlist={isOnWatchlist}
             onTogglePin={onTogglePin}
+            rowTitle={finvizPerfTitle(idea, finvizPerf, groupBanner?.periodLabel)}
           />
         ))}
       </div>
@@ -589,10 +685,12 @@ export function IdeasTable({
               const selected = selectedTicker === idea.ticker
               const avoid = idea.earningsStatus === 'avoid'
               const highlight = rowHighlight(idea)
+              const rowTitle = finvizPerfTitle(idea, finvizPerf, groupBanner?.periodLabel)
               return (
                 <tr
                   key={idea.ticker}
                   onClick={() => onSelect(idea.ticker)}
+                  title={rowTitle}
                   className={`cursor-pointer border-t border-terminal-border/50 transition-colors hover:bg-terminal-elevated/80 ${highlight} ${
                     selected ? 'ring-1 ring-inset ring-terminal-blue/50' : ''
                   } ${avoid ? 'opacity-90' : ''}`}
@@ -611,6 +709,7 @@ export function IdeasTable({
                   <td
                     className={`sticky z-[5] overflow-hidden px-2 py-1.5 font-mono font-semibold text-terminal-fg ${highlight || 'bg-terminal-panel'}`}
                     style={{ left: pinW, width: tickerW, minWidth: tickerW }}
+                    title={rowTitle}
                   >
                     {idea.ticker}
                   </td>
@@ -671,7 +770,7 @@ export function IdeasTable({
                     {fmtDollarVol(idea.dollarVolume || idea.avgDollarVol)}
                   </td>
                   <td className="overflow-hidden px-2 py-1.5">
-                    <StageBadge stage={idea.setupStage} />
+                    <StageBadge stage={idea.setupStage} aboveSma200={idea.aboveSma200} />
                   </td>
                   <td className="hidden overflow-hidden px-2 py-1.5 lg:table-cell">
                     <SetupBadge type={idea.setupType} />

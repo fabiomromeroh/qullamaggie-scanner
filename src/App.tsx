@@ -9,7 +9,6 @@ import { StatusBanner } from './components/StatusBanner'
 import { WatchlistPanel } from './components/WatchlistPanel'
 import { useDashboard } from './hooks/useDashboard'
 import { useResizablePanels } from './hooks/useResizablePanels'
-import { ideaMatchesFinvizGroup } from './lib/groupMatch'
 
 export default function App() {
   const {
@@ -30,6 +29,11 @@ export default function App() {
     groups,
     groupsMeta,
     groupsLoading,
+    period,
+    setPeriod,
+    resetGroup,
+    retryGroup,
+    groupView,
   } = useDashboard()
 
   const { widths: panelWidths, resizeGroups, resizeWatchlist } = useResizablePanels()
@@ -41,13 +45,11 @@ export default function App() {
 
   const selectedGroupUnmatched = useMemo(() => {
     if (!data || !filters.groupId) return false
+    // Finviz selection loads that group's screener into the table, not a name filter.
+    if (groupsMeta?.source === 'finviz') return false
     const group = groups.find((g) => g.id === filters.groupId)
     if (!group) return true
-    return !data.ideas.some((idea) =>
-      groupsMeta?.source === 'finviz'
-        ? ideaMatchesFinvizGroup(idea, group)
-        : idea.groupId === group.id,
-    )
+    return !data.ideas.some((idea) => idea.groupId === group.id)
   }, [data, filters.groupId, groups, groupsMeta])
 
   const ideasByTicker = useMemo(() => {
@@ -140,6 +142,9 @@ export default function App() {
                 loading={groupsLoading}
                 selectedGroupId={filters.groupId}
                 onSelectGroup={(id) => setFilters({ ...filters, groupId: id })}
+                onReset={resetGroup}
+                period={period}
+                onPeriodChange={setPeriod}
               />
             </aside>
 
@@ -161,6 +166,22 @@ export default function App() {
                 emptyMessage={
                   selectedGroupUnmatched ? 'No scan ideas match this group.' : undefined
                 }
+                groupBanner={
+                  groupView
+                    ? {
+                        label: groupView.label,
+                        periodLabel: groupView.periodLabel,
+                        loading: groupView.loading,
+                        error: groupView.error,
+                        stale: groupView.stale,
+                        failed: groupView.failed,
+                        parsedCount: groupView.parsedCount,
+                        onReset: resetGroup,
+                        onRetry: retryGroup,
+                      }
+                    : null
+                }
+                finvizPerf={groupView?.finvizPerf ?? null}
               />
             </section>
 
