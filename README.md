@@ -46,7 +46,7 @@ The Vite server middleware (`server/marketProxy.ts`) reads `FINNHUB_API_KEY` or 
 
 **Never commit or print the key.**
 
-If the key is missing or Finnhub errors/rate-limits, the proxy falls through the cascade (below).
+If the key is missing or Finnhub errors/rate-limits, the proxy falls through the cascade (below). News then uses Yahoo search; profile facts and the Wikipedia lookup are skipped (no company name to verify).
 
 ## How scanning works
 
@@ -108,6 +108,9 @@ Payloads are stamped with `SCAN_CACHE_SCHEMA` (`server/scanCache.ts`). Schema 2 
 | `POST /api/market/scan/refresh` | Kick background rescan (lock; 202 if started) |
 | `GET /api/market/health` | Key presence + cascade (no secrets) |
 | `GET /api/market/snapshot?symbol=` | On-demand single-symbol cascade |
+| `GET /api/market/bars/:symbol` | Last ~260 daily OHLCV bars for the detail chart (max 500; 15 min cache) |
+| `GET /api/market/news/:symbol` | Latest headlines (Finnhub company-news, Yahoo search fallback; 10 min cache) |
+| `GET /api/market/profile/:symbol` | Company facts (Finnhub profile2) + verified Wikipedia extract (24h cache) |
 | `GET /api/groups` | Leading industry groups (Finviz live, or internal fallback) |
 | `GET /api/groups/leaders?period=&slugs=` | Top snapshot members for up to 12 group slugs, ranked by computed performance (lazy; may return `pending`) |
 | `GET /api/groups/:slug/stocks?period=` | That group's top 20 snapshot members by the selected period, scored with the same Stage-2 pipeline as the scan |
@@ -223,6 +226,9 @@ On Render's free tier a cold instance has an empty quote cache and the dyno may 
 
 ### Limitations
 
+- Finnhub free tier is **60 calls/min**. News, profile, and quote/candle share that budget with the scan.
+- Yahoo search news and Wikipedia REST were not verified from Render IPs; they may 403 / 429 there. The UI then shows empty or error states.
+- Wikipedia matching is conservative: a disambiguation or a page whose title/extract does not share the company core name yields **no description**.
 - Yahoo screener / chart endpoints are **unofficial** and may break or rate-limit (crumb 429).
 - Stage-1 liquidity uses **share volume**, not dollar volume (Yahoo screener field `avgdailyvol3m`).
 - Stage-1 is capped (~800); Stage 1.5 further shrinks the deep-scan budget via SMA quotes.
@@ -233,6 +239,22 @@ On Render's free tier a cold instance has an empty quote cache and the dyno may 
 - Group drill-down prices every snapshot member of that one group, then scores the top 20. Names already in the scan cache skip the scorer. Provider keys are optional; Yahoo is tried first. A cold group can take a while.
 - The membership file goes stale as industries change. Refresh with `npm run build:groups` about weekly. See **Membership snapshot**.
 - The 1W period ranks and fetches leaders, but it has no table column.
+
+## Ticker detail panel
+
+Clicking a row opens the side panel (`DetailDrawer`). The mini sparkline and an expand control open a **full-screen daily candlestick chart** (TradingView Lightweight Charts) with a volume histogram and SMA 10 / 20 / 50 / 200 overlays (20 / 50 / 200 on by default). The overlay, Esc, and a click on the dimmed backdrop close **both** the chart and the drawer. Bars come from `GET /api/market/bars/:symbol`, which reuses `fetchSymbolSnapshot` (Yahoo chart → Finnhub → Stooq). About a year of daily bars is typical (~260); the handler returns at most the last 500, sorted ascending, with null/NaN rows dropped. Cache **15 minutes** per symbol, with in-flight de-dup.
+
+**Latest news** (`GET /api/market/news/:symbol`): Finnhub `/company-news` for the last 7 days when `FINNHUB_API_KEY` is set. On missing key, HTTP 401 / 403 / 429, other errors, or zero items, the server falls back to Yahoo Finance search (`/v1/finance/search?newsCount=10&quotesCount=0`) with a normal desktop User-Agent. Only `http(s)` URLs are kept; items are deduped by URL/headline, newest first, capped at 10. Cache **10 minutes**, in-flight de-dup, stale-on-error. The panel shows up to 8 headlines (new tab, `rel="noopener noreferrer"`), an honest empty state (**No recent news found**), or **News unavailable**.
+
+**Company description** (`GET /api/market/profile/:symbol`): facts from Finnhub `/stock/profile2` (name, industry, exchange, market cap in USD, website). Finnhub has no prose extract, and Yahoo `quoteSummary` is not used (it needs a crumb/cookie session). A short description is taken from the public Wikipedia REST summary **only when the page is verified**: OpenSearch by the Finnhub company name, skip disambiguation pages, and require the normalized core name (Inc / Corp / Ltd / Holdings / Group / Co / PLC / Class stripped) to match the title or extract. Otherwise the description is omitted. Trimmed to 2–3 sentences (≤ ~420 characters). Cache **24 hours**; negative results **1 hour**.
+
+All three routes validate `:symbol` with `/^[A-Z0-9.\-^]{1,12}$/` after upper-casing and return **400** `{ error: "Invalid symbol" }` otherwise. Timeouts are 8 seconds. Nothing is invented: empty and error states are shown as-is.
+
+| Cache | TTL | Notes |
+|-------|-----|--------|
+| Bars | 15 min | Wraps `fetchSymbolSnapshot` |
+| News | 10 min | Stale payload kept if a refresh fails |
+| Profile | 24 h / 1 h negative | Wikipedia miss is not guessed |
 
 ## Setup readiness stages
 
@@ -299,6 +321,7 @@ Use only for local UI work. Default when unset: **`live`**.
 - Vite + React + TypeScript  
 - Tailwind CSS v4 (`@tailwindcss/vite`)  
 - Recharts (sparklines)  
+- TradingView Lightweight Charts (`lightweight-charts`, Apache-2.0) for the full-screen daily candle overlay  
 - Lucide icons  
 - Vite middleware proxy for Finnhub / Yahoo / Stooq (`/api/market/*`)
 
@@ -316,7 +339,12 @@ Use only for local UI work. Default when unset: **`live`**.
 | `server/yahooScreener.ts` | Stage-1 Yahoo EquityQuery client (crumb + pagination) |
 | `server/scanEngine.ts` | Stage-1→1.5→2 orchestration + cache writer |
 | `server/scanCache.ts` | `data/scan-cache.json` load/save + scan lock |
-| `server/marketProxy.ts` | Cascade + TTL cache + Vite middleware |
+| `server/marketProxy.ts` | Cascade + TTL cache + Vite middleware (`/api/market/*` including bars/news/profile) |
+| `server/marketBars.ts` | Bars payload shaping (last 500, sort, drop NaN) + 15 min cache |
+| `server/tickerNews.ts` | Finnhub company-news + Yahoo search fallback, 10 min cache |
+| `server/tickerProfile.ts` | Finnhub profile2 facts + verified Wikipedia summary, 24h cache |
+| `src/lib/chartData.ts` | Pure `toCandles` / `toVolume` / `smaSeries` helpers |
+| `src/components/DailyChartOverlay.tsx` | Lazy-loaded full-screen candlestick + volume + SMA overlay |
 | `server/finvizGroups.ts` | Finviz leading-groups fetch, 12-minute cache, `/api/groups` routes |
 | `server/finvizParse.ts` | Pure `FinvizInitGroupsPerformance` parser |
 | `server/finvizHttp.ts` | Shared Finviz fetch queue (concurrency 2, 400 ms gap, 10 s) |
