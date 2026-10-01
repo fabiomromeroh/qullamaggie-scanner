@@ -1,8 +1,13 @@
-import { X } from 'lucide-react'
+import { lazy, Suspense, useState } from 'react'
+import { Maximize2, X } from 'lucide-react'
 import type { TradingIdea } from '../types'
 import { stageLabel } from '../lib/setupStage'
 import { fmtDollarVol, fmtPct, fmtPrice, fmtRvol, pctClass } from '../utils/format'
 import { MiniSparkline } from './MiniSparkline'
+import { TickerNews } from './TickerNews'
+import { TickerProfile } from './TickerProfile'
+
+const DailyChartOverlay = lazy(() => import('./DailyChartOverlay'))
 
 interface Props {
   idea: TradingIdea | null
@@ -11,6 +16,8 @@ interface Props {
 }
 
 export function DetailDrawer({ idea, onClose, source = 'live' }: Props) {
+  const [chartOpen, setChartOpen] = useState(false)
+
   if (!idea) return null
 
   return (
@@ -86,14 +93,32 @@ export function DetailDrawer({ idea, onClose, source = 'live' }: Props) {
       </div>
 
       <div className="flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4">
-        <div className="flex items-center justify-between rounded-lg border border-terminal-border bg-terminal-elevated px-3 py-2">
+        <div className="flex items-center justify-between gap-2 rounded-lg border border-terminal-border bg-terminal-elevated px-3 py-2">
           <div>
             <div className="font-mono text-xl text-terminal-fg">{fmtPrice(idea.price)}</div>
             <div className={`font-mono text-sm ${pctClass(idea.dayPct)}`}>
               {fmtPct(idea.dayPct)} today
             </div>
           </div>
-          <MiniSparkline data={idea.sparkline} positive={idea.perf3M >= 0} />
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setChartOpen(true)}
+              className="min-h-10 rounded px-1 hover:bg-terminal-bg"
+              aria-label={`Open ${idea.ticker} daily chart`}
+            >
+              <MiniSparkline data={idea.sparkline} positive={idea.perf3M >= 0} />
+            </button>
+            <button
+              type="button"
+              onClick={() => setChartOpen(true)}
+              className="min-h-10 min-w-10 rounded p-2 text-terminal-dim hover:bg-terminal-bg hover:text-terminal-fg"
+              aria-label={`Expand ${idea.ticker} daily chart`}
+              title="Full-screen daily chart"
+            >
+              <Maximize2 className="h-5 w-5" />
+            </button>
+          </div>
         </div>
 
         {idea.characteristics.length > 0 && (
@@ -211,30 +236,21 @@ export function DetailDrawer({ idea, onClose, source = 'live' }: Props) {
           <p className="text-sm leading-relaxed text-terminal-muted">{idea.notes}</p>
         </section>
 
-        <section className="rounded-lg border border-dashed border-terminal-border-bright bg-terminal-bg/50 px-3 py-3">
-          <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-terminal-dim">
-            Suggested levels (placeholders)
-          </h3>
-          <div className="grid grid-cols-2 gap-3 text-sm">
-            <div>
-              <div className="text-[10px] text-terminal-dim">Entry zone</div>
-              <div className="font-mono text-terminal-green">
-                {idea.suggestedEntry != null ? fmtPrice(idea.suggestedEntry) : '—'}
-              </div>
-            </div>
-            <div>
-              <div className="text-[10px] text-terminal-dim">Stop</div>
-              <div className="font-mono text-terminal-red">
-                {idea.suggestedStop != null ? fmtPrice(idea.suggestedStop) : '—'}
-              </div>
-            </div>
-          </div>
-          <p className="mt-2 text-[10px] text-terminal-dim">
-            Placeholders only — not trade advice. Size by ADR and risk rules. kyleScore is a
-            heuristic, not Kyle&apos;s official Rating.
-          </p>
-        </section>
+        <TickerProfile key={`profile-${idea.ticker}`} symbol={idea.ticker} />
+        <TickerNews key={`news-${idea.ticker}`} symbol={idea.ticker} />
       </div>
+
+      {chartOpen ? (
+        <Suspense
+          fallback={
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-terminal-bg text-sm text-terminal-muted">
+              Loading chart…
+            </div>
+          }
+        >
+          <DailyChartOverlay symbol={idea.ticker} name={idea.name} onClose={onClose} />
+        </Suspense>
+      ) : null}
     </aside>
   )
 }

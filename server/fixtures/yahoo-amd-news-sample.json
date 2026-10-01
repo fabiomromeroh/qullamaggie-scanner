@@ -1,0 +1,52 @@
+{
+  "explains": [],
+  "count": 10,
+  "quotes": [],
+  "news": [
+    {
+      "uuid": "37e68a0c-447f-3b6c-ad28-f567a13ab2c0",
+      "title": "Advanced Micro Devices (AMD) Benefit from Surging CPU Demand in Autonomous AI",
+      "publisher": "Insider Monkey",
+      "link": "https://finance.yahoo.com/technology/ai/articles/advanced-micro-devices-amd-benefit-174606152.html",
+      "providerPublishTime": 1790876766,
+      "type": "STORY",
+      "relatedTickers": ["AMD"]
+    },
+    {
+      "uuid": "9384127e-30ed-3ec5-838e-815884a6c685",
+      "title": "AMD Just Bought the Research That Defines What Its Chips Are For",
+      "publisher": "Forkast News",
+      "link": "https://finance.yahoo.com/technology/ai/articles/amd-just-bought-research-defines-174221101.html",
+      "providerPublishTime": 1790876541,
+      "type": "STORY",
+      "relatedTickers": ["AMD"]
+    },
+    {
+      "uuid": "75270f78-7b57-3cf7-b1bf-626b9a55a8b7",
+      "title": "Advanced Micro Devices (AMD) Could Be 33% Undervalued Following Its World Labs Deal",
+      "publisher": "Simply Wall St.",
+      "link": "https://finance.yahoo.com/markets/stocks/articles/advanced-micro-devices-amd-could-171050511.html",
+      "providerPublishTime": 1790874650,
+      "type": "STORY",
+      "relatedTickers": ["AMD"]
+    },
+    {
+      "uuid": "8e7ce8b2-e0da-3400-8bcf-511b00aa933b",
+      "title": "AMD Doesn’t Need to Beat Nvidia to Be a Big AI Winner",
+      "publisher": "24/7 Wall St.",
+      "link": "https://finance.yahoo.com/technology/ai/articles/amd-doesn-t-beat-nvidia-160053875.html",
+      "providerPublishTime": 1790870453,
+      "type": "STORY",
+      "relatedTickers": ["AMD", "NVDA"]
+    },
+    {
+      "uuid": "7875d433-59cc-3843-8c72-6bb2aad7f0f6",
+      "title": "3 Top AI Stocks for October",
+      "publisher": "Motley Fool",
+      "link": "https://finance.yahoo.com/markets/stocks/articles/3-top-ai-stocks-october-143500206.html",
+      "providerPublishTime": 1790865300,
+      "type": "STORY",
+      "relatedTickers": ["AMD", "INTC", "NVDA"]
+    }
+  ]
+}

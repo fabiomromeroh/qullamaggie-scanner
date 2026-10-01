@@ -11,8 +11,12 @@
 import { readFileSync, existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { resolvePrevClose } from '../src/lib/prevClose.ts'
+import { getBarsForSymbol } from './marketBars.ts'
+import { matchMarketSymbolRoute, parseMarketSymbol } from './marketSymbol.ts'
 import { getScanRuntimeStatus, loadScanCache } from './scanCache.ts'
 import { kickScanOnBoot, triggerScan } from './scanEngine.ts'
+import { fetchTickerNews } from './tickerNews.ts'
+import { fetchTickerProfile } from './tickerProfile.ts'
 import { refreshYahooCrumb } from './yahooScreener.ts'
 
 export interface DailyBar {
@@ -1153,6 +1157,48 @@ if (url.pathname === '/api/market/dashboard') {
         res.statusCode =
           result.started && result.status !== 'already-scanning' ? 202 : 200
         res.end(JSON.stringify({ ...result, statusDetail: getScanRuntimeStatus() }))
+        return
+      }
+
+      const barsRaw = matchMarketSymbolRoute(url.pathname, 'bars')
+      if (barsRaw != null) {
+        const symbol = parseMarketSymbol(barsRaw)
+        if (!symbol) {
+          res.statusCode = 400
+          res.end(JSON.stringify({ error: 'Invalid symbol' }))
+          return
+        }
+        const payload = await getBarsForSymbol(symbol, (sym) => fetchSymbolSnapshot(sym))
+        res.statusCode = 200
+        res.end(JSON.stringify(payload))
+        return
+      }
+
+      const newsRaw = matchMarketSymbolRoute(url.pathname, 'news')
+      if (newsRaw != null) {
+        const symbol = parseMarketSymbol(newsRaw)
+        if (!symbol) {
+          res.statusCode = 400
+          res.end(JSON.stringify({ error: 'Invalid symbol' }))
+          return
+        }
+        const payload = await fetchTickerNews(symbol, getFinnhubKey())
+        res.statusCode = 200
+        res.end(JSON.stringify(payload))
+        return
+      }
+
+      const profileRaw = matchMarketSymbolRoute(url.pathname, 'profile')
+      if (profileRaw != null) {
+        const symbol = parseMarketSymbol(profileRaw)
+        if (!symbol) {
+          res.statusCode = 400
+          res.end(JSON.stringify({ error: 'Invalid symbol' }))
+          return
+        }
+        const payload = await fetchTickerProfile(symbol, getFinnhubKey())
+        res.statusCode = 200
+        res.end(JSON.stringify(payload))
         return
       }
 
