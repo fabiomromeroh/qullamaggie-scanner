@@ -2,6 +2,12 @@ import { useEffect, useMemo, useState } from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import type { EarningsStatus, IdeaFilters, IndustryGroup, SetupStage, SetupType } from '../types'
 import { ALL_EARNINGS_STATUSES, ALL_SETUP_TYPES, DEFAULT_FILTERS } from '../types'
+import {
+  ABOVE_200_DMA_LABEL,
+  ABOVE_200_DMA_TOOLTIP,
+  countActiveFilters,
+  resetFilters,
+} from '../lib/ideaFilters'
 import { ALL_SETUP_STAGES, stageLabel } from '../lib/setupStage'
 
 const FILTERS_EXPAND_KEY = 'qm-filters-expanded'
@@ -9,28 +15,16 @@ const FILTERS_EXPAND_KEY = 'qm-filters-expanded'
 interface Props {
   filters: IdeaFilters
   onChange: (next: IdeaFilters) => void
+  /** Restores the scan defaults and the group-view baseline. */
+  onReset?: () => void
+  /**
+   * Values treated as "not active" in the counter.
+   * Normal scan uses DEFAULT_FILTERS. Group view uses GROUP_VIEW_DEFAULT_FILTERS.
+   */
+  baseline?: IdeaFilters
   groups: IndustryGroup[]
   /** Compact top-band layout (no tall help blurb). */
   dense?: boolean
-}
-
-function countActiveFilters(filters: IdeaFilters): number {
-  let n = 0
-  if (filters.search.trim()) n++
-  if (filters.minRvol !== DEFAULT_FILTERS.minRvol) n++
-  if (filters.maxPctFromHigh !== DEFAULT_FILTERS.maxPctFromHigh) n++
-  if (filters.groupId) n++
-  if (filters.setupTypes.length !== ALL_SETUP_TYPES.length) n++
-  const defaultStages = [...DEFAULT_FILTERS.stages].sort().join(',')
-  const stages = [...filters.stages].sort().join(',')
-  if (stages !== defaultStages) n++
-  if (filters.requireSma50 !== DEFAULT_FILTERS.requireSma50) n++
-  if (filters.requireSma10) n++
-  if (filters.requireSma20) n++
-  if (filters.earningsStatuses.length !== ALL_EARNINGS_STATUSES.length) n++
-  if (filters.aPlusOnly) n++
-  if (filters.hasCatalyst) n++
-  return n
 }
 
 function readExpandedPreference(): boolean {
@@ -44,9 +38,19 @@ function readExpandedPreference(): boolean {
   return false // collapsed by default on mobile
 }
 
-export function FiltersBar({ filters, onChange, groups, dense = false }: Props) {
+export function FiltersBar({
+  filters,
+  onChange,
+  onReset,
+  baseline = DEFAULT_FILTERS,
+  groups,
+  dense = false,
+}: Props) {
   const [expanded, setExpanded] = useState(readExpandedPreference)
-  const activeCount = useMemo(() => countActiveFilters(filters), [filters])
+  const activeCount = useMemo(
+    () => countActiveFilters(filters, baseline),
+    [filters, baseline],
+  )
 
   useEffect(() => {
     try {
@@ -86,14 +90,13 @@ export function FiltersBar({ filters, onChange, groups, dense = false }: Props) 
     })
   }
 
-  const reset = () =>
-    onChange({
-      ...DEFAULT_FILTERS,
-      groupId: filters.groupId,
-      setupTypes: [...ALL_SETUP_TYPES],
-      stages: [...DEFAULT_FILTERS.stages],
-      earningsStatuses: [...ALL_EARNINGS_STATUSES],
-    })
+  const reset = () => {
+    if (onReset) {
+      onReset()
+      return
+    }
+    onChange(resetFilters(filters, baseline))
+  }
 
   const filterBody = (
     <div className="flex max-h-[50vh] flex-wrap items-end gap-2 overflow-y-auto overscroll-contain sm:max-h-none sm:gap-3">
@@ -208,6 +211,23 @@ export function FiltersBar({ filters, onChange, groups, dense = false }: Props) 
           })}
         </div>
       </div>
+
+      <label
+        title={ABOVE_200_DMA_TOOLTIP}
+        className={`flex min-h-8 cursor-pointer items-center gap-1.5 rounded border px-2 py-1.5 text-xs ${
+          filters.requireAbove200 !== false
+            ? 'border-terminal-green/40 bg-terminal-green/15 text-terminal-green'
+            : 'border-terminal-border bg-terminal-bg text-terminal-dim'
+        }`}
+      >
+        <input
+          type="checkbox"
+          checked={filters.requireAbove200 !== false}
+          onChange={(e) => onChange({ ...filters, requireAbove200: e.target.checked })}
+          className="accent-terminal-green"
+        />
+        <span>{ABOVE_200_DMA_LABEL}</span>
+      </label>
 
       <label className="flex min-h-8 cursor-pointer items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1.5 text-xs text-terminal-fg">
         <input
@@ -348,12 +368,11 @@ export function FiltersBar({ filters, onChange, groups, dense = false }: Props) 
 
       {!dense ? (
         <p className="mb-2 hidden text-[10px] text-terminal-dim md:block">
-          Hard gate: price must be above the daily{' '}
-          <span className="font-mono text-terminal-green">200 SMA</span> (names below are never
-          shown as setups · tag Below 200MA). Default stages:{' '}
+          <span className="font-mono text-terminal-green">{ABOVE_200_DMA_LABEL}</span> is on by
+          default. {ABOVE_200_DMA_TOOLTIP} Default stages:{' '}
           <span className="text-terminal-purple">coiled</span> +{' '}
           <span className="text-terminal-amber">triggering</span> (enable Watching to see
-          base-builders).
+          base-builders). Group view starts with every stage and does not require the 10/20/50 SMAs.
         </p>
       ) : null}
 

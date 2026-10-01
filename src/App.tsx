@@ -20,7 +20,9 @@ export default function App() {
     scanMessage,
     mode,
     filters,
+    filtersBaseline,
     setFilters,
+    resetFilters,
     filteredIdeas,
     selectedIdea,
     selectedTicker,
@@ -92,7 +94,9 @@ export default function App() {
         <div className="shrink-0 border-b border-terminal-border bg-terminal-bg px-2 py-1 sm:px-3 sm:py-2">
           <FiltersBar
             filters={filters}
+            baseline={filtersBaseline}
             onChange={setFilters}
+            onReset={resetFilters}
             groups={groups}
             dense
           />
