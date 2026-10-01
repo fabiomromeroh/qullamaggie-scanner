@@ -1,5 +1,3 @@
-import { lazy, Suspense, useState } from 'react'
-import { Maximize2, X } from 'lucide-react'
 import type { TradingIdea } from '../types'
 import { stageLabel } from '../lib/setupStage'
 import { fmtDollarVol, fmtPct, fmtPrice, fmtRvol, pctClass } from '../utils/format'
@@ -7,33 +5,16 @@ import { MiniSparkline } from './MiniSparkline'
 import { TickerNews } from './TickerNews'
 import { TickerProfile } from './TickerProfile'
 
-const DailyChartOverlay = lazy(() => import('./DailyChartOverlay'))
-
 interface Props {
-  idea: TradingIdea | null
-  onClose: () => void
+  idea: TradingIdea
   source?: 'live' | 'demo'
 }
 
-export function DetailDrawer({ idea, onClose, source = 'live' }: Props) {
-  const [chartOpen, setChartOpen] = useState(false)
-
-  if (!idea) return null
-
+export function DetailDrawer({ idea, source = 'live' }: Props) {
   return (
-    <aside
-      className="fixed inset-x-0 bottom-0 z-40 flex max-h-[92dvh] w-full flex-col rounded-t-2xl border border-terminal-border bg-terminal-panel shadow-2xl shadow-black/50 sm:inset-y-0 sm:right-0 sm:left-auto sm:max-h-none sm:max-w-md sm:rounded-none sm:border-l sm:border-t-0"
-      role="dialog"
-      aria-modal="true"
-      aria-label={`${idea.ticker} details`}
-    >
-      {/* Mobile drag affordance */}
-      <div className="flex shrink-0 justify-center pt-2 sm:hidden" aria-hidden>
-        <div className="h-1 w-10 rounded-full bg-terminal-border-bright" />
-      </div>
-
-      <div className="flex items-start justify-between border-b border-terminal-border px-4 py-3">
-        <div className="min-w-0 pr-2">
+    <div className="flex flex-col bg-terminal-panel">
+      <div className="border-b border-terminal-border px-4 py-3">
+        <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="font-mono text-lg font-bold text-terminal-fg">{idea.ticker}</h2>
             {idea.earningsStatus === 'avoid' ? (
@@ -82,17 +63,9 @@ export function DetailDrawer({ idea, onClose, source = 'live' }: Props) {
           <p className="truncate text-xs text-terminal-muted">{idea.name}</p>
           <p className="text-[11px] text-terminal-dim">{idea.groupName}</p>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="min-h-10 min-w-10 shrink-0 rounded p-2 text-terminal-dim hover:bg-terminal-elevated hover:text-terminal-fg"
-          aria-label="Close detail"
-        >
-          <X className="h-5 w-5" />
-        </button>
       </div>
 
-      <div className="flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4">
+      <div className="space-y-4 px-4 py-4">
         <div className="flex items-center justify-between gap-2 rounded-lg border border-terminal-border bg-terminal-elevated px-3 py-2">
           <div>
             <div className="font-mono text-xl text-terminal-fg">{fmtPrice(idea.price)}</div>
@@ -100,24 +73,8 @@ export function DetailDrawer({ idea, onClose, source = 'live' }: Props) {
               {fmtPct(idea.dayPct)} today
             </div>
           </div>
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setChartOpen(true)}
-              className="min-h-10 rounded px-1 hover:bg-terminal-bg"
-              aria-label={`Open ${idea.ticker} daily chart`}
-            >
-              <MiniSparkline data={idea.sparkline} positive={idea.perf3M >= 0} />
-            </button>
-            <button
-              type="button"
-              onClick={() => setChartOpen(true)}
-              className="min-h-10 min-w-10 rounded p-2 text-terminal-dim hover:bg-terminal-bg hover:text-terminal-fg"
-              aria-label={`Expand ${idea.ticker} daily chart`}
-              title="Full-screen daily chart"
-            >
-              <Maximize2 className="h-5 w-5" />
-            </button>
+          <div className="shrink-0" title="Recent closes">
+            <MiniSparkline data={idea.sparkline} positive={idea.perf3M >= 0} />
           </div>
         </div>
 
@@ -239,18 +196,6 @@ export function DetailDrawer({ idea, onClose, source = 'live' }: Props) {
         <TickerProfile key={`profile-${idea.ticker}`} symbol={idea.ticker} />
         <TickerNews key={`news-${idea.ticker}`} symbol={idea.ticker} />
       </div>
-
-      {chartOpen ? (
-        <Suspense
-          fallback={
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-terminal-bg text-sm text-terminal-muted">
-              Loading chart…
-            </div>
-          }
-        >
-          <DailyChartOverlay symbol={idea.ticker} name={idea.name} onClose={onClose} />
-        </Suspense>
-      ) : null}
-    </aside>
+    </div>
   )
 }

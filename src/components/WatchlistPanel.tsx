@@ -81,6 +81,7 @@ export function WatchlistPanel({
               >
                 <button
                   type="button"
+                  data-idea-ticker={entry.ticker}
                   className="min-w-0 flex-1 text-left"
                   onClick={() => onSelect(entry.ticker)}
                 >

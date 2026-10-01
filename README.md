@@ -242,7 +242,19 @@ On Render's free tier a cold instance has an empty quote cache and the dyno may 
 
 ## Ticker detail panel
 
-Clicking a row opens the side panel (`DetailDrawer`). The mini sparkline and an expand control open a **full-screen daily candlestick chart** (TradingView Lightweight Charts) with a volume histogram and SMA 10 / 20 / 50 / 200 overlays (20 / 50 / 200 on by default). The overlay, Esc, and a click on the dimmed backdrop close **both** the chart and the drawer. Bars come from `GET /api/market/bars/:symbol`, which reuses `fetchSymbolSnapshot` (Yahoo chart → Finnhub → Stooq). About a year of daily bars is typical (~260); the handler returns at most the last 500, sorted ascending, with null/NaN rows dropped. Cache **15 minutes** per symbol, with in-flight de-dup.
+Clicking a result row (or a watchlist row) opens a **split detail sheet** immediately: a daily candlestick chart on the left and the existing detail content on the right (metrics, news, company profile). There is no second expand step and no dimmed backdrop. The results table stays in the page underneath, so another row click switches the ticker. The chart and the panel update together. While the new bars load, the previous chart stays up with a small “Loading SYMBOL…” label. A slower response for an earlier ticker is ignored.
+
+The chart is TradingView Lightweight Charts (lazy-loaded chunk): volume histogram, SMA 10 / 20 / 50 / 200 chips (20 / 50 / 200 on by default), and a crosshair legend with OHLCV. The chart header shows ticker, name, and last price / day change from the selected idea. The mini sparkline in the panel is a visual only.
+
+**Desktop (1024px and up).** The sheet is fixed to the right. It defaults to about 70% of the viewport and always leaves the leading-groups column plus a 240px strip of the results table clickable. Drag the sheet’s left edge to change that width, and drag the divider between the chart and the panel to change the split. Preferred floors are 560px for the chart and 380px for the panel; on a viewport that cannot fit both plus the strip, the panes scale down (absolute floors 200px / 160px) instead of covering the table. **Maximize chart** expands the same side-by-side split over the whole viewport and toggles back. Maximize is not remembered. Widths are stored in `qm-split-sheet-width` and `qm-split-panel-width`.
+
+**Keyboard.** While the sheet is open, ArrowUp / ArrowDown move through the rows currently shown in the results table and wrap at the ends. Those keys are ignored when focus is in an input, textarea, select, or contentEditable. Esc and the X close the chart and the panel together and move focus back to the selected row when that row is on screen. Esc still closes from the search box (search does not handle Esc). It does not close when focus is on a native `<select>`, a datalist input, or a date / time / color input, so that control can dismiss its own popup.
+
+**Narrow screens (under 1024px).** One full-viewport sheet scrolls as a single column: header (ticker, name, close), chart at about 52vh (minimum 280px, pinch-zoom and touch pan on the chart), then metrics, news, and profile. Tap targets are at least 40px. The sheet pads for the safe area, and the page behind it does not scroll.
+
+Bars come from `GET /api/market/bars/:symbol`, which reuses `fetchSymbolSnapshot` (Yahoo chart → Finnhub → Stooq). About a year of daily bars is typical (~260); the handler returns at most the last 500, sorted ascending, with null/NaN rows dropped. Cache **15 minutes** per symbol, with in-flight de-dup. A failed load shows the error and **Retry**. Nothing is invented.
+
+**Limitations.** Arrow keys follow the results table, not the watchlist order. The watchlist column sits under the desktop sheet until you close it, narrow it, or leave Maximize. On a short desktop the 560 / 380 floors cannot be met without covering the results strip, so both panes are narrower than that. The divider and the left edge are pointer drags (same handles as the main layout) and are not shown under 1024px.
 
 **Latest news** (`GET /api/market/news/:symbol`): Finnhub `/company-news` for the last 7 days when `FINNHUB_API_KEY` is set. On missing key, HTTP 401 / 403 / 429, other errors, or zero items, the server falls back to Yahoo Finance search (`/v1/finance/search?newsCount=10&quotesCount=0`) with a normal desktop User-Agent. Only `http(s)` URLs are kept; items are deduped by URL/headline, newest first, capped at 10. Cache **10 minutes**, in-flight de-dup, stale-on-error. The panel shows up to 8 headlines (new tab, `rel="noopener noreferrer"`), an honest empty state (**No recent news found**), or **News unavailable**.
 
@@ -321,7 +333,7 @@ Use only for local UI work. Default when unset: **`live`**.
 - Vite + React + TypeScript  
 - Tailwind CSS v4 (`@tailwindcss/vite`)  
 - Recharts (sparklines)  
-- TradingView Lightweight Charts (`lightweight-charts`, Apache-2.0) for the full-screen daily candle overlay  
+- TradingView Lightweight Charts (`lightweight-charts`, Apache-2.0) for the split-view daily candle chart  
 - Lucide icons  
 - Vite middleware proxy for Finnhub / Yahoo / Stooq (`/api/market/*`)
 
@@ -344,7 +356,9 @@ Use only for local UI work. Default when unset: **`live`**.
 | `server/tickerNews.ts` | Finnhub company-news + Yahoo search fallback, 10 min cache |
 | `server/tickerProfile.ts` | Finnhub profile2 facts + verified Wikipedia summary, 24h cache |
 | `src/lib/chartData.ts` | Pure `toCandles` / `toVolume` / `smaSeries` helpers |
-| `src/components/DailyChartOverlay.tsx` | Lazy-loaded full-screen candlestick + volume + SMA overlay |
+| `src/lib/splitLayout.ts` | Split-sheet width clamp, row keyboard index, Esc / typing guards |
+| `src/components/DailyChartPanel.tsx` | Lazy-loaded candlestick + volume + SMA chart (fills its parent) |
+| `src/components/SplitDetailSheet.tsx` | Row-click split sheet: chart beside detail, maximize, Esc / X |
 | `server/finvizGroups.ts` | Finviz leading-groups fetch, 12-minute cache, `/api/groups` routes |
 | `server/finvizParse.ts` | Pure `FinvizInitGroupsPerformance` parser |
 | `server/finvizHttp.ts` | Shared Finviz fetch queue (concurrency 2, 400 ms gap, 10 s) |
