@@ -362,6 +362,8 @@ function PinButton({
     <button
       type="button"
       title={isPinned?.(ticker) ? 'Unpin' : 'Pin to watchlist'}
+      aria-label={isPinned?.(ticker) ? 'Remove from watchlist' : 'Pin to watchlist'}
+      {...metricTipAttrs('watchlistPin')}
       onClick={(e) => {
         e.stopPropagation()
         onTogglePin(ticker)

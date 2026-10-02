@@ -12,6 +12,7 @@ import { readFileSync, existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { resolvePrevClose } from '../src/lib/prevClose.ts'
 import { getBarsForSymbol } from './marketBars.ts'
+import { getQuoteForSymbol } from './marketQuote.ts'
 import { matchMarketSymbolRoute, parseMarketSymbol } from './marketSymbol.ts'
 import { getScanRuntimeStatus, loadScanCache } from './scanCache.ts'
 import { kickScanOnBoot, triggerScan } from './scanEngine.ts'
@@ -1174,6 +1175,20 @@ if (url.pathname === '/api/market/dashboard') {
           return
         }
         const payload = await getBarsForSymbol(symbol, (sym) => fetchSymbolSnapshot(sym))
+        res.statusCode = 200
+        res.end(JSON.stringify(payload))
+        return
+      }
+
+      const quoteRaw = matchMarketSymbolRoute(url.pathname, 'quote')
+      if (quoteRaw != null) {
+        const symbol = parseMarketSymbol(quoteRaw)
+        if (!symbol) {
+          res.statusCode = 400
+          res.end(JSON.stringify({ error: 'Invalid symbol' }))
+          return
+        }
+        const payload = await getQuoteForSymbol(symbol, (sym) => fetchSymbolSnapshot(sym))
         res.statusCode = 200
         res.end(JSON.stringify(payload))
         return

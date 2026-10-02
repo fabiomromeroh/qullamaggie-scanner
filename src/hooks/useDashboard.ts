@@ -89,7 +89,7 @@ export function useDashboard() {
   const [catalystAttempt, setCatalystAttempt] = useState(0)
   const [groupCatalystPoll, setGroupCatalystPoll] = useState(0)
 
-  const { ingestScanIdeas, ...userWatchlistRest } = useUserWatchlist()
+  const userWatchlist = useUserWatchlist()
   const { payload: groupsPayload, loading: groupsFetchLoading } = useGroups()
   const pollStartedAt = useRef<number | null>(null)
   const reloadRef = useRef<(opts?: { refreshScan?: boolean; soft?: boolean }) => Promise<void>>(
@@ -116,7 +116,6 @@ export function useDashboard() {
       setScanning(false)
       setScanMessage(null)
       pollStartedAt.current = null
-      ingestScanIdeas(result.data.ideas)
     } else if (result.scanning) {
       // Cold start: do not treat as fatal LIVE ERROR — poll until cache is ready.
       setData(null)
@@ -136,7 +135,7 @@ export function useDashboard() {
       setSelectedTicker(null)
     }
     if (!opts?.soft) setLoading(false)
-  }, [ingestScanIdeas])
+  }, [])
 
   reloadRef.current = reload
 
@@ -399,8 +398,6 @@ export function useDashboard() {
     }, delay)
     return () => clearTimeout(timer)
   }, [catalystPending, catalystAttempt, groupViewActive])
-
-  const userWatchlist = { ingestScanIdeas, ...userWatchlistRest }
 
   const setPeriod = useCallback((next: GroupPeriod) => {
     setPeriodState(next)

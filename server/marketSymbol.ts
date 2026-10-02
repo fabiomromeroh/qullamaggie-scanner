@@ -1,6 +1,7 @@
-/** Shared ticker path validation for /api/market/{bars,news,profile}/:symbol */
+/** Shared ticker path validation for /api/market/{bars,news,profile,quote}/:symbol */
 
-export const MARKET_SYMBOL_RE = /^[A-Z0-9.\-^]{1,12}$/
+import { MARKET_SYMBOL_RE } from '../src/lib/tickerSymbol.ts'
+export { MARKET_SYMBOL_RE, US_EQUITY_SYMBOL_RE } from '../src/lib/tickerSymbol.ts'
 
 /**
  * Upper-case, trim, and accept only `/^[A-Z0-9.\-^]{1,12}$/`.
@@ -23,7 +24,7 @@ export function parseMarketSymbol(raw: string | undefined | null): string | null
 /** `/api/market/<kind>/<symbol>` — null if the path is not that route. */
 export function matchMarketSymbolRoute(
   pathname: string,
-  kind: 'bars' | 'news' | 'profile',
+  kind: 'bars' | 'news' | 'profile' | 'quote',
 ): string | null {
   const path = pathname.replace(/\/+$/, '') || '/'
   const prefix = `/api/market/${kind}/`

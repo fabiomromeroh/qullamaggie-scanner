@@ -116,7 +116,7 @@ export default function App() {
           <div className="mt-1.5 hidden flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-terminal-dim sm:flex">
             <span>
               Workflow: Stage1 liquid → Stage1.5 above 200+50 SMA → deep → coiled/triggering → pin.
-              Auto-add kyleScore ≥ {userWatchlist.autoAddMinScore}.{' '}
+              {' '}
               {catalystMeta
                 ? `Catalyst: checked ${catalystMeta.checked} of ${catalystMeta.candidates} candidates.`
                 : 'Catalyst lookup runs after the scan (48h window).'}
@@ -211,14 +211,16 @@ export default function App() {
 
             <aside className="dashboard-watchlist lg:h-full lg:min-h-0">
               <WatchlistPanel
-                entries={userWatchlist.entries}
+                tickers={userWatchlist.tickers}
                 ideasByTicker={ideasByTicker}
                 selectedTicker={selectedTicker}
                 onSelect={setSelectedTicker}
-                onTogglePin={userWatchlist.toggle}
                 onRemove={userWatchlist.remove}
-                autoAddMinScore={userWatchlist.autoAddMinScore}
-                lastAutoAdded={userWatchlist.lastAutoAdded}
+                onAdd={userWatchlist.addFromInput}
+                onClearAll={userWatchlist.clearAll}
+                onUndoClear={userWatchlist.undoClear}
+                feedback={userWatchlist.feedback}
+                undoCount={userWatchlist.undoCount}
                 regimeDowntrend={data.marketRegime?.stDirection === 'Downtrend'}
               />
             </aside>
@@ -257,6 +259,8 @@ export default function App() {
           onClose={() => setSelectedTicker(null)}
           source={data?.source}
           reservedLeft={splitReservedLeft(panelWidths.groups)}
+          isPinned={userWatchlist.isPinned}
+          onTogglePin={userWatchlist.toggle}
         />
       ) : null}
     </div>

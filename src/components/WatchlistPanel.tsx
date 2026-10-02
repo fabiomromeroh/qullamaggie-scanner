@@ -1,22 +1,29 @@
-import { useEffect, useState } from 'react'
-import { ChevronDown, ChevronUp, Pin, PinOff, X } from 'lucide-react'
+import { useEffect, useState, type FormEvent, type KeyboardEvent } from 'react'
+import { ChevronDown, ChevronUp, X } from 'lucide-react'
 import type { TradingIdea } from '../types'
+import { useWatchlistQuotes } from '../hooks/useWatchlistQuotes'
+import { metricTipAttrs } from '../lib/metricDefinitions'
 import { stageLabel } from '../lib/setupStage'
-import type { UserWatchlistEntry } from '../lib/userWatchlistStore'
-import { fmtPct, pctClass } from '../utils/format'
+import {
+  displayTickersNewestFirst,
+  USER_WATCHLIST_CAP,
+} from '../lib/userWatchlistStore'
+import { fmtPct, fmtPrice, pctClass } from '../utils/format'
 import { MetricTip } from './MetricTip'
 
 const WATCHLIST_EXPAND_KEY = 'qm-watchlist-expanded'
 
 interface Props {
-  entries: UserWatchlistEntry[]
+  tickers: string[]
   ideasByTicker: Map<string, TradingIdea>
   selectedTicker: string | null
   onSelect: (ticker: string) => void
-  onTogglePin: (ticker: string) => void
   onRemove: (ticker: string) => void
-  autoAddMinScore: number
-  lastAutoAdded: string[]
+  onAdd: (raw: string) => void
+  onClearAll: () => void
+  onUndoClear: () => void
+  feedback: string | null
+  undoCount: number | null
   regimeDowntrend?: boolean
 }
 
@@ -28,21 +35,35 @@ function readWatchlistExpanded(): boolean {
   } catch {
     /* ignore */
   }
-  return false // collapsed by default on mobile (sits below results)
+  return false
+}
+
+function ScanDash({ id }: { id: 'setupStage' | 'kyleScore' | 'rvol' | 'adrPct' }) {
+  return (
+    <MetricTip id={id} className="text-terminal-dim">
+      -
+    </MetricTip>
+  )
 }
 
 export function WatchlistPanel({
-  entries,
+  tickers,
   ideasByTicker,
   selectedTicker,
   onSelect,
-  onTogglePin,
   onRemove,
-  autoAddMinScore,
-  lastAutoAdded,
+  onAdd,
+  onClearAll,
+  onUndoClear,
+  feedback,
+  undoCount,
   regimeDowntrend,
 }: Props) {
   const [expanded, setExpanded] = useState(readWatchlistExpanded)
+  const [draft, setDraft] = useState('')
+  const [confirmClear, setConfirmClear] = useState(false)
+  const { quotes, retry } = useWatchlistQuotes(tickers, ideasByTicker)
+  const displayed = displayTickersNewestFirst(tickers)
 
   useEffect(() => {
     try {
@@ -52,34 +73,134 @@ export function WatchlistPanel({
     }
   }, [expanded])
 
-  const sorted = [...entries].sort((a, b) => {
-    if (a.pinned !== b.pinned) return a.pinned ? -1 : 1
-    const ia = ideasByTicker.get(a.ticker)
-    const ib = ideasByTicker.get(b.ticker)
-    const sa = ia?.kyleScore ?? 0
-    const sb = ib?.kyleScore ?? 0
-    return sb - sa
-  })
+  const showConfirmClear = confirmClear && tickers.length > 0
+
+  function submitAdd(event?: FormEvent) {
+    event?.preventDefault()
+    const raw = draft
+    if (!raw.trim()) return
+    onAdd(raw)
+    setDraft('')
+    setConfirmClear(false)
+  }
+
+  function onDraftKey(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault()
+      submitAdd()
+    }
+  }
+
+  const addForm = (
+    <form onSubmit={submitAdd} className="flex items-start gap-1">
+      <textarea
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+        onKeyDown={onDraftKey}
+        rows={1}
+        placeholder="NVDA, AMD"
+        aria-label="Add tickers"
+        {...metricTipAttrs('watchlistAdd')}
+        className="min-h-8 w-full resize-y rounded border border-terminal-border bg-terminal-bg px-2 py-1 font-mono text-[11px] text-terminal-fg placeholder:text-terminal-dim focus:border-terminal-blue focus:outline-none"
+      />
+      <button
+        type="submit"
+        {...metricTipAttrs('watchlistAdd')}
+        className="min-h-8 shrink-0 rounded border border-terminal-border-bright bg-terminal-elevated px-2 text-[11px] text-terminal-fg hover:border-terminal-blue"
+      >
+        Add
+      </button>
+    </form>
+  )
+
+  const clearRow = (
+    <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+      {showConfirmClear ? (
+        <span className="text-[10px] text-terminal-amber">
+          Clear all {tickers.length}?{' '}
+          <button
+            type="button"
+            {...metricTipAttrs('watchlistClear')}
+            onClick={() => {
+              onClearAll()
+              setConfirmClear(false)
+            }}
+            className="rounded px-1.5 py-0.5 font-medium text-terminal-red hover:bg-terminal-red-dim"
+          >
+            Yes
+          </button>
+          {' / '}
+          <button
+            type="button"
+            onClick={() => setConfirmClear(false)}
+            className="rounded px-1.5 py-0.5 text-terminal-muted hover:bg-terminal-elevated"
+          >
+            No
+          </button>
+        </span>
+      ) : (
+        <button
+          type="button"
+          disabled={tickers.length === 0}
+          {...metricTipAttrs('watchlistClear')}
+          onClick={() => setConfirmClear(true)}
+          className="rounded px-1.5 py-0.5 text-[10px] text-terminal-dim hover:bg-terminal-elevated hover:text-terminal-red disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          Clear all
+        </button>
+      )}
+    </div>
+  )
+
+  const statusLines = (
+    <>
+      {feedback ? (
+        <p className="mt-1 text-[10px] text-terminal-amber">{feedback}</p>
+      ) : null}
+      {undoCount != null ? (
+        <p className="mt-1 text-[10px] text-terminal-muted">
+          Cleared {undoCount} ticker{undoCount === 1 ? '' : 's'} —{' '}
+          <button
+            type="button"
+            {...metricTipAttrs('watchlistUndo')}
+            onClick={onUndoClear}
+            className="text-terminal-blue underline-offset-2 hover:underline"
+          >
+            Undo
+          </button>
+        </p>
+      ) : null}
+    </>
+  )
+
+  const hint = (
+    <p className="mt-1 text-[10px] leading-snug text-terminal-dim">
+      <MetricTip id="watchlistOrder">
+        Newest first. Cap {USER_WATCHLIST_CAP}. This browser only.
+      </MetricTip>
+    </p>
+  )
 
   const listBody = (
     <div className="lg:flex-1 lg:overflow-y-auto">
-      {!sorted.length ? (
+      {!displayed.length ? (
         <p className="px-3 py-6 text-center text-[11px] text-terminal-dim">
-          Empty — pin a scan row or wait for{' '}
-          <MetricTip id="watchlistAutoAdd">
-            auto-add (coiled/triggering ★≥{autoAddMinScore})
-          </MetricTip>
-          .
+          Your watchlist is empty. Type tickers above (e.g. NVDA, AMD) or pin a row from
+          the results table.
         </p>
       ) : (
         <ul className="divide-y divide-terminal-border/60">
-          {sorted.map((entry) => {
-            const idea = ideasByTicker.get(entry.ticker)
-            const selected = selectedTicker === entry.ticker
+          {displayed.map((ticker) => {
+            const idea = ideasByTicker.get(ticker)
+            const selected = selectedTicker === ticker
+            const inScan = Boolean(idea)
+            const quote = quotes[ticker] ?? (inScan ? undefined : { status: 'loading' as const })
             const stage = idea?.setupStage
+            const price = idea?.price ?? (quote?.status === 'ok' ? quote.quote.price : null)
+            const dayPct = idea?.dayPct ?? (quote?.status === 'ok' ? quote.quote.dayPct : null)
             return (
               <li
-                key={entry.ticker}
+                key={ticker}
                 className={`flex items-start gap-1 px-2 py-1.5 hover:bg-terminal-elevated/70 ${
                   selected ? 'bg-terminal-elevated ring-1 ring-inset ring-terminal-blue/40' : ''
                 }`}
@@ -87,28 +208,26 @@ export function WatchlistPanel({
                 <div
                   role="button"
                   tabIndex={0}
-                  data-idea-ticker={entry.ticker}
+                  data-idea-ticker={ticker}
                   className="min-w-0 flex-1 text-left"
-                  onClick={() => onSelect(entry.ticker)}
+                  onClick={() => onSelect(ticker)}
                   onKeyDown={(event) => {
                     if (event.target !== event.currentTarget) return
                     if (event.key !== 'Enter' && event.key !== ' ') return
                     event.preventDefault()
-                    onSelect(entry.ticker)
+                    onSelect(ticker)
                   }}
                 >
                   <div className="flex flex-wrap items-center gap-1.5">
                     <MetricTip id="ticker" className="font-mono text-xs font-semibold text-terminal-fg">
-                      {entry.ticker}
+                      {ticker}
                     </MetricTip>
-                    {entry.pinned ? (
-                      <MetricTip id="watchlistPin" className="text-[9px] text-terminal-amber">
-                        PIN
-                      </MetricTip>
-                    ) : null}
-                    {entry.source === 'auto' ? (
-                      <MetricTip id="watchlistAutoAdd" className="text-[9px] text-terminal-dim">
-                        auto
+                    {!inScan ? (
+                      <MetricTip
+                        id="watchlistMissing"
+                        className="rounded border border-terminal-border px-1 py-0.5 text-[9px] text-terminal-dim"
+                      >
+                        Not in scan
                       </MetricTip>
                     ) : null}
                     {stage ? (
@@ -131,40 +250,69 @@ export function WatchlistPanel({
                         {stageLabel(stage)}
                       </MetricTip>
                     ) : (
-                      <MetricTip id="watchlistMissing" className="text-[9px] text-terminal-dim">
-                        no scan hit
-                      </MetricTip>
+                      <ScanDash id="setupStage" />
                     )}
                   </div>
-                  {idea ? (
+                  {inScan && idea ? (
                     <div className="mt-0.5 flex flex-wrap gap-2 font-mono text-[10px] text-terminal-muted">
+                      <MetricTip id="price">{fmtPrice(idea.price)}</MetricTip>
                       <MetricTip id="dayPct" className={pctClass(idea.dayPct)}>
                         {fmtPct(idea.dayPct)}
                       </MetricTip>
                       <MetricTip id="kyleScore">★{idea.kyleScore}</MetricTip>
                       <MetricTip id="rvol">RVOL {idea.rvol.toFixed(1)}</MetricTip>
-                      <MetricTip id="pctFrom52wHigh">{fmtPct(idea.pctFrom52wHigh)} Hi</MetricTip>
+                      <MetricTip id="adrPct">ADR {idea.adrPct.toFixed(1)}</MetricTip>
                     </div>
-                  ) : (
-                    <p className="mt-0.5 text-[10px] text-terminal-dim">
-                      <MetricTip id="watchlistMissing">
-                        Not in current scan results (below 200 / failed fetch).
-                      </MetricTip>
+                  ) : quote?.status === 'loading' ? (
+                    <p className="mt-0.5 font-mono text-[10px] text-terminal-dim">
+                      <MetricTip id="watchlistQuoteLoading">Loading...</MetricTip>
                     </p>
+                  ) : quote?.status === 'nodata' ? (
+                    <p className="mt-0.5 font-mono text-[10px] text-terminal-dim">
+                      <MetricTip id="watchlistNoData">No data</MetricTip>
+                    </p>
+                  ) : quote?.status === 'error' ? (
+                    <p className="mt-0.5 flex flex-wrap items-center gap-2 font-mono text-[10px] text-terminal-dim">
+                      <MetricTip id="watchlistQuoteUnavailable">Unavailable</MetricTip>
+                      <button
+                        type="button"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          retry(ticker)
+                        }}
+                        className="rounded px-1 text-terminal-blue hover:underline"
+                      >
+                        Retry
+                      </button>
+                    </p>
+                  ) : (
+                    <div className="mt-0.5 flex flex-wrap gap-2 font-mono text-[10px] text-terminal-muted">
+                      <MetricTip id="price">
+                        {price != null ? fmtPrice(price) : '—'}
+                      </MetricTip>
+                      {dayPct != null ? (
+                        <MetricTip id="dayPct" className={pctClass(dayPct)}>
+                          {fmtPct(dayPct)}
+                        </MetricTip>
+                      ) : (
+                        <MetricTip id="dayPct" className="text-terminal-dim">
+                          -
+                        </MetricTip>
+                      )}
+                      <ScanDash id="kyleScore" />
+                      <ScanDash id="rvol" />
+                      <ScanDash id="adrPct" />
+                    </div>
                   )}
                 </div>
                 <button
                   type="button"
-                  title={entry.pinned ? 'Unpin' : 'Pin'}
-                  onClick={() => onTogglePin(entry.ticker)}
-                  className="min-h-9 min-w-9 rounded p-2 text-terminal-dim hover:bg-terminal-bg hover:text-terminal-amber"
-                >
-                  {entry.pinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
-                </button>
-                <button
-                  type="button"
-                  title="Remove"
-                  onClick={() => onRemove(entry.ticker)}
+                  aria-label={`Remove ${ticker} from watchlist`}
+                  {...metricTipAttrs('watchlistRemove')}
+                  onClick={() => {
+                    setConfirmClear(false)
+                    onRemove(ticker)
+                  }}
                   className="min-h-9 min-w-9 rounded p-2 text-terminal-dim hover:bg-terminal-bg hover:text-terminal-red"
                 >
                   <X className="h-3.5 w-3.5" />
@@ -177,9 +325,24 @@ export function WatchlistPanel({
     </div>
   )
 
+  const headerBits = (
+    <>
+      {addForm}
+      {hint}
+      {clearRow}
+      {statusLines}
+      {regimeDowntrend ? (
+        <p className="mt-1 text-[10px] text-terminal-amber">
+          <MetricTip id="marketRegimeWarn">
+            QQQ ST Downtrend — new breakouts deprioritized (soft warn).
+          </MetricTip>
+        </p>
+      ) : null}
+    </>
+  )
+
   return (
     <section className="flex flex-col overflow-hidden rounded-lg border border-terminal-border bg-terminal-panel lg:h-full lg:min-h-0">
-      {/* Mobile: collapsed by default so it doesn't sit above results */}
       <div className="lg:hidden">
         <button
           type="button"
@@ -190,7 +353,7 @@ export function WatchlistPanel({
           <span className="text-xs font-semibold uppercase tracking-wider text-terminal-muted">
             Watchlist
             <span className="ml-1.5 font-mono normal-case tracking-normal text-terminal-dim">
-              · {entries.length}
+              · {tickers.length}
             </span>
           </span>
           {expanded ? (
@@ -201,60 +364,21 @@ export function WatchlistPanel({
         </button>
         {expanded ? (
           <>
-            <div className="border-b border-terminal-border px-3 py-1.5">
-              <p className="text-[10px] text-terminal-dim">
-                <MetricTip id="watchlistAutoAdd">Auto-add ★≥{autoAddMinScore}</MetricTip>
-                {' · '}
-                <MetricTip id="watchlistPin">pin to keep</MetricTip>
-              </p>
-              {regimeDowntrend ? (
-                <p className="mt-1 text-[10px] text-terminal-amber">
-                  <MetricTip id="marketRegimeWarn">
-                    QQQ ST Downtrend — new breakouts deprioritized (soft warn).
-                  </MetricTip>
-                </p>
-              ) : null}
-              {lastAutoAdded.length ? (
-                <p className="mt-1 text-[10px] text-terminal-green">
-                  Auto-added: {lastAutoAdded.slice(0, 8).join(', ')}
-                  {lastAutoAdded.length > 8 ? '…' : ''}
-                </p>
-              ) : null}
-            </div>
+            <div className="border-b border-terminal-border px-3 py-1.5">{headerBits}</div>
             {listBody}
           </>
         ) : null}
       </div>
 
-      {/* Desktop: always open */}
       <div className="hidden h-full min-h-0 flex-col lg:flex">
         <div className="border-b border-terminal-border px-3 py-2">
           <div className="flex items-center justify-between gap-2">
             <h2 className="text-xs font-semibold uppercase tracking-wider text-terminal-muted">
-              Dynamic watchlist
+              Watchlist
             </h2>
-            <span className="font-mono text-[10px] text-terminal-dim">{entries.length}</span>
+            <span className="font-mono text-[10px] text-terminal-dim">{tickers.length}</span>
           </div>
-          <p className="mt-1 text-[10px] leading-snug text-terminal-dim">
-            Persists in localStorage. Auto-adds when{' '}
-            <MetricTip id="watchlistAutoAdd" className="font-mono text-terminal-amber">
-              kyleScore ≥ {autoAddMinScore}
-            </MetricTip>{' '}
-            and stage is coiled/triggering. Pin to keep; unpin/remove to drop.
-          </p>
-          {regimeDowntrend ? (
-            <p className="mt-1 text-[10px] text-terminal-amber">
-              <MetricTip id="marketRegimeWarn">
-                QQQ ST Downtrend — new breakouts deprioritized (soft warn).
-              </MetricTip>
-            </p>
-          ) : null}
-          {lastAutoAdded.length ? (
-            <p className="mt-1 text-[10px] text-terminal-green">
-              Auto-added: {lastAutoAdded.slice(0, 8).join(', ')}
-              {lastAutoAdded.length > 8 ? '…' : ''}
-            </p>
-          ) : null}
+          <div className="mt-2">{headerBits}</div>
         </div>
         {listBody}
       </div>

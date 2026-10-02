@@ -21,9 +21,6 @@ export const ALL_SETUP_STAGES: SetupStage[] = ['triggering', 'coiled', 'watching
 /** Default UI: coiled + triggering first (watching opt-in via filter). */
 export const DEFAULT_VISIBLE_STAGES: SetupStage[] = ['coiled', 'triggering']
 
-/** Auto-add to user watchlist when kyleScore >= this AND stage is coiled/triggering. */
-export const AUTO_ADD_MIN_KYLE_SCORE = 4
-
 /**
  * Thresholds for {@link setupStageHeuristic}. Comparisons use the negative
  * distance form `pctFrom52wHigh >= -nearHighPct` (same sign as metrics.ts).

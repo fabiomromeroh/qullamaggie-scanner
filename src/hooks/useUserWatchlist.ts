@@ -1,23 +1,29 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { TradingIdea } from '../types'
 import {
-  AUTO_ADD_MIN_KYLE_SCORE,
-  autoAddFromScan,
+  addTickers,
+  clearWatchlist,
+  formatAddFeedback,
   loadUserWatchlist,
   removeTicker,
+  restoreWatchlist,
   saveUserWatchlist,
-  togglePin,
-  upsertTicker,
+  toggleTicker,
+  USER_WATCHLIST_UNDO_MS,
   type UserWatchlistState,
 } from '../lib/userWatchlistStore'
 
 export function useUserWatchlist() {
   const [state, setState] = useState<UserWatchlistState>(() => loadUserWatchlist())
-  const [lastAutoAdded, setLastAutoAdded] = useState<string[]>([])
+  const [feedback, setFeedback] = useState<string | null>(null)
+  const [undo, setUndo] = useState<{ tickers: string[]; count: number } | null>(null)
   const persistReady = useRef(false)
+  const tickersRef = useRef(state.tickers)
 
   useEffect(() => {
-    // Skip the initial mount write (state already from loadUserWatchlist).
+    tickersRef.current = state.tickers
+  }, [state.tickers])
+
+  useEffect(() => {
     if (!persistReady.current) {
       persistReady.current = true
       return
@@ -25,64 +31,90 @@ export function useUserWatchlist() {
     saveUserWatchlist(state)
   }, [state])
 
-  /** Call after a successful scan/demo load to auto-add coiled/triggering (kyleScore >= 4). */
-  const ingestScanIdeas = useCallback((ideas: TradingIdea[]) => {
-    if (!ideas.length) return
-    setState((prev) => {
-      const result = autoAddFromScan(prev, ideas, AUTO_ADD_MIN_KYLE_SCORE)
-      if (result.added.length) {
-        setLastAutoAdded(result.added)
-      }
-      return result.added.length ? result.state : prev
-    })
+  useEffect(() => {
+    if (!undo) return
+    const timer = setTimeout(() => setUndo(null), USER_WATCHLIST_UNDO_MS)
+    return () => clearTimeout(timer)
+  }, [undo])
+
+  const apply = useCallback((next: UserWatchlistState) => {
+    setUndo(null)
+    setState(next)
   }, [])
 
-  const pin = useCallback((ticker: string) => {
-    setState((prev) => upsertTicker(prev, ticker, { source: 'manual', pinned: true }))
-  }, [])
+  const addFromInput = useCallback((raw: string) => {
+    const result = addTickers({ version: 2, tickers: tickersRef.current }, raw)
+    apply(result.state)
+    setFeedback(formatAddFeedback(result))
+    return result
+  }, [apply])
 
-  const unpin = useCallback((ticker: string) => {
-    setState((prev) => {
-      const entry = prev.entries.find((e) => e.ticker === ticker.toUpperCase())
-      if (!entry) return prev
-      if (entry.pinned) return togglePin(prev, ticker)
-      return removeTicker(prev, ticker)
-    })
-  }, [])
-
-  const toggle = useCallback((ticker: string) => {
-    setState((prev) => {
-      const exists = prev.entries.some((e) => e.ticker === ticker.toUpperCase())
-      if (!exists) return upsertTicker(prev, ticker, { source: 'manual', pinned: true })
-      return togglePin(prev, ticker)
-    })
-  }, [])
-
-  const remove = useCallback((ticker: string) => {
-    setState((prev) => removeTicker(prev, ticker))
-  }, [])
-
-  const isOnWatchlist = useCallback(
-    (ticker: string) => state.entries.some((e) => e.ticker === ticker.toUpperCase()),
-    [state.entries],
+  const pin = useCallback(
+    (ticker: string) => {
+      const result = addTickers({ version: 2, tickers: tickersRef.current }, ticker)
+      apply(result.state)
+      if (result.refusedCap.length) setFeedback(formatAddFeedback(result))
+      else setFeedback(null)
+    },
+    [apply],
   )
 
-  const isPinned = useCallback(
-    (ticker: string) =>
-      state.entries.some((e) => e.ticker === ticker.toUpperCase() && e.pinned),
-    [state.entries],
+  const remove = useCallback(
+    (ticker: string) => {
+      apply(removeTicker({ version: 2, tickers: tickersRef.current }, ticker))
+      setFeedback(null)
+    },
+    [apply],
+  )
+
+  const toggle = useCallback(
+    (ticker: string) => {
+      const result = toggleTicker({ version: 2, tickers: tickersRef.current }, ticker)
+      apply(result.state)
+      if (result.refusedCap.length || result.rejectedInvalid.length) {
+        setFeedback(formatAddFeedback(result))
+      } else {
+        setFeedback(null)
+      }
+    },
+    [apply],
+  )
+
+  const clearAll = useCallback(() => {
+    const { state: next, previous } = clearWatchlist({
+      version: 2,
+      tickers: tickersRef.current,
+    })
+    if (!previous.length) return
+    setState(next)
+    setUndo({ tickers: previous, count: previous.length })
+    setFeedback(null)
+  }, [])
+
+  const undoClear = useCallback(() => {
+    if (!undo) return
+    setState(restoreWatchlist(undo.tickers))
+    setUndo(null)
+    setFeedback(null)
+  }, [undo])
+
+  const isOnList = useCallback(
+    (ticker: string) => state.tickers.includes(ticker.trim().toUpperCase()),
+    [state.tickers],
   )
 
   return {
-    entries: state.entries,
-    lastAutoAdded,
-    autoAddMinScore: AUTO_ADD_MIN_KYLE_SCORE,
-    ingestScanIdeas,
+    tickers: state.tickers,
+    feedback,
+    undoCount: undo?.count ?? null,
     pin,
-    unpin,
+    unpin: remove,
     toggle,
     remove,
-    isOnWatchlist,
-    isPinned,
+    addFromInput,
+    clearAll,
+    undoClear,
+    isOnWatchlist: isOnList,
+    isPinned: isOnList,
   }
 }
