@@ -261,6 +261,29 @@ export interface TradingIdea {
   daysToEarnings: number | null
   /** avoid = same/next trading day; alert ≈ 2 days; clear otherwise. */
   earningsStatus: EarningsStatus
+  /**
+   * Strict 10MA surfer: price rides SMA10 with bounced touches (see src/lib/surfer.ts).
+   * Distinct from `aboveSma10` (price merely above the SMA).
+   */
+  surfer10: boolean
+  surfer20: boolean
+  surfer50: boolean
+  /** Compact touches/bounces/slopePct per MA for tooltips. */
+  surferDetail?: {
+    sma10: { touches: number; bounces: number; slopePct: number }
+    sma20: { touches: number; bounces: number; slopePct: number }
+    sma50: { touches: number; bounces: number; slopePct: number }
+  }
+  /** Strict tight-consolidation flag (see src/lib/tightConsolidation.ts). */
+  tightConsolidation: boolean
+  /** Compact ratios for the Tight badge tooltip and detail panel. */
+  tightDetail?: {
+    rangeRatio: number
+    closeSpreadPct: number
+    volumeRatio: number
+    days: number
+    failedReasons?: string[]
+  }
 }
 
 export interface DashboardData {
@@ -313,10 +336,18 @@ export interface IdeaFilters {
   requireAbove200: boolean
   /** Soft prefer: require price above 50-day SMA (default ON in the normal scan). */
   requireSma50: boolean
-  /** Optional: require price above 10-day SMA (Kyle 10MA Surfer). */
+  /** Optional: require price above 10-day SMA (loose; not a strict ride). */
   requireSma10: boolean
-  /** Optional: require price above 20-day SMA (Kyle 20MA Surfer). */
+  /** Optional: require price above 20-day SMA (loose; not a strict ride). */
   requireSma20: boolean
+  /** Optional: require strict 10MA surfer (`surfer10`). Default off. */
+  requireSurfer10: boolean
+  /** Optional: require strict 20MA surfer (`surfer20`). Default off. */
+  requireSurfer20: boolean
+  /** Optional: require strict 50MA surfer (`surfer50`). Default off. */
+  requireSurfer50: boolean
+  /** Optional: require strict tight consolidation (`tightConsolidation`). Default off. */
+  requireTight: boolean
   /** Visible readiness stages (default: coiled + triggering). */
   stages: SetupStage[]
   /** Visible earnings proximity statuses (default: all). */
@@ -343,6 +374,10 @@ export const DEFAULT_FILTERS: IdeaFilters = {
   requireSma50: true,
   requireSma10: false,
   requireSma20: false,
+  requireSurfer10: false,
+  requireSurfer20: false,
+  requireSurfer50: false,
+  requireTight: false,
   stages: ['coiled', 'triggering'],
   earningsStatuses: [...ALL_EARNINGS_STATUSES],
   groupId: null,
@@ -360,6 +395,10 @@ export const GROUP_VIEW_DEFAULT_FILTERS: IdeaFilters = {
   requireSma50: false,
   requireSma10: false,
   requireSma20: false,
+  requireSurfer10: false,
+  requireSurfer20: false,
+  requireSurfer50: false,
+  requireTight: false,
   stages: ['watching', 'coiled', 'triggering'],
   setupTypes: [...ALL_SETUP_TYPES],
   earningsStatuses: [...ALL_EARNINGS_STATUSES],

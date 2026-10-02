@@ -97,7 +97,7 @@ For each Stage-1.5 survivor (Yahoo-first cascade: Yahoo → Finnhub → Stooq):
 
 Results are written to `data/scan-cache.json` (gitignored). Default staleness **45 minutes** (`SCAN_CACHE_STALE_MS`).
 
-Payloads are stamped with `SCAN_CACHE_SCHEMA` (`server/scanCache.ts`). Schema 2 discards scans from before the 1D-change fix: Yahoo `chartPreviousClose` on a 1-year chart is the close before that range, not the prior session, so those files stored a wrong `dayPct`. The next start throws them out and runs a fresh scan.
+Payloads are stamped with `SCAN_CACHE_SCHEMA` (`server/scanCache.ts`). Schema 3 discards scans from before the strict MA-surfer / tight-consolidation idea fields (`surfer10` / `surfer20` / `surfer50` / `surferDetail` / `tightConsolidation` / `tightDetail`). Schema 2 had discarded scans from before the 1D-change fix: Yahoo `chartPreviousClose` on a 1-year chart is the close before that range, not the prior session, so those files stored a wrong `dayPct`. The next start throws a v1/v2 file out and runs a fresh scan.
 
 ### API
 
@@ -284,11 +284,11 @@ All three routes validate `:symbol` with `/^[A-Z0-9.\-^]{1,12}$/` after upper-ca
 
 One shared predicate (`passesFilters` in `src/lib/ideaFilters.ts`) applies every control in the normal scan and in group view. The only group-view difference inside the predicate is that `groupId` is not applied again, because that id already selected the group payload.
 
-The request was clarified to ONE filter labeled **Above 200 DMA** (`requireAbove200`, default **on**). It means price above the 200-day SMA (`idea.aboveSma200`, not recomputed in the browser). Below-200 names are not valid setups. The chip sits with the SMA toggles, starts checked, and uses the same on/off chip colors as the other filter chips. Turning it off lets below-200 names through this predicate. It does not add a 10/20/50 variant and it is not three filters. The other controls are unchanged: search, min RVOL, max % from the high, group, setup type, setup stage, Require 50 SMA, 10MA Surfer, 20MA Surfer, earnings status, A+ only, and catalyst.
+The request was clarified to ONE filter labeled **Above 200 DMA** (`requireAbove200`, default **on**). It means price above the 200-day SMA (`idea.aboveSma200`, not recomputed in the browser). Below-200 names are not valid setups. The chip sits with the SMA toggles, starts checked, and uses the same on/off chip colors as the other filter chips. Turning it off lets below-200 names through this predicate. It does not add a 10/20/50 variant and it is not three filters. The other controls: search, min RVOL, max % from the high, group, setup type, setup stage, Require 50 SMA, **Above 10 SMA** / **Above 20 SMA** (loose price-above-SMA), **10MA/20MA/50MA Surfer (strict)**, **Tight consolidation**, earnings status, A+ only, and catalyst.
 
-**Normal scan baseline** (`DEFAULT_FILTERS`): Above 200 DMA on, stages coiled + triggering, Require 50 SMA on, 10MA and 20MA off, min RVOL 0, max % from high 100, all setup types, all earnings statuses, A+ only off, catalyst off, search empty. With Above 200 DMA on, the table matches the old hard gate that dropped every `aboveSma200: false` row before the other checks.
+**Normal scan baseline** (`DEFAULT_FILTERS`): Above 200 DMA on, stages coiled + triggering, Require 50 SMA on, Above 10/20 SMA off, strict surfer chips off, Tight consolidation off, min RVOL 0, max % from high 100, all setup types, all earnings statuses, A+ only off, catalyst off, search empty. With Above 200 DMA on, the table matches the old hard gate that dropped every `aboveSma200: false` row before the other checks.
 
-**Group-view baseline** (`GROUP_VIEW_DEFAULT_FILTERS`): the same values except stages are all three (`watching`, `coiled`, `triggering`) and Require 50 SMA, 10MA Surfer, and 20MA Surfer are off. Above 200 DMA stays on. While a group is selected the filter bar shows and edits this state. The normal scan filters are left alone, so they come back when the group is cleared. Changing the group, or pressing **Reset** on the filter bar, returns the group-view state to that baseline. Filter-bar **Reset** also restores the normal scan filters to `DEFAULT_FILTERS` and keeps the selected group. The group-panel **Reset** (next to the period control, and in the results banner) clears the group and brings those scan filters back. It does not start a new scan.
+**Group-view baseline** (`GROUP_VIEW_DEFAULT_FILTERS`): the same values except stages are all three (`watching`, `coiled`, `triggering`) and Require 50 SMA, Above 10/20 SMA, the strict surfer chips, and Tight consolidation are off. Above 200 DMA stays on. While a group is selected the filter bar shows and edits this state. The normal scan filters are left alone, so they come back when the group is cleared. Changing the group, or pressing **Reset** on the filter bar, returns the group-view state to that baseline. Filter-bar **Reset** also restores the normal scan filters to `DEFAULT_FILTERS` and keeps the selected group. The group-panel **Reset** (next to the period control, and in the results banner) clears the group and brings those scan filters back. It does not start a new scan.
 
 Every control applies as soon as it is pressed, including when the value equals a baseline. Re-enabling coiled + triggering, turning Require 50 SMA back on, or selecting every setup type hides or shows rows immediately. PR #5's rule (ignore a group filter that still equals the scanner default) is gone, which is why those controls used to look dead in group view.
 
@@ -346,6 +346,8 @@ Use only for local UI work. Default when unset: **`live`**.
 | `src/data/demoData.ts` | Seed data — demo mode only |
 | `src/adapters/marketData.ts` | Live scan / demo adapters (no live→demo fallback) |
 | `src/lib/metrics.ts` | RVOL, ADR%, SMAs, Kyle proxies, A+ |
+| `src/lib/surfer.ts` | Strict MA-surfer (`SURFER_CONFIG`, `evaluateSurfer`) |
+| `src/lib/tightConsolidation.ts` | Tight consolidation (`TIGHT_CONFIG`) |
 | `src/lib/setupStage.ts` | watching / coiled / triggering |
 | `src/lib/userWatchlistStore.ts` | localStorage pin + auto-add |
 | `server/yahooScreener.ts` | Stage-1 Yahoo EquityQuery client (crumb + pagination) |
@@ -403,9 +405,11 @@ Use only for local UI work. Default when unset: **`live`**.
 | **aboveSma200** | **Above 200 DMA** filter (default on). Price above the daily 200-SMA, or the name is not a valid setup. The normal scan also drops these names in Stage 1.5 before the payload is built |
 | **aboveSma50** | Soft preference; filter **Require 50 SMA** defaults **ON** |
 | **priorRunPct / tightDays / baseLengthDays** | Kyle-style consolidation proxies |
-| **kyleScore** | Heuristic 3–5 for sorting — **not** Kyle’s official Rating |
-| **setupStage** | watching / coiled / triggering |
-| **A+ (heuristic)** | Above 200 **and** 50 SMA, near highs, ADR% ≥ 2.5, elevated RVOL **or** prior run, preferably MA surfer; **earningsStatus must not be `avoid`** — heuristic, not a signal |
+| **kyleScore** | Heuristic 3–5 for sorting — **not** Kyle’s official Rating. Surfer points still use loose `aboveSma10` / `aboveSma20`. |
+| **setupStage** | watching / coiled / triggering. Coiled still uses loose `aboveSma10 \|\| aboveSma20`. |
+| **surfer10 / surfer20 / surfer50** | Strict ride-the-MA flags (see below). Table badges **10S / 20S / 50S** mean these, not merely price above the SMA. |
+| **tightConsolidation** | Strict contraction flag (see below). **Tight** badge in the Surfer column. |
+| **A+ (heuristic)** | Above 200 **and** 50 SMA, near highs, ADR% ≥ 2.5, elevated RVOL **or** prior run, preferably MA surfer; **earningsStatus must not be `avoid`** — heuristic, not a signal. “Surfer” here is still loose price-above-SMA10/20. |
 | **Catalyst** | Always blank from APIs (Earnings/GAP tags only if catalyst text is present) |
 
 ## Kyle Breakout Database field mapping (@kyletrades_)
@@ -417,12 +421,73 @@ All Kyle-style fields are **computed from live daily bars** in `src/lib/metrics.
 | Inc% / prior run into base | `priorRunPct` | % from the lowest low in the ~63 sessions **before** a recent ~15-day base window into that base’s high |
 | Tight / consolidation days | `tightDays` | Count of last 15 sessions with range &lt; 0.75× window ADR **or** close within 1.5% of SMA10/SMA20 |
 | Over Days / base length | `baseLengthDays` | Trailing streak of below-average-range days (up to ~40) |
-| 10MA / 20MA / 50MA Surfer | `aboveSma10`, `aboveSma20`, `aboveSma50` + badges | Price above respective SMA |
+| 10MA / 20MA / 50MA Surfer | `surfer10`, `surfer20`, `surfer50` + 10S/20S/50S badges | Strict ride (touches + bounces). Loose price-above-SMA stays on `aboveSma*` / **Above 10/20 SMA** / **Require 50 SMA** |
 | Above / below 200MA | `aboveSma200` | **Above 200 DMA** (ONE filter, default on). Off shows names present in the payload; group view includes below-200 names and flags them |
 | DolVol | `dollarVolume` | 20-day avg close × volume |
 | ADR% | `adrPct` | Same as above |
 | Rating (stars) | `kyleScore` | Heuristic 3–5; **not** Kyle’s official Rating |
 | Market 10&gt;20 / ST | `marketRegime` | From live **QQQ** bars |
+
+## Strict MA surfer
+
+A **10MA / 20MA / 50MA Surfer** badge is awarded only when the stock *rides* that SMA and bounces off it (`src/lib/surfer.ts`). Price merely sitting above the SMA is the loose `aboveSma10` / `aboveSma20` / `aboveSma50` flag.
+
+SMA at bar *i* is the average of closes up to and including that bar. A **touch** is a bar whose low is within `touchProximityPct` above that SMA, or pierces it, and whose high still reaches the SMA. Consecutive touch bars count as **one episode**. A **bounce** is a later bar (within `bounceSessions`) whose close is back above the SMA *and* higher than the representative touch bar’s close (hence also its low). The most recent episode is exempt if it ends inside that bounce window and the latest close is still above the SMA.
+
+All of the following must hold across the window:
+
+1. No close more than `closeBreakTolerancePct` below the SMA (as of that bar).
+2. At least `minTouches` distinct touch episodes.
+3. Every episode (except an open one in the last `bounceSessions` bars that is still holding) is followed by a bounce.
+4. Latest close is above the SMA.
+5. SMA now > SMA `slopeLookback` sessions ago.
+
+| Constant | 10MA | 20MA | 50MA |
+|----------|------|------|------|
+| `windowSessions` | 15 | 15 | 25 |
+| `minTouches` | 3 | 3 | 2 |
+| `slopeLookback` | 5 | 5 | 10 |
+| `closeBreakTolerancePct` | 0.75 | 0.75 | 0.75 |
+| `touchProximityPct` | 1.5 | 1.5 | 1.5 |
+| `bounceSessions` | 3 | 3 | 3 |
+
+50MA uses 2 minimum touches because a 25-session window on a slower average rarely prints 3 clean tests.
+
+**Filters.** **Above 10 SMA** / **Above 20 SMA** (`requireSma10` / `requireSma20`) remain the loose price-above-SMA chips (tooltip: price above the SMA, not necessarily riding it). **10MA Surfer (strict)** / **20MA Surfer (strict)** / **50MA Surfer (strict)** (`requireSurfer10` / `requireSurfer20` / `requireSurfer50`) default off in both `DEFAULT_FILTERS` and `GROUP_VIEW_DEFAULT_FILTERS`. Missing stored fields migrate to `false` and do not throw.
+
+**A+ and kyleScore** still use the loose `aboveSma10` / `aboveSma20` flags. Switching them to strict would shrink A+ counts for a different reason than the original heuristic.
+
+**Coiled stage** still uses `surfer = aboveSma10 \|\| aboveSma20` (loose).
+
+**Limitations.** Wick-to-SMA tests are sensitive to how the SMA is computed (closes only, that bar included). Intraday pokes that never print on the daily bar are invisible. The bounce rule uses daily closes, so a same-day bounce that still closes under the touch close does not count.
+
+## Tight consolidation
+
+`src/lib/tightConsolidation.ts` flags a short contraction vs a quieter baseline. `ok` requires every criterion:
+
+1. **Range contraction.** Average daily range% `(high−low)/close×100` over `recentWindow` divided by the average over the `baselineSessions` immediately before that window ≤ `rangeRatioMax`.
+2. **Close-to-close spread.** `(max close − min close) / min close` over the recent window, as a percent, ≤ `min(closeSpreadMaxMultipleOfAdr × baseline ADR%, closeSpreadAbsMaxPct)`.
+3. **Volume contraction.** Recent average volume / trailing `volumeAvgSessions` average ≤ `volumeRatioMax`.
+4. **Location.** Price within `nearHighMaxPct` of the 52-week high (`pctFrom52wHigh >= -10`, same convention as metrics) **and** above SMA10 and SMA20.
+
+| Constant | Value | Notes |
+|----------|-------|-------|
+| `recentWindow` | 7 | Documented range 5–10 |
+| `baselineSessions` | 30 | Documented range 20–50 |
+| `rangeRatioMax` | 0.85 | Recent range vs prior baseline. 0.6 printed 0/187 ideas on a 2026-10-02 live scan; 0.85 still requires contraction. |
+| `closeSpreadMaxMultipleOfAdr` | 1.5 | Times baseline ADR% |
+| `closeSpreadAbsMaxPct` | 6 | Absolute cap on close spread |
+| `volumeRatioMax` | 0.9 | Recent vol vs 50-session avg |
+| `volumeAvgSessions` | 50 | Includes the recent window |
+| `nearHighMaxPct` | 10 | `pctFrom52wHigh >= -10` |
+| `highLookback` | 252 | Same 52-week window as metrics |
+| `useInCoiled` | `true` | Extra coiled OR-route. 2026-10-02 live scan: 66 → 67 coiled (+1.5%, NET only). |
+
+The **Tight** badge sits with the Surfer badges. Filter chip **Tight consolidation** (`requireTight`, default off). The detail panel lists range ratio, volume ratio, close spread, days, and per-criterion pass/fail plus strict surfer touches/bounces/slope per MA.
+
+**Coiled OR-route.** `coiled = (existing tightDays + loose-surfer rule) OR (tightConsolidation && near highs)`. `TIGHT_CONFIG.useInCoiled` is **true**. A 2026-10-02 live scan of 187 ideas had 66 coiled on the legacy rule and 67 with the OR-route (NET only, +1.5%), under the ~25% inflation cap. Triggering still wins over coiled. The coiled “surfer” term on the legacy rule is still loose `aboveSma10 || aboveSma20`.
+
+**Limitations.** The 7-day window is short; a single wide bar blows the range ratio. Volume uses a trailing 50-day average that includes the recent window, so contraction is slightly harder to print. 52-week high is the high of the last 252 daily bars, not a split-adjusted vendor field.
 
 ## License / disclaimer
 

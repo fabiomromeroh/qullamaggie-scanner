@@ -9,6 +9,8 @@ import type {
 } from '../types'
 import { resolvePrevClose } from './prevClose'
 import { setupStageHeuristic } from './setupStage'
+import { compactSurferDetail, evaluateSurfer } from './surfer'
+import { compactTightDetail, evaluateTightConsolidation } from './tightConsolidation'
 
 export interface DailyBar {
   /** Unix seconds */
@@ -192,6 +194,9 @@ export function baseLengthDaysProxy(bars: DailyBar[], maxLookback = 40): number 
  * A+ heuristic (tightened Kyle-style): above 200+50 SMA, near highs (≤5% or ≤10% with surfer),
  * decent ADR, elevated RVOL or prior run, preferably MA surfer.
  * Heuristic only — not a trading signal / not Kyle's official Rating.
+ *
+ * "Surfer" here is the loose price-above-SMA10/20 flags (`aboveSma10` / `aboveSma20`),
+ * not the strict ride-the-MA booleans (`surfer10` / `surfer20`).
  */
 export function isAPlusHeuristic(m: {
   pctFrom52wHigh: number
@@ -220,6 +225,7 @@ export function isAPlusHeuristic(m: {
 /**
  * Kyle-style quality score 3–5 (heuristic, not official Rating).
  * Starts at 3 when above 200; +points for 50, surfers, near ATH, RVOL/run, ADR.
+ * Surfer points use loose `aboveSma10` / `aboveSma20`, not strict `surfer10` / `surfer20`.
  */
 export function kyleScoreHeuristic(m: {
   aboveSma200: boolean
@@ -264,18 +270,19 @@ export function setupTypeHeuristic(m: {
  * never invent.
  */
 export function deriveCharacteristics(m: {
-  aboveSma10: boolean
-  aboveSma20: boolean
-  aboveSma50: boolean
   aboveSma200: boolean
   pctFrom52wHigh: number
   catalyst: string | null
+  /** Strict ride-the-MA flags. Tags are not awarded from loose aboveSma*. */
+  surfer10: boolean
+  surfer20: boolean
+  surfer50: boolean
 }): CharacteristicTag[] {
   const tags: CharacteristicTag[] = []
   if (!m.aboveSma200) tags.push('Below 200MA')
-  if (m.aboveSma10) tags.push('10MA Surfer')
-  if (m.aboveSma20) tags.push('20MA Surfer')
-  if (m.aboveSma50) tags.push('50MA Surfer')
+  if (m.surfer10) tags.push('10MA Surfer')
+  if (m.surfer20) tags.push('20MA Surfer')
+  if (m.surfer50) tags.push('50MA Surfer')
   if (m.pctFrom52wHigh >= -5) tags.push('near ATH')
   const cat = (m.catalyst ?? '').toLowerCase()
   if (cat && /\bearnings?\b|\beps\b/.test(cat)) tags.push('Earnings')
@@ -383,6 +390,14 @@ export function computeIdeaMetrics(
   const priorRunPct = priorRunPctProxy(bars)
   const tightDays = tightDaysProxy(bars)
   const baseLengthDays = baseLengthDaysProxy(bars)
+  const surferEval = evaluateSurfer(bars)
+  const surfer10 = surferEval.sma10.ok
+  const surfer20 = surferEval.sma20.ok
+  const surfer50 = surferEval.sma50.ok
+  const surferDetail = compactSurferDetail(surferEval)
+  const tightEval = evaluateTightConsolidation(bars, price)
+  const tightConsolidation = tightEval.ok
+  const tightDetail = compactTightDetail(tightEval)
 
   const sparkSrc = bars.slice(-40)
   const sparkline: SparkPoint[] = sparkSrc.map((b) => ({
@@ -420,16 +435,17 @@ export function computeIdeaMetrics(
     rvol: metricsCore.rvol,
     dayPct: metricsCore.dayPct,
     priorRunPct,
+    tightConsolidation,
   })
   // Below 200 should already be gated by callers; keep a fallback stage for typing.
   const stage = setupStage ?? 'watching'
   const characteristics = deriveCharacteristics({
-    aboveSma10,
-    aboveSma20,
-    aboveSma50,
     aboveSma200,
     pctFrom52wHigh: metricsCore.pctFrom52wHigh,
     catalyst,
+    surfer10,
+    surfer20,
+    surfer50,
   })
 
   return {
@@ -481,6 +497,12 @@ export function computeIdeaMetrics(
     earningsDate,
     daysToEarnings,
     earningsStatus,
+    surfer10,
+    surfer20,
+    surfer50,
+    surferDetail,
+    tightConsolidation,
+    tightDetail,
   }
 }
 

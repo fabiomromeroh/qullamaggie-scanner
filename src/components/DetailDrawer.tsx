@@ -1,5 +1,7 @@
 import type { TradingIdea } from '../types'
 import { stageLabel } from '../lib/setupStage'
+import { SURFER_CONFIG } from '../lib/surfer'
+import { TIGHT_CONFIG } from '../lib/tightConsolidation'
 import { fmtDollarVol, fmtPct, fmtPrice, fmtRvol, pctClass } from '../utils/format'
 import { MiniSparkline } from './MiniSparkline'
 import { TickerNews } from './TickerNews'
@@ -8,6 +10,139 @@ import { TickerProfile } from './TickerProfile'
 interface Props {
   idea: TradingIdea
   source?: 'live' | 'demo'
+}
+
+function passFail(ok: boolean): string {
+  return ok ? 'pass' : 'fail'
+}
+
+function SurferDetailSection({ idea }: { idea: TradingIdea }) {
+  const rows: { label: string; ok: boolean; key: 'sma10' | 'sma20' | 'sma50' }[] = [
+    { label: '10MA', ok: Boolean(idea.surfer10), key: 'sma10' },
+    { label: '20MA', ok: Boolean(idea.surfer20), key: 'sma20' },
+    { label: '50MA', ok: Boolean(idea.surfer50), key: 'sma50' },
+  ]
+  return (
+    <section>
+      <h3 className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-terminal-dim">
+        Strict MA surfer
+      </h3>
+      <p className="mb-2 text-[11px] text-terminal-dim">
+        Ride the SMA and bounce off it (window {SURFER_CONFIG.windowSessions.sma10}/
+        {SURFER_CONFIG.windowSessions.sma50} sessions, min touches {SURFER_CONFIG.minTouches.sma10}/
+        {SURFER_CONFIG.minTouches.sma50}, bounce {SURFER_CONFIG.bounceSessions}d, close-break ≤{' '}
+        {SURFER_CONFIG.closeBreakTolerancePct}%). Loose above-SMA flags stay on Trend gate.
+      </p>
+      <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-3">
+        {rows.map((row) => {
+          const d = idea.surferDetail?.[row.key]
+          return (
+            <div
+              key={row.key}
+              className="rounded border border-terminal-border bg-terminal-bg px-2 py-2"
+            >
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-terminal-muted">
+                  {row.label}
+                </span>
+                <span
+                  className={`text-[10px] font-mono ${
+                    row.ok ? 'text-terminal-green' : 'text-terminal-dim'
+                  }`}
+                >
+                  {row.ok ? 'YES' : 'no'}
+                </span>
+              </div>
+              <div className="mt-1 font-mono text-[11px] text-terminal-fg">
+                {d
+                  ? `${d.touches} touches · ${d.bounces} bounces · slope ${d.slopePct}%`
+                  : '—'}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </section>
+  )
+}
+
+function TightDetailSection({ idea }: { idea: TradingIdea }) {
+  const d = idea.tightDetail
+  const reasons = d?.failedReasons ?? []
+  const has = (needle: string) => reasons.some((r) => r.includes(needle))
+  const rangeOk = d != null && d.rangeRatio <= TIGHT_CONFIG.rangeRatioMax
+  const volumeOk = d != null && d.volumeRatio <= TIGHT_CONFIG.volumeRatioMax
+  const spreadOk = reasons.length
+    ? !has('close-spread')
+    : d != null && d.closeSpreadPct <= TIGHT_CONFIG.closeSpreadAbsMaxPct
+  const nearHigh = idea.pctFrom52wHigh >= -TIGHT_CONFIG.nearHighMaxPct
+  const aboveMas = idea.aboveSma10 && idea.aboveSma20
+  const rows = [
+    {
+      label: 'Range contraction',
+      value: d ? `${d.rangeRatio}×` : '—',
+      ok: rangeOk,
+      hint: `≤ ${TIGHT_CONFIG.rangeRatioMax} vs prior ${TIGHT_CONFIG.baselineSessions}d`,
+    },
+    {
+      label: 'Volume ratio',
+      value: d ? `${d.volumeRatio}×` : '—',
+      ok: volumeOk,
+      hint: `≤ ${TIGHT_CONFIG.volumeRatioMax} vs ${TIGHT_CONFIG.volumeAvgSessions}d avg`,
+    },
+    {
+      label: 'Close spread',
+      value: d ? `${d.closeSpreadPct}%` : '—',
+      ok: spreadOk,
+      hint: `cap ${TIGHT_CONFIG.closeSpreadAbsMaxPct}% and ${TIGHT_CONFIG.closeSpreadMaxMultipleOfAdr}× baseline ADR`,
+    },
+    {
+      label: 'Days',
+      value: d ? String(d.days) : String(TIGHT_CONFIG.recentWindow),
+      ok: Boolean(d),
+      hint: 'recent window',
+    },
+    {
+      label: 'Near 52w high',
+      value: fmtPct(idea.pctFrom52wHigh),
+      ok: nearHigh,
+      hint: `within ${TIGHT_CONFIG.nearHighMaxPct}%`,
+    },
+    {
+      label: 'Above SMA10+20',
+      value: `${idea.aboveSma10 ? '10' : '·'} / ${idea.aboveSma20 ? '20' : '·'}`,
+      ok: aboveMas,
+      hint: 'loose price-above-SMA',
+    },
+  ]
+  return (
+    <section>
+      <h3 className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-terminal-dim">
+        Tight consolidation
+      </h3>
+      <p className="mb-2 text-[11px] text-terminal-dim">
+        {idea.tightConsolidation ? 'Passes' : 'Does not pass'} the strict contraction rule
+        {d ? ` (${d.days}d window)` : ''}.
+      </p>
+      <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+        {rows.map((row) => (
+          <div
+            key={row.label}
+            className="rounded border border-terminal-border bg-terminal-bg px-2 py-2"
+            title={row.hint}
+          >
+            <div className="text-[9px] uppercase tracking-wide text-terminal-dim">{row.label}</div>
+            <div className="mt-0.5 font-mono text-xs text-terminal-fg">{row.value}</div>
+            <div
+              className={`text-[10px] ${row.ok ? 'text-terminal-green' : 'text-terminal-dim'}`}
+            >
+              {passFail(row.ok)}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
 }
 
 export function DetailDrawer({ idea, source = 'live' }: Props) {
@@ -130,6 +265,9 @@ export function DetailDrawer({ idea, source = 'live' }: Props) {
             {fmtPrice(idea.sma50)}
           </p>
         </section>
+
+        <SurferDetailSection idea={idea} />
+        <TightDetailSection idea={idea} />
 
         <section>
           <h3 className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-terminal-dim">

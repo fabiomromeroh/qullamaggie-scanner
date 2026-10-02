@@ -20,8 +20,10 @@ import type { DashboardData } from '../src/types/index.ts'
  * Bump when cached idea math changes so old files are not served as fresh.
  * v2: dayPct uses the prior session close. Yahoo `chartPreviousClose` on a
  * 1y chart is the close before that range, not yesterday, and poisoned v1.
+ * v3: idea payload adds strict MA-surfer (surfer10/20/50 + surferDetail) and
+ * tightConsolidation / tightDetail. Old caches are discarded.
  */
-export const SCAN_CACHE_SCHEMA = 2
+export const SCAN_CACHE_SCHEMA = 3
 
 export interface ScanCacheMeta {
   schemaVersion?: number

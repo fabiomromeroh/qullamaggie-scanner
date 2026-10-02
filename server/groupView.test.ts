@@ -106,6 +106,10 @@ function scannerIdea(partial: Partial<TradingIdea>): TradingIdea {
     aboveSma50: true,
     aboveSma10: true,
     aboveSma20: true,
+    surfer10: false,
+    surfer20: false,
+    surfer50: false,
+    tightConsolidation: false,
     setupStage: 'coiled',
     rvol: 2,
     pctFrom52wHigh: -1,
@@ -345,6 +349,57 @@ test('group view: min RVOL, search, and the other controls apply at once', () =>
     fixture.finvizPerf,
   )
   assert.ok(sma20Off.rows.some((idea) => idea.ticker === 'AVGO'))
+
+  const strict10 = selectGroupViewRows(
+    [
+      scannerIdea({ ticker: 'YES10', surfer10: true }),
+      scannerIdea({ ticker: 'NO10', surfer10: false }),
+    ],
+    { ...GROUP_VIEW_DEFAULT_FILTERS, requireSurfer10: true },
+    { YES10: 2, NO10: 1 },
+  )
+  assert.deepEqual(tickers(strict10.rows), ['YES10'])
+  const strict20 = selectGroupViewRows(
+    [
+      scannerIdea({ ticker: 'YES20', surfer20: true }),
+      scannerIdea({ ticker: 'NO20', surfer20: false }),
+    ],
+    { ...GROUP_VIEW_DEFAULT_FILTERS, requireSurfer20: true },
+    { YES20: 2, NO20: 1 },
+  )
+  assert.deepEqual(tickers(strict20.rows), ['YES20'])
+  const strict50 = selectGroupViewRows(
+    [
+      scannerIdea({ ticker: 'YES50', surfer50: true }),
+      scannerIdea({ ticker: 'NO50', surfer50: false }),
+    ],
+    { ...GROUP_VIEW_DEFAULT_FILTERS, requireSurfer50: true },
+    { YES50: 2, NO50: 1 },
+  )
+  assert.deepEqual(tickers(strict50.rows), ['YES50'])
+  const tightOn = selectGroupViewRows(
+    [
+      scannerIdea({ ticker: 'TIGHT', tightConsolidation: true }),
+      scannerIdea({ ticker: 'LOOSE', tightConsolidation: false }),
+    ],
+    { ...GROUP_VIEW_DEFAULT_FILTERS, requireTight: true },
+    { TIGHT: 2, LOOSE: 1 },
+  )
+  assert.deepEqual(tickers(tightOn.rows), ['TIGHT'])
+  const strictOff = selectGroupViewRows(
+    [
+      scannerIdea({ ticker: 'NO10', surfer10: false, tightConsolidation: false }),
+    ],
+    {
+      ...GROUP_VIEW_DEFAULT_FILTERS,
+      requireSurfer10: false,
+      requireSurfer20: false,
+      requireSurfer50: false,
+      requireTight: false,
+    },
+    { NO10: 1 },
+  )
+  assert.deepEqual(tickers(strictOff.rows), ['NO10'])
 
   // groupId selects the payload; it is not a second row filter.
   const wrongGroup = selectGroupViewRows(
