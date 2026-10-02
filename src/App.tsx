@@ -1,15 +1,16 @@
 import { useMemo } from 'react'
-import { DetailDrawer } from './components/DetailDrawer'
 import { FiltersBar } from './components/FiltersBar'
 import { GroupStrength } from './components/GroupStrength'
 import { Header } from './components/Header'
 import { IdeasTable } from './components/IdeasTable'
 import { ResizeHandle } from './components/ResizeHandle'
+import { SplitDetailSheet } from './components/SplitDetailSheet'
 import { StatusBanner } from './components/StatusBanner'
 import { WatchlistPanel } from './components/WatchlistPanel'
 import { useDashboard } from './hooks/useDashboard'
 import { groupViewFilterNote } from './lib/groupView'
 import { useResizablePanels } from './hooks/useResizablePanels'
+import { splitReservedLeft } from './lib/splitLayout'
 
 export default function App() {
   const {
@@ -253,21 +254,16 @@ export default function App() {
             : 'Not investment advice · Qullamaggie / Kyle-style process reference only'}
       </footer>
 
-      {selectedIdea && (
-        <>
-          <button
-            type="button"
-            className="fixed inset-0 z-30 bg-black/40"
-            aria-label="Close overlay"
-            onClick={() => setSelectedTicker(null)}
-          />
-          <DetailDrawer
-            idea={selectedIdea}
-            onClose={() => setSelectedTicker(null)}
-            source={data?.source}
-          />
-        </>
-      )}
+      {selectedIdea ? (
+        <SplitDetailSheet
+          idea={selectedIdea}
+          tickers={filteredIdeas.map((idea) => idea.ticker)}
+          onSelectTicker={setSelectedTicker}
+          onClose={() => setSelectedTicker(null)}
+          source={data?.source}
+          reservedLeft={splitReservedLeft(panelWidths.groups)}
+        />
+      ) : null}
     </div>
   )
 }

@@ -312,9 +312,11 @@ function IdeaCard({
   return (
     <button
       type="button"
+      data-idea-ticker={idea.ticker}
+      aria-selected={selected}
       onClick={() => onSelect(idea.ticker)}
       title={rowTitle}
-      className={`w-full rounded-lg border border-terminal-border/80 px-3 py-2.5 text-left transition-colors active:bg-terminal-elevated ${rowHighlight(idea)} ${
+      className={`w-full scroll-mt-8 rounded-lg border border-terminal-border/80 px-3 py-2.5 text-left transition-colors active:bg-terminal-elevated ${rowHighlight(idea)} ${
         selected ? 'ring-1 ring-terminal-blue/60' : ''
       } ${avoid ? 'opacity-90' : ''}`}
     >
@@ -745,9 +747,12 @@ export function IdeasTable({
               return (
                 <tr
                   key={idea.ticker}
+                  data-idea-ticker={idea.ticker}
+                  aria-selected={selected}
+                  tabIndex={-1}
                   onClick={() => onSelect(idea.ticker)}
                   title={rowTitle}
-                  className={`cursor-pointer border-t border-terminal-border/50 transition-colors hover:bg-terminal-elevated/80 ${highlight} ${
+                  className={`scroll-mt-8 cursor-pointer border-t border-terminal-border/50 transition-colors hover:bg-terminal-elevated/80 ${highlight} ${
                     selected ? 'ring-1 ring-inset ring-terminal-blue/50' : ''
                   } ${avoid ? 'opacity-90' : ''}`}
                 >
