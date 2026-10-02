@@ -39,7 +39,7 @@ Do **not** commit `.env` (it is gitignored). Secrets stay on Render.
 - `GET /api/groups/:slug/stocks?period=3m` scores the top 20 snapshot members (by computed period performance) with the scan's Stage-2 pipeline and caches the `TradingIdea[]` for 12 minutes. Names below the 200-day SMA are included and flagged. Names with no data are listed in `failed`. A missing snapshot, unknown slug, or a group with no performance data returns HTTP 502 `{ "error": "..." }`.
 - `GROUP_WARMUP` defaults on: after the scan cache exists, two background workers price members of the top 25 industries so the first page is faster. Set `GROUP_WARMUP=0` to disable. It does not block the scan. On the free tier a cold (or freshly woken) instance still pays the leaders budget until that warm-up finishes.
 - `FINVIZ_SCREENER_LIVE` defaults off. Leave it unset on Render so the process never calls `finviz.com/screener.ashx`. `1` tries the live screener first and falls back to the snapshot.
-- Ignores scan caches from before schema 2 (`SCAN_CACHE_SCHEMA` in `server/scanCache.ts`). That bump drops `dayPct` values taken from Yahoo's pre-range `chartPreviousClose`; startup runs a fresh scan instead of serving them.
+- Ignores scan caches from before schema 3 (`SCAN_CACHE_SCHEMA` in `server/scanCache.ts`). Schema 3 adds strict MA-surfer and tight-consolidation fields on each idea, so v2 files are discarded and startup runs a fresh scan. Schema 2 had dropped `dayPct` values taken from Yahoo's pre-range `chartPreviousClose`.
 
 ## 4. Local production smoke test
 

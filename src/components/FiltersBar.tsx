@@ -229,7 +229,10 @@ export function FiltersBar({
         <span>{ABOVE_200_DMA_LABEL}</span>
       </label>
 
-      <label className="flex min-h-8 cursor-pointer items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1.5 text-xs text-terminal-fg">
+      <label
+        title="Price above the 50-day SMA (loose; not a strict ride)."
+        className="flex min-h-8 cursor-pointer items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1.5 text-xs text-terminal-fg"
+      >
         <input
           type="checkbox"
           checked={filters.requireSma50}
@@ -239,24 +242,82 @@ export function FiltersBar({
         <span>Require 50 SMA</span>
       </label>
 
-      <label className="flex min-h-8 cursor-pointer items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1.5 text-xs text-terminal-fg">
+      <label
+        title="Price above the 10-day SMA, not necessarily riding it."
+        className="flex min-h-8 cursor-pointer items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1.5 text-xs text-terminal-fg"
+      >
         <input
           type="checkbox"
           checked={filters.requireSma10}
           onChange={(e) => onChange({ ...filters, requireSma10: e.target.checked })}
           className="accent-terminal-green"
         />
-        <span>10MA Surfer</span>
+        <span>Above 10 SMA</span>
       </label>
 
-      <label className="flex min-h-8 cursor-pointer items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1.5 text-xs text-terminal-fg">
+      <label
+        title="Price above the 20-day SMA, not necessarily riding it."
+        className="flex min-h-8 cursor-pointer items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1.5 text-xs text-terminal-fg"
+      >
         <input
           type="checkbox"
           checked={filters.requireSma20}
           onChange={(e) => onChange({ ...filters, requireSma20: e.target.checked })}
           className="accent-terminal-green"
         />
-        <span>20MA Surfer</span>
+        <span>Above 20 SMA</span>
+      </label>
+
+      <label
+        title="Strict 10MA surfer: the stock rides SMA10 over ~15 sessions with bounced touches, no close break beyond 0.75%, and a rising SMA. Price merely above the SMA is the 'Above 10 SMA' chip."
+        className="flex min-h-8 cursor-pointer items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1.5 text-xs text-terminal-fg"
+      >
+        <input
+          type="checkbox"
+          checked={Boolean(filters.requireSurfer10)}
+          onChange={(e) => onChange({ ...filters, requireSurfer10: e.target.checked })}
+          className="accent-terminal-green"
+        />
+        <span>10MA Surfer (strict)</span>
+      </label>
+
+      <label
+        title="Strict 20MA surfer: the stock rides SMA20 over ~15 sessions with bounced touches, no close break beyond 0.75%, and a rising SMA. Price merely above the SMA is the 'Above 20 SMA' chip."
+        className="flex min-h-8 cursor-pointer items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1.5 text-xs text-terminal-fg"
+      >
+        <input
+          type="checkbox"
+          checked={Boolean(filters.requireSurfer20)}
+          onChange={(e) => onChange({ ...filters, requireSurfer20: e.target.checked })}
+          className="accent-terminal-green"
+        />
+        <span>20MA Surfer (strict)</span>
+      </label>
+
+      <label
+        title="Strict 50MA surfer: the stock rides SMA50 over ~25 sessions with bounced touches, no close break beyond 0.75%, and a rising SMA."
+        className="flex min-h-8 cursor-pointer items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1.5 text-xs text-terminal-fg"
+      >
+        <input
+          type="checkbox"
+          checked={Boolean(filters.requireSurfer50)}
+          onChange={(e) => onChange({ ...filters, requireSurfer50: e.target.checked })}
+          className="accent-terminal-green"
+        />
+        <span>50MA Surfer (strict)</span>
+      </label>
+
+      <label
+        title="Range and volume contraction over the last 7 sessions vs the prior 30, close-to-close spread capped, within 10% of the 52-week high, and above SMA10 and SMA20."
+        className="flex min-h-8 cursor-pointer items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1.5 text-xs text-terminal-fg"
+      >
+        <input
+          type="checkbox"
+          checked={Boolean(filters.requireTight)}
+          onChange={(e) => onChange({ ...filters, requireTight: e.target.checked })}
+          className="accent-terminal-green"
+        />
+        <span>Tight consolidation</span>
       </label>
 
       <div className="flex flex-col gap-0.5 text-[10px] text-terminal-dim">
@@ -372,7 +433,8 @@ export function FiltersBar({
           default. {ABOVE_200_DMA_TOOLTIP} Default stages:{' '}
           <span className="text-terminal-purple">coiled</span> +{' '}
           <span className="text-terminal-amber">triggering</span> (enable Watching to see
-          base-builders). Group view starts with every stage and does not require the 10/20/50 SMAs.
+          base-builders). Group view starts with every stage and does not require the 10/20/50 SMAs
+          or the strict surfer / tight chips.
         </p>
       ) : null}
 

@@ -6,8 +6,14 @@
  * - triggering — elevated RVOL / breakout-day heuristic
  *
  * Names below 200 SMA are never staged as setups (callers exclude them).
+ *
+ * Coiled "surfer" is the loose aboveSma10 || aboveSma20 gate (price above the
+ * SMA, not the strict ride-the-MA flags). An extra OR-route from
+ * tightConsolidation is behind TIGHT_CONFIG.useInCoiled (on after a live scan
+ * showed +1.5% coiled).
  */
 import type { SetupStage } from '../types'
+import { TIGHT_CONFIG } from './tightConsolidation'
 
 export const ALL_SETUP_STAGES: SetupStage[] = ['triggering', 'coiled', 'watching']
 
@@ -26,13 +32,13 @@ export function setupStageHeuristic(m: {
   rvol: number
   dayPct: number
   priorRunPct: number
+  /** Strict tight-consolidation flag. Used only when TIGHT_CONFIG.useInCoiled. */
+  tightConsolidation?: boolean
 }): SetupStage | null {
   if (!m.aboveSma200) return null
 
   const nearHighs = m.pctFrom52wHigh >= -10
   const nearHighsTight = m.pctFrom52wHigh >= -5
-  const surfer = m.aboveSma10 || m.aboveSma20
-  const tight = m.tightDays >= 5
 
   // Breakout / trigger day: volume expansion near highs (or strong green + RVOL).
   const triggering =
@@ -42,16 +48,35 @@ export function setupStageHeuristic(m: {
 
   if (triggering) return 'triggering'
 
-  // Coiled base: orderly tight days, surfing MAs, near highs after a prior run helps.
-  const coiled =
-    tight &&
-    nearHighs &&
-    surfer &&
-    (m.priorRunPct >= 15 || m.pctFrom52wHigh >= -5)
-
-  if (coiled) return 'coiled'
+  if (coiledByLegacyRule(m) || coiledByTightRoute(m, nearHighs)) return 'coiled'
 
   return 'watching'
+}
+
+/** Existing coiled rule: tightDays + near highs + loose MA surfer + prior run / closer high. */
+export function coiledByLegacyRule(m: {
+  aboveSma10: boolean
+  aboveSma20: boolean
+  pctFrom52wHigh: number
+  tightDays: number
+  priorRunPct: number
+}): boolean {
+  const nearHighs = m.pctFrom52wHigh >= -10
+  const surfer = m.aboveSma10 || m.aboveSma20
+  const tight = m.tightDays >= 5
+  return tight && nearHighs && surfer && (m.priorRunPct >= 15 || m.pctFrom52wHigh >= -5)
+}
+
+/**
+ * Extra coiled route: strict tightConsolidation near highs.
+ * Gated by TIGHT_CONFIG.useInCoiled (on; live scan inflation was +1.5%).
+ */
+export function coiledByTightRoute(
+  m: { tightConsolidation?: boolean },
+  nearHighs: boolean,
+  useInCoiled: boolean = TIGHT_CONFIG.useInCoiled,
+): boolean {
+  return useInCoiled && Boolean(m.tightConsolidation) && nearHighs
 }
 
 export function stageSortRank(stage: SetupStage): number {

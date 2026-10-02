@@ -137,6 +137,8 @@ type DemoIdeaSeed = Omit<
   | 'sma10' | 'sma20' | 'aboveSma10' | 'aboveSma20' | 'priorRunPct' | 'tightDays'
   | 'baseLengthDays' | 'dollarVolume' | 'kyleScore' | 'characteristics' | 'setupStage'
   | 'perf6M' | 'earningsDate' | 'daysToEarnings' | 'earningsStatus'
+  | 'surfer10' | 'surfer20' | 'surfer50' | 'surferDetail'
+  | 'tightConsolidation' | 'tightDetail'
 >
 
 function enrichKyleDemo(idea: DemoIdeaSeed): TradingIdea {
@@ -157,13 +159,17 @@ function enrichKyleDemo(idea: DemoIdeaSeed): TradingIdea {
     priorRunPct,
     isAPlus,
   })
+  const surfer10 = aboveSma10 && tightDays >= 6
+  const surfer20 = aboveSma20 && tightDays >= 5
+  const surfer50 = idea.aboveSma50 && idea.pctFrom52wHigh >= -8
+  const tightConsolidation = tightDays >= 8 && idea.pctFrom52wHigh >= -10 && aboveSma10 && aboveSma20
   const characteristics: CharacteristicTag[] = deriveCharacteristics({
-    aboveSma10,
-    aboveSma20,
-    aboveSma50: idea.aboveSma50,
     aboveSma200: idea.aboveSma200,
     pctFrom52wHigh: idea.pctFrom52wHigh,
     catalyst: idea.catalyst,
+    surfer10,
+    surfer20,
+    surfer50,
   })
   const priorRounded = Math.round(priorRunPct * 10) / 10
   const setupStage =
@@ -176,6 +182,7 @@ function enrichKyleDemo(idea: DemoIdeaSeed): TradingIdea {
       rvol: idea.rvol,
       dayPct: idea.dayPct,
       priorRunPct: priorRounded,
+      tightConsolidation,
     }) ?? 'watching'
   const perf6M = Math.round(Math.max(idea.perf3M * 1.6, idea.perf1M * 3) * 10) / 10
   // Demo earnings: A+ names further out (clear); one alert/avoid for UI coverage via ticker hash
@@ -214,6 +221,21 @@ function enrichKyleDemo(idea: DemoIdeaSeed): TradingIdea {
     earningsDate,
     daysToEarnings,
     earningsStatus,
+    surfer10,
+    surfer20,
+    surfer50,
+    surferDetail: {
+      sma10: { touches: surfer10 ? 3 : 1, bounces: surfer10 ? 3 : 0, slopePct: surfer10 ? 0.4 : 0 },
+      sma20: { touches: surfer20 ? 3 : 1, bounces: surfer20 ? 2 : 0, slopePct: surfer20 ? 0.6 : 0 },
+      sma50: { touches: surfer50 ? 2 : 0, bounces: surfer50 ? 2 : 0, slopePct: surfer50 ? 1.1 : 0 },
+    },
+    tightConsolidation,
+    tightDetail: {
+      rangeRatio: tightConsolidation ? 0.45 : 0.9,
+      closeSpreadPct: tightConsolidation ? 2.4 : 8.1,
+      volumeRatio: tightConsolidation ? 0.7 : 1.1,
+      days: 7,
+    },
   }
 }
 

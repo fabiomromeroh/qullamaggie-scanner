@@ -107,6 +107,66 @@ test('passesFilters truth table for each normal-scan control', () => {
       pass: true,
     },
     {
+      name: 'requireSurfer10 on hides non-strict',
+      row: idea({ surfer10: false, aboveSma10: true }),
+      f: filters({ requireSurfer10: true }),
+      pass: false,
+    },
+    {
+      name: 'requireSurfer10 on allows strict',
+      row: idea({ surfer10: true }),
+      f: filters({ requireSurfer10: true }),
+      pass: true,
+    },
+    {
+      name: 'requireSurfer10 off',
+      row: idea({ surfer10: false }),
+      f: filters({ requireSurfer10: false }),
+      pass: true,
+    },
+    {
+      name: 'requireSurfer20 on hides',
+      row: idea({ surfer20: false }),
+      f: filters({ requireSurfer20: true }),
+      pass: false,
+    },
+    {
+      name: 'requireSurfer20 on allows',
+      row: idea({ surfer20: true }),
+      f: filters({ requireSurfer20: true }),
+      pass: true,
+    },
+    {
+      name: 'requireSurfer50 on hides',
+      row: idea({ surfer50: false }),
+      f: filters({ requireSurfer50: true }),
+      pass: false,
+    },
+    {
+      name: 'requireSurfer50 on allows',
+      row: idea({ surfer50: true }),
+      f: filters({ requireSurfer50: true }),
+      pass: true,
+    },
+    {
+      name: 'requireTight on hides',
+      row: idea({ tightConsolidation: false }),
+      f: filters({ requireTight: true }),
+      pass: false,
+    },
+    {
+      name: 'requireTight on allows',
+      row: idea({ tightConsolidation: true }),
+      f: filters({ requireTight: true }),
+      pass: true,
+    },
+    {
+      name: 'requireTight off',
+      row: idea({ tightConsolidation: false }),
+      f: filters({ requireTight: false }),
+      pass: true,
+    },
+    {
       name: 'stages exclude watching',
       row: idea({ setupStage: 'watching' }),
       f: filters({ stages: ['coiled', 'triggering'] }),
@@ -274,6 +334,46 @@ test('passesFilters truth table for each normal-scan control', () => {
   )
   assert.equal(
     passesFilters(
+      idea({ surfer10: false, groupId: 'other' }),
+      filters({ requireSurfer10: true, groupId: 'semiconductors' }),
+      { groupView: true, groupSource: 'fallback', groups },
+    ),
+    false,
+  )
+  assert.equal(
+    passesFilters(
+      idea({ surfer10: true, groupId: 'other' }),
+      filters({ requireSurfer10: true, groupId: 'semiconductors' }),
+      { groupView: true, groupSource: 'fallback', groups },
+    ),
+    true,
+  )
+  assert.equal(
+    passesFilters(
+      idea({ surfer20: true, groupId: 'other' }),
+      filters({ requireSurfer20: true, groupId: 'semiconductors' }),
+      { groupView: true, groupSource: 'fallback', groups },
+    ),
+    true,
+  )
+  assert.equal(
+    passesFilters(
+      idea({ surfer50: false, groupId: 'other' }),
+      filters({ requireSurfer50: true, groupId: 'semiconductors' }),
+      { groupView: true, groupSource: 'fallback', groups },
+    ),
+    false,
+  )
+  assert.equal(
+    passesFilters(
+      idea({ tightConsolidation: true, groupId: 'other' }),
+      filters({ requireTight: true, groupId: 'semiconductors' }),
+      { groupView: true, groupSource: 'fallback', groups },
+    ),
+    true,
+  )
+  assert.equal(
+    passesFilters(
       idea({ groupId: 'semiconductors', groupName: 'Semiconductors' }),
       filters({ groupId: 'semiconductors' }),
       { groupSource: 'finviz', groups },
@@ -306,11 +406,19 @@ test('requireAbove200 and aboveSma200 missing fields do not throw', () => {
 test('migrateStoredFilters fills requireAbove200 and rejects bad shapes', () => {
   const stored: Record<string, unknown> = { ...DEFAULT_FILTERS, minRvol: 1.25, search: 'nvda' }
   delete stored.requireAbove200
+  delete stored.requireSurfer10
+  delete stored.requireSurfer20
+  delete stored.requireSurfer50
+  delete stored.requireTight
   const migrated = migrateStoredFilters(stored)
   assert.equal(migrated.requireAbove200, true)
   assert.equal(migrated.minRvol, 1.25)
   assert.equal(migrated.search, 'nvda')
   assert.equal(migrated.requireSma50, true)
+  assert.equal(migrated.requireSurfer10, false)
+  assert.equal(migrated.requireSurfer20, false)
+  assert.equal(migrated.requireSurfer50, false)
+  assert.equal(migrated.requireTight, false)
   assert.deepEqual(migrated.stages, ['coiled', 'triggering'])
   assert.equal(countActiveFilters(migrated), 2)
 
@@ -349,6 +457,24 @@ test('active-filter counter and reset include Above 200 DMA', () => {
   const off = { ...DEFAULT_FILTERS, requireAbove200: false }
   assert.equal(countActiveFilters(off), 1)
   assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, requireAbove200: false, minRvol: 2 }), 2)
+  assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, requireSurfer10: true }), 1)
+  assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, requireSurfer20: true }), 1)
+  assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, requireSurfer50: true }), 1)
+  assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, requireTight: true }), 1)
+  assert.equal(
+    countActiveFilters(
+      { ...DEFAULT_FILTERS, requireSurfer10: true, requireTight: true },
+      DEFAULT_FILTERS,
+    ),
+    2,
+  )
+  assert.equal(
+    countActiveFilters(
+      { ...GROUP_VIEW_DEFAULT_FILTERS, requireSurfer50: true },
+      GROUP_VIEW_DEFAULT_FILTERS,
+    ),
+    1,
+  )
 
   const legacy = { ...DEFAULT_FILTERS } as IdeaFilters
   delete (legacy as { requireAbove200?: boolean }).requireAbove200
@@ -378,6 +504,10 @@ test('active-filter counter and reset include Above 200 DMA', () => {
   assert.equal(showAll.requireSma50, false)
   assert.equal(showAll.requireSma10, false)
   assert.equal(showAll.requireSma20, false)
+  assert.equal(showAll.requireSurfer10, false)
+  assert.equal(showAll.requireSurfer20, false)
+  assert.equal(showAll.requireSurfer50, false)
+  assert.equal(showAll.requireTight, false)
   assert.equal(showAll.minRvol, 0)
   assert.equal(showAll.maxPctFromHigh, 100)
   assert.equal(showAll.aPlusOnly, false)
@@ -456,6 +586,12 @@ test('UI copy and README use the single Above 200 DMA label', () => {
   assert.match(bar, /ABOVE_200_DMA_TOOLTIP/)
   assert.equal(SHOW_ALL_GROUP_LABEL, 'Show all (incl. below 200 DMA)')
   assert.match(table, /SHOW_ALL_GROUP_LABEL/)
+  assert.match(bar, /Above 10 SMA/)
+  assert.match(bar, /Above 20 SMA/)
+  assert.match(bar, /10MA Surfer \(strict\)/)
+  assert.match(bar, /20MA Surfer \(strict\)/)
+  assert.match(bar, /50MA Surfer \(strict\)/)
+  assert.match(bar, /Tight consolidation/)
   assert.match(readme, /Above 200 DMA/)
   assert.match(readme, /ONE filter/)
   assert.match(

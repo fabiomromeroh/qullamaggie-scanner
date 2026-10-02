@@ -4,6 +4,8 @@ import type { CharacteristicTag, EarningsStatus, SetupStage, TradingIdea } from 
 import { SHOW_ALL_GROUP_LABEL } from '../lib/ideaFilters'
 import { groupViewFilterNote } from '../lib/groupView'
 import { stageLabel } from '../lib/setupStage'
+import { surferBadgeTitle } from '../lib/surfer'
+import { tightBadgeTitle } from '../lib/tightConsolidation'
 import { fmtDollarVol, fmtPct, fmtPrice, fmtRvol, pctClass } from '../utils/format'
 import { useResizableColumns } from '../hooks/useResizableColumns'
 import { ResizeHandle } from './ResizeHandle'
@@ -121,18 +123,31 @@ const SURFER_TAGS: CharacteristicTag[] = ['10MA Surfer', '20MA Surfer', '50MA Su
 
 function SurferBadges({ idea }: { idea: TradingIdea }) {
   const tags = idea.characteristics.filter((t) => SURFER_TAGS.includes(t))
-  if (!tags.length) return <span className="text-terminal-dim">·</span>
+  const tightOn = Boolean(idea.tightConsolidation)
+  if (!tags.length && !tightOn) return <span className="text-terminal-dim">·</span>
   return (
     <div className="flex flex-wrap gap-0.5">
       {tags.map((t) => (
         <span
           key={t}
           className="inline-block whitespace-nowrap rounded border border-terminal-purple/30 bg-terminal-purple/10 px-1 py-0.5 text-[9px] text-terminal-purple"
-          title={t}
+          title={
+            t === '10MA Surfer' || t === '20MA Surfer' || t === '50MA Surfer'
+              ? surferBadgeTitle(t, idea.surferDetail)
+              : t
+          }
         >
           {t === '10MA Surfer' ? '10S' : t === '20MA Surfer' ? '20S' : t === '50MA Surfer' ? '50S' : 'ATH'}
         </span>
       ))}
+      {tightOn ? (
+        <span
+          className="inline-block whitespace-nowrap rounded border border-terminal-green/30 bg-terminal-green/15 px-1 py-0.5 text-[9px] text-terminal-green"
+          title={tightBadgeTitle(idea.tightDetail)}
+        >
+          Tight
+        </span>
+      ) : null}
     </div>
   )
 }
@@ -347,6 +362,7 @@ function IdeaCard({
       <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px]">
         <SetupBadge type={idea.setupType} />
         <TrendBadges idea={idea} />
+        <SurferBadges idea={idea} />
         <span className={`font-mono ${idea.rvol >= 1.5 ? 'text-terminal-amber' : 'text-terminal-muted'}`}>
           RVOL {fmtRvol(idea.rvol)}
         </span>

@@ -17,6 +17,10 @@ export interface GroupViewRow {
   aboveSma50: boolean
   aboveSma10: boolean
   aboveSma20: boolean
+  surfer10?: boolean
+  surfer20?: boolean
+  surfer50?: boolean
+  tightConsolidation?: boolean
   rvol: number
   pctFrom52wHigh: number
   setupType: SetupType

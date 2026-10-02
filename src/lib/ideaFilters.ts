@@ -42,6 +42,11 @@ export interface FilterableIdea {
   aboveSma50: boolean
   aboveSma10: boolean
   aboveSma20: boolean
+  /** Strict ride flags. Missing is treated as false (fail closed when required). */
+  surfer10?: boolean
+  surfer20?: boolean
+  surfer50?: boolean
+  tightConsolidation?: boolean
   rvol: number
   pctFrom52wHigh: number
   setupType: SetupType
@@ -79,6 +84,10 @@ export function cloneIdeaFilters(filters: IdeaFilters): IdeaFilters {
     requireSma50: filters.requireSma50,
     requireSma10: filters.requireSma10,
     requireSma20: filters.requireSma20,
+    requireSurfer10: Boolean(filters.requireSurfer10),
+    requireSurfer20: Boolean(filters.requireSurfer20),
+    requireSurfer50: Boolean(filters.requireSurfer50),
+    requireTight: Boolean(filters.requireTight),
     stages: [...(filters.stages ?? [])],
     earningsStatuses: [...(filters.earningsStatuses ?? [])],
     groupId: filters.groupId ?? null,
@@ -97,6 +106,10 @@ export function showAllGroupFilters(): IdeaFilters {
     requireSma50: false,
     requireSma10: false,
     requireSma20: false,
+    requireSurfer10: false,
+    requireSurfer20: false,
+    requireSurfer50: false,
+    requireTight: false,
     minRvol: 0,
     maxPctFromHigh: 100,
     aPlusOnly: false,
@@ -138,6 +151,10 @@ export function countActiveFilters(
   if (Boolean(filters.requireSma50) !== Boolean(baseline.requireSma50)) n += 1
   if (Boolean(filters.requireSma10) !== Boolean(baseline.requireSma10)) n += 1
   if (Boolean(filters.requireSma20) !== Boolean(baseline.requireSma20)) n += 1
+  if (Boolean(filters.requireSurfer10) !== Boolean(baseline.requireSurfer10)) n += 1
+  if (Boolean(filters.requireSurfer20) !== Boolean(baseline.requireSurfer20)) n += 1
+  if (Boolean(filters.requireSurfer50) !== Boolean(baseline.requireSurfer50)) n += 1
+  if (Boolean(filters.requireTight) !== Boolean(baseline.requireTight)) n += 1
   if (requireAbove200On(filters) !== requireAbove200On(baseline)) n += 1
   if (!sameMembers(filters.earningsStatuses, baseline.earningsStatuses)) n += 1
   if (Boolean(filters.aPlusOnly) !== Boolean(baseline.aPlusOnly)) n += 1
@@ -195,6 +212,10 @@ export function migrateStoredFilters(raw: unknown): IdeaFilters {
     requireSma50: pickBool(src.requireSma50, base.requireSma50),
     requireSma10: pickBool(src.requireSma10, base.requireSma10),
     requireSma20: pickBool(src.requireSma20, base.requireSma20),
+    requireSurfer10: pickBool(src.requireSurfer10, false),
+    requireSurfer20: pickBool(src.requireSurfer20, false),
+    requireSurfer50: pickBool(src.requireSurfer50, false),
+    requireTight: pickBool(src.requireTight, false),
     stages: pickList(src.stages, SETUP_STAGES, base.stages),
     earningsStatuses: pickList(src.earningsStatuses, ALL_EARNINGS_STATUSES, base.earningsStatuses),
     groupId: typeof src.groupId === 'string' && src.groupId.trim() ? src.groupId : null,
@@ -219,6 +240,10 @@ export function passesFilters(
   if (f.requireSma50 && !idea.aboveSma50) return false
   if (f.requireSma10 && !idea.aboveSma10) return false
   if (f.requireSma20 && !idea.aboveSma20) return false
+  if (f.requireSurfer10 && !idea.surfer10) return false
+  if (f.requireSurfer20 && !idea.surfer20) return false
+  if (f.requireSurfer50 && !idea.surfer50) return false
+  if (f.requireTight && !idea.tightConsolidation) return false
   if (f.stages?.length && !f.stages.includes(idea.setupStage)) return false
   if (typeof f.minRvol === 'number' && idea.rvol < f.minRvol) return false
   const pct = typeof idea.pctFrom52wHigh === 'number' ? idea.pctFrom52wHigh : 0
