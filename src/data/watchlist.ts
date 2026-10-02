@@ -1,6 +1,7 @@
 /**
  * Scan universe + industry group tags for Kyle / Qullamaggie-style breakout spotting.
- * Metrics are filled at runtime from live market APIs; catalysts stay null.
+ * Metrics are filled at runtime from live market APIs. Scan scoring leaves
+ * catalyst null; the server merges a 48h news catalyst onto the response.
  *
  * SCAN_UNIVERSE (~100 liquid US names) is what the live scanner scores.
  * Keep Finnhub free-tier friendly: client batches with low concurrency + gap;

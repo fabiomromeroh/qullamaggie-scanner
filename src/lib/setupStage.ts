@@ -7,10 +7,11 @@
  *
  * Names below 200 SMA are never staged as setups (callers exclude them).
  *
- * Coiled "surfer" is the loose aboveSma10 || aboveSma20 gate (price above the
- * SMA, not the strict ride-the-MA flags). An extra OR-route from
- * tightConsolidation is behind TIGHT_CONFIG.useInCoiled (on after a live scan
- * showed +1.5% coiled).
+ * The legacy coiled rule uses a loose aboveSma10 || aboveSma20 gate (price
+ * above a short SMA). That local flag is unrelated to the strict ADR-based
+ * surfer label (`surfer10` / `surfer20` / `surfer50`). An extra OR-route from
+ * tightConsolidation (price above the 50 and 200 SMAs, plus contraction near
+ * highs) is behind TIGHT_CONFIG.useInCoiled.
  */
 import type { SetupStage } from '../types'
 import { TIGHT_CONFIG } from './tightConsolidation'
@@ -81,7 +82,11 @@ export function setupStageHeuristic(m: {
   return 'watching'
 }
 
-/** Existing coiled rule: tightDays + near highs + loose MA surfer + prior run / closer high. */
+/**
+ * Existing coiled rule: tightDays + near highs + price above SMA10 or SMA20
+ * + prior run / closer high. `aboveShortMas` is the loose price-above flag.
+ * It is not the strict surfer label.
+ */
 export function coiledByLegacyRule(m: {
   aboveSma10: boolean
   aboveSma20: boolean
@@ -90,12 +95,12 @@ export function coiledByLegacyRule(m: {
   priorRunPct: number
 }): boolean {
   const nearHighs = m.pctFrom52wHigh >= -STAGE_CONFIG.nearHighPct
-  const surfer = m.aboveSma10 || m.aboveSma20
+  const aboveShortMas = m.aboveSma10 || m.aboveSma20
   const tight = m.tightDays >= STAGE_CONFIG.coiledTightDaysMin
   return (
     tight &&
     nearHighs &&
-    surfer &&
+    aboveShortMas &&
     (m.priorRunPct >= STAGE_CONFIG.coiledPriorRunMin ||
       m.pctFrom52wHigh >= -STAGE_CONFIG.nearHighTightPct)
   )

@@ -136,6 +136,50 @@ function TrendBadges({ idea }: { idea: TradingIdea }) {
 
 const SURFER_TAGS: CharacteristicTag[] = ['10MA Surfer', '20MA Surfer', '50MA Surfer', 'near ATH']
 
+function CatalystBadge({ idea }: { idea: TradingIdea }) {
+  if (idea.catalystStatus === 'pending') {
+    return <MetricTip id="catalystStatus" className="text-[10px] text-terminal-dim">pending</MetricTip>
+  }
+  if (idea.catalystStatus === 'error') {
+    return <MetricTip id="catalystStatus" className="text-[10px] text-terminal-red">error</MetricTip>
+  }
+  if (!idea.hasCatalyst && !idea.catalyst) {
+    return <MetricTip id="catalyst" className="text-terminal-dim">—</MetricTip>
+  }
+  const labels = (idea.catalystCategories ?? []).slice(0, 2).join(', ')
+  const age = idea.catalystAgeHours != null ? `${idea.catalystAgeHours}h ago` : ''
+  const extra = [idea.catalystDirection, labels, idea.catalystHeadline ?? idea.catalyst, idea.catalystSource, age]
+    .filter(Boolean)
+    .join(' · ')
+  const tone =
+    idea.catalystDirection === 'negative'
+      ? 'border-terminal-red/40 text-terminal-red'
+      : idea.catalystDirection === 'mixed'
+        ? 'border-terminal-amber/40 text-terminal-amber'
+        : 'border-terminal-green/40 text-terminal-green'
+  return (
+    <span className="inline-flex max-w-full items-center gap-1">
+      <MetricTip
+        id="catalyst"
+        extra={extra}
+        className={`inline-block whitespace-nowrap rounded border px-1 py-0.5 text-[9px] ${tone}`}
+      >
+        Cat{labels ? ` ${labels}` : ''}
+      </MetricTip>
+      {idea.catalystUrl ? (
+        <a
+          href={idea.catalystUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="truncate text-[10px] text-terminal-blue underline"
+        >
+          link
+        </a>
+      ) : null}
+    </span>
+  )
+}
+
 function SurferBadges({ idea }: { idea: TradingIdea }) {
   const tags = idea.characteristics.filter((t) => SURFER_TAGS.includes(t))
   const tightOn = Boolean(idea.tightConsolidation)
@@ -921,15 +965,7 @@ export function IdeasTable({
                     <EarningsBadge idea={idea} />
                   </td>
                   <td className="hidden truncate px-2 py-1.5 xl:table-cell">
-                    {idea.catalyst ? (
-                      <MetricTip id="catalyst" extra={idea.catalyst} className="text-terminal-green">
-                        {idea.catalyst}
-                      </MetricTip>
-                    ) : (
-                      <MetricTip id="catalyst" className="text-terminal-dim">
-                        —
-                      </MetricTip>
-                    )}
+                    <CatalystBadge idea={idea} />
                   </td>
                   <td
                     className={`sticky right-0 z-[5] overflow-hidden px-2 py-1.5 text-center ${highlight || 'bg-terminal-panel'}`}

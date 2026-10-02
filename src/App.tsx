@@ -11,6 +11,7 @@ import { StatusBanner } from './components/StatusBanner'
 import { WatchlistPanel } from './components/WatchlistPanel'
 import { useDashboard } from './hooks/useDashboard'
 import { groupViewFilterNote } from './lib/groupView'
+import { countCatalystUnchecked } from './lib/ideaFilters'
 import { useResizablePanels } from './hooks/useResizablePanels'
 import { splitReservedLeft } from './lib/splitLayout'
 
@@ -49,6 +50,11 @@ export default function App() {
   const coiledCount = filteredIdeas.filter((i) => i.setupStage === 'coiled').length
   const triggeringCount = filteredIdeas.filter((i) => i.setupStage === 'triggering').length
   const isLive = mode === 'live' && data?.source === 'live'
+  const catalystMeta = groupView?.catalystMeta ?? data?.catalystMeta ?? null
+  const catalystIdeas = groupView?.ideas ?? data?.ideas ?? []
+  const uncheckedCatalysts = countCatalystUnchecked(catalystIdeas, filters, {
+    groupView: Boolean(groupView),
+  })
 
   const selectedGroupUnmatched = useMemo(() => {
     if (!data || !filters.groupId) return false
@@ -101,13 +107,19 @@ export default function App() {
             baseline={filtersBaseline}
             onChange={setFilters}
             onReset={resetFilters}
+            onClearGroup={resetGroup}
             groups={groups}
             dense
+            catalystMeta={catalystMeta}
+            uncheckedCount={uncheckedCatalysts}
           />
           <div className="mt-1.5 hidden flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-terminal-dim sm:flex">
             <span>
               Workflow: Stage1 liquid → Stage1.5 above 200+50 SMA → deep → coiled/triggering → pin.
-              Auto-add kyleScore ≥ {userWatchlist.autoAddMinScore}. Catalysts blank from APIs.
+              Auto-add kyleScore ≥ {userWatchlist.autoAddMinScore}.{' '}
+              {catalystMeta
+                ? `Catalyst: checked ${catalystMeta.checked} of ${catalystMeta.candidates} candidates.`
+                : 'Catalyst lookup runs after the scan (48h window).'}
             </span>
             <ScanStatsLine data={data} />
           </div>

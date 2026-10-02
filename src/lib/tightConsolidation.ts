@@ -39,9 +39,12 @@ export interface TightConfig {
   nearHighMaxPct: number
   /** Bars used as the 52-week high window (same 252-session convention). */
   highLookback: number
-  /** Loose price-above test: price must clear both of these SMA periods. */
-  smaFast: number
-  smaSlow: number
+  /**
+   * The only moving-average gate: price must be above both the 50-day and
+   * the 200-day SMA. SMA10 / SMA20 are not part of this rule.
+   */
+  sma50Period: number
+  sma200Period: number
   /**
    * When true, `setupStageHeuristic` treats tightConsolidation + near highs
    * as an extra route into coiled. Live scan 2026-10-02: 66 coiled by the
@@ -60,8 +63,8 @@ export const TIGHT_CONFIG: TightConfig = {
   volumeAvgSessions: 50,
   nearHighMaxPct: 10,
   highLookback: 252,
-  smaFast: 10,
-  smaSlow: 20,
+  sma50Period: 50,
+  sma200Period: 200,
   useInCoiled: true,
 }
 
@@ -72,7 +75,8 @@ export interface TightResult {
   volumeRatio: number
   days: number
   nearHigh: boolean
-  aboveMas: boolean
+  aboveSma50: boolean
+  aboveSma200: boolean
   failedReasons: string[]
 }
 
@@ -81,6 +85,9 @@ export interface TightDetail {
   closeSpreadPct: number
   volumeRatio: number
   days: number
+  nearHigh: boolean
+  aboveSma50: boolean
+  aboveSma200: boolean
   failedReasons?: string[]
 }
 
@@ -119,13 +126,14 @@ export function evaluateTightConsolidation(
     volumeRatio: 0,
     days,
     nearHigh: false,
-    aboveMas: false,
+    aboveSma50: false,
+    aboveSma200: false,
     failedReasons: ['insufficient-bars'],
   }
   const bars = [...barsIn].sort((a, b) => a.t - b.t)
   const need = config.recentWindow + config.baselineSessions
   const volNeed = config.volumeAvgSessions
-  const smaNeed = config.smaSlow
+  const smaNeed = config.sma200Period
   if (bars.length < Math.max(need, volNeed, smaNeed)) {
     return empty
   }
@@ -164,9 +172,10 @@ export function evaluateTightConsolidation(
   const nearHigh = pctFrom52wHigh >= -config.nearHighMaxPct
 
   const allCloses = bars.map((b) => b.c)
-  const smaFast = smaClose(allCloses, config.smaFast)
-  const smaSlow = smaClose(allCloses, config.smaSlow)
-  const aboveMas = smaFast != null && smaSlow != null && px > smaFast && px > smaSlow
+  const sma50 = smaClose(allCloses, config.sma50Period)
+  const sma200 = smaClose(allCloses, config.sma200Period)
+  const aboveSma50 = sma50 != null && px > sma50
+  const aboveSma200 = sma200 != null && px > sma200
 
   const failedReasons: string[] = []
   if (!(baselineRange > 0) || rangeRatio > config.rangeRatioMax) {
@@ -187,9 +196,8 @@ export function evaluateTightConsolidation(
   if (!nearHigh) {
     failedReasons.push(`far-from-high (${round2(pctFrom52wHigh)}%)`)
   }
-  if (!aboveMas) {
-    failedReasons.push('below-sma10-or-sma20')
-  }
+  if (!aboveSma50) failedReasons.push('below-sma50')
+  if (!aboveSma200) failedReasons.push('below-sma200')
 
   return {
     ok: failedReasons.length === 0,
@@ -198,7 +206,8 @@ export function evaluateTightConsolidation(
     volumeRatio: Number.isFinite(volumeRatio) ? volumeRatio : 0,
     days,
     nearHigh,
-    aboveMas,
+    aboveSma50,
+    aboveSma200,
     failedReasons,
   }
 }
@@ -209,6 +218,9 @@ export function compactTightDetail(result: TightResult): TightDetail {
     closeSpreadPct: result.closeSpreadPct,
     volumeRatio: result.volumeRatio,
     days: result.days,
+    nearHigh: result.nearHigh,
+    aboveSma50: result.aboveSma50,
+    aboveSma200: result.aboveSma200,
     failedReasons: result.failedReasons,
   }
 }

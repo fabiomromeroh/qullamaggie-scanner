@@ -162,7 +162,8 @@ function enrichKyleDemo(idea: DemoIdeaSeed): TradingIdea {
   const surfer10 = aboveSma10 && tightDays >= 6
   const surfer20 = aboveSma20 && tightDays >= 5
   const surfer50 = idea.aboveSma50 && idea.pctFrom52wHigh >= -8
-  const tightConsolidation = tightDays >= 8 && idea.pctFrom52wHigh >= -10 && aboveSma10 && aboveSma20
+  const tightConsolidation =
+    tightDays >= 8 && idea.pctFrom52wHigh >= -10 && idea.aboveSma50 && idea.aboveSma200
   const characteristics: CharacteristicTag[] = deriveCharacteristics({
     aboveSma200: idea.aboveSma200,
     pctFrom52wHigh: idea.pctFrom52wHigh,
@@ -225,9 +226,9 @@ function enrichKyleDemo(idea: DemoIdeaSeed): TradingIdea {
     surfer20,
     surfer50,
     surferDetail: {
-      sma10: { touches: surfer10 ? 3 : 1, bounces: surfer10 ? 3 : 0, slopePct: surfer10 ? 0.4 : 0 },
-      sma20: { touches: surfer20 ? 3 : 1, bounces: surfer20 ? 2 : 0, slopePct: surfer20 ? 0.6 : 0 },
-      sma50: { touches: surfer50 ? 2 : 0, bounces: surfer50 ? 2 : 0, slopePct: surfer50 ? 1.1 : 0 },
+      sma10: demoSurferMa(surfer10, idea.adrPct, 15, 0.35),
+      sma20: demoSurferMa(surfer20, idea.adrPct, 15, 0.5),
+      sma50: demoSurferMa(surfer50, idea.adrPct, 25, 0.75),
     },
     tightConsolidation,
     tightDetail: {
@@ -235,7 +236,34 @@ function enrichKyleDemo(idea: DemoIdeaSeed): TradingIdea {
       closeSpreadPct: tightConsolidation ? 2.4 : 8.1,
       volumeRatio: tightConsolidation ? 0.7 : 1.1,
       days: 7,
+      nearHigh: idea.pctFrom52wHigh >= -10,
+      aboveSma50: idea.aboveSma50,
+      aboveSma200: idea.aboveSma200,
     },
+    hasCatalyst: Boolean(idea.catalyst),
+    catalystCategories: [],
+    catalystDirection: idea.catalyst ? 'positive' : undefined,
+    catalystHeadline: idea.catalyst ?? undefined,
+    catalystStatus: idea.catalyst ? 'checked' : 'unchecked',
+  }
+}
+
+/** Demo shape only. Live surfers are computed from bars in src/lib/surfer.ts. */
+function demoSurferMa(ok: boolean, adr: number, windowBars: number, kProximity: number) {
+  const distancePct = ok ? 0.8 : 4.5
+  const distanceAdr = adr > 0 ? Math.round((distancePct / adr) * 100) / 100 : 0
+  return {
+    ok,
+    distancePct,
+    distanceAdr,
+    nearBars: ok ? 8 : 2,
+    windowBars,
+    minDistancePct: ok ? -0.2 : 3,
+    maxCloseBelowPct: ok ? 0.1 : 2,
+    recovered: ok,
+    slopePct: ok ? 1.2 : -0.4,
+    adrPct: adr,
+    proximityPct: Math.round(kProximity * adr * 100) / 100,
   }
 }
 

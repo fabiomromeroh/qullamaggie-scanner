@@ -5,7 +5,7 @@ Dark, desktop-first scanner + watchlist for a swing trader who follows **Kristja
 1. Hunt **strong uptrending industry groups** first  
 2. **Scan** a liquid US universe for leaders forming a **coil / base about to break**  
 3. Surface **setup readiness** (`watching` → `coiled` → `triggering`) and maintain a **dynamic watchlist**  
-4. Currently take only **A+ setups with a specific catalyst** (catalysts are never invented from APIs)
+4. Prefer **A+ setups with a real catalyst** (an important headline inside 48 hours, or earnings reported in that window — never invented)
 
 > **Default mode is live market data.** Demo seed rows load only when you explicitly set `VITE_MARKET_DATA_MODE=demo`. Live failures show an error UI — they never silently fall back to fake prices.
 
@@ -36,7 +36,7 @@ Optional: copy `dist/` into the Windows package at `/workspace/qullamaggie-dashb
 
 Every calculated label in the dashboard (table headers and cells, filter chips, the detail panel, group strength, the watchlist, the header, and the chart) opens a definition from `src/lib/metricDefinitions.ts`.
 
-Add one by extending `METRIC_DEFS` with a `label`, a one-line `short`, and a `how` (one to three sentences). Where a threshold already exists, interpolate that constant (`SURFER_CONFIG`, `TIGHT_CONFIG`, `STAGE_CONFIG`, `APLUS_CONFIG`, `KYLE_SCORE_CONFIG`, and the other exported configs) instead of typing the number again. Then render `<MetricTip id="yourId">` or spread `metricTipAttrs('yourId')` on a control that is already focusable. Pass `extra` when a row has a live detail (touches, a price versus its average, an earnings date) that should sit under the shared definition.
+Add one by extending `METRIC_DEFS` with a `label`, a one-line `short`, and a `how` (one to three sentences). Where a threshold already exists, interpolate that constant (`SURFER_CONFIG`, `TIGHT_CONFIG`, `STAGE_CONFIG`, `APLUS_CONFIG`, `KYLE_SCORE_CONFIG`, and the other exported configs) instead of typing the number again. Then render `<MetricTip id="yourId">` or spread `metricTipAttrs('yourId')` on a control that is already focusable. Pass `extra` when a row has a live detail (distance versus its average, a headline, an earnings date) that should sit under the shared definition.
 
 Hover opens the tip after a short delay. Tab focuses the trigger and shows it immediately. Escape hides it. A tap on a touch screen toggles it, and a tap elsewhere closes it. One tooltip is shared for the whole page, so a large ideas table does not mount a popover per cell. Column-resize drags do not open it.
 
@@ -105,7 +105,7 @@ For each Stage-1.5 survivor (Yahoo-first cascade: Yahoo → Finnhub → Stooq):
 
 Results are written to `data/scan-cache.json` (gitignored). Default staleness **45 minutes** (`SCAN_CACHE_STALE_MS`).
 
-Payloads are stamped with `SCAN_CACHE_SCHEMA` (`server/scanCache.ts`). Schema 3 discards scans from before the strict MA-surfer / tight-consolidation idea fields (`surfer10` / `surfer20` / `surfer50` / `surferDetail` / `tightConsolidation` / `tightDetail`). Schema 2 had discarded scans from before the 1D-change fix: Yahoo `chartPreviousClose` on a 1-year chart is the close before that range, not the prior session, so those files stored a wrong `dayPct`. The next start throws a v1/v2 file out and runs a fresh scan.
+Payloads are stamped with `SCAN_CACHE_SCHEMA` (`server/scanCache.ts`). Schema 4 discards scans from before the ADR-relative surfer detail and the tight-consolidation 50/200 SMA fields. Catalyst fields are not stored in this file; they are merged onto the HTTP response from a separate cache. Schema 3 had added the first strict surfer / tight fields. Schema 2 had discarded scans from before the 1D-change fix: Yahoo `chartPreviousClose` on a 1-year chart is the close before that range, not the prior session, so those files stored a wrong `dayPct`. The next start throws an older file out and runs a fresh scan.
 
 ### API
 
@@ -281,7 +281,7 @@ All three routes validate `:symbol` with `/^[A-Z0-9.\-^]{1,12}$/` after upper-ca
 | Stage | Meaning (heuristic) |
 |-------|---------------------|
 | **watching** | Passes hard trend gate (above 200 SMA); building / on radar |
-| **coiled** | Tight days (≥5 of last 15) + near highs (≤10% from 52w) + 10/20 MA surfer (+ prior run help) |
+| **coiled** | Legacy: tight days (≥5 of last 15) + near highs (≤10% from 52w) + loose `aboveShortMas` (above SMA10 or SMA20, unrelated to the strict surfer label) + prior-run help. Extra route: strict tight consolidation and near highs |
 | **triggering** | Elevated RVOL / breakout-day heuristic (e.g. RVOL≥1.8 near highs with green day) |
 
 **Default view (normal scan):** **coiled + triggering** and **Above 200 DMA** on. Watching is opt-in. Sort order: triggering → coiled → watching, then kyleScore / A+.
@@ -292,17 +292,30 @@ All three routes validate `:symbol` with `/^[A-Z0-9.\-^]{1,12}$/` after upper-ca
 
 One shared predicate (`passesFilters` in `src/lib/ideaFilters.ts`) applies every control in the normal scan and in group view. The only group-view difference inside the predicate is that `groupId` is not applied again, because that id already selected the group payload.
 
-The request was clarified to ONE filter labeled **Above 200 DMA** (`requireAbove200`, default **on**). It means price above the 200-day SMA (`idea.aboveSma200`, not recomputed in the browser). Below-200 names are not valid setups. The chip sits with the SMA toggles, starts checked, and uses the same on/off chip colors as the other filter chips. Turning it off lets below-200 names through this predicate. It does not add a 10/20/50 variant and it is not three filters. The other controls: search, min RVOL, max % from the high, group, setup type, setup stage, Require 50 SMA, **Above 10 SMA** / **Above 20 SMA** (loose price-above-SMA), **10MA/20MA/50MA Surfer (strict)**, **Tight consolidation**, earnings status, A+ only, and catalyst.
+The request was clarified to ONE filter labeled **Above 200 DMA** (`requireAbove200`, default **on**). It means price above the 200-day SMA (`idea.aboveSma200`, not recomputed in the browser). Below-200 names are not valid setups. The chip sits in the **Above** group with the other SMA toggles, starts checked, and uses the same on/off chip colors as the other filter chips. Turning it off lets below-200 names through this predicate. It does not add a second 200-day control and it is not three filters.
 
-**Normal scan baseline** (`DEFAULT_FILTERS`): Above 200 DMA on, stages coiled + triggering, Require 50 SMA on, Above 10/20 SMA off, strict surfer chips off, Tight consolidation off, min RVOL 0, max % from high 100, all setup types, all earnings statuses, A+ only off, catalyst off, search empty. With Above 200 DMA on, the table matches the old hard gate that dropped every `aboveSma200: false` row before the other checks.
+Filter bar order (the same chips in the normal scan and in group view; only the baseline defaults differ). Each group has a small muted label:
 
-**Group-view baseline** (`GROUP_VIEW_DEFAULT_FILTERS`): the same values except stages are all three (`watching`, `coiled`, `triggering`) and Require 50 SMA, Above 10/20 SMA, the strict surfer chips, and Tight consolidation are off. Above 200 DMA stays on. While a group is selected the filter bar shows and edits this state. The normal scan filters are left alone, so they come back when the group is cleared. Changing the group, or pressing **Reset** on the filter bar, returns the group-view state to that baseline. Filter-bar **Reset** also restores the normal scan filters to `DEFAULT_FILTERS` and keeps the selected group. The group-panel **Reset** (next to the period control, and in the results banner) clears the group and brings those scan filters back. It does not start a new scan.
+1. **Search** — ticker / name text.
+2. **Group** — selected industry (`groupId`), with a clear control when one is set.
+3. **Numeric** — Min RVOL, Max % from high.
+4. **Above** — Above 10 SMA, Above 20 SMA, Above 50 SMA, Above 200 DMA (`requireSma10` / `requireSma20` / `requireSma50` / `requireAbove200`). "Above 50 SMA" is the old Require 50 SMA control; the field name is still `requireSma50`.
+5. **Surfer (ADR-based)** — 10MA Surfer, 20MA Surfer, 50MA Surfer. Chip text does not repeat a strict suffix; the tooltip states the ADR-relative rule.
+6. **Tight consolidation** — its own chip, not inside the surfer group.
+7. **Stage** — Watching, Coiled, Triggering.
+8. **Setup type** — one chip per setup type.
+9. **Earnings** — Clear, Alert, Avoid.
+10. **Other** — A+ only, Has catalyst. When catalyst coverage is known the bar shows `Catalyst: checked X of Y candidates`. With Has catalyst on, pending and unchecked ideas are excluded and the bar adds `N ideas not yet checked`.
 
-Every control applies as soon as it is pressed, including when the value equals a baseline. Re-enabling coiled + triggering, turning Require 50 SMA back on, or selecting every setup type hides or shows rows immediately. PR #5's rule (ignore a group filter that still equals the scanner default) is gone, which is why those controls used to look dead in group view.
+**Normal scan baseline** (`DEFAULT_FILTERS`): Above 200 DMA on, stages coiled + triggering, Above 50 SMA on, Above 10/20 SMA off, surfer chips off, Tight consolidation off, min RVOL 0, max % from high 100, all setup types, all earnings statuses, A+ only off, Has catalyst off, search empty. With Above 200 DMA on, the table matches the old hard gate that dropped every `aboveSma200: false` row before the other checks.
+
+**Group-view baseline** (`GROUP_VIEW_DEFAULT_FILTERS`): the same values except stages are all three (`watching`, `coiled`, `triggering`) and Above 50 SMA, Above 10/20 SMA, the surfer chips, and Tight consolidation are off. Above 200 DMA stays on. While a group is selected the filter bar shows and edits this state. The normal scan filters are left alone, so they come back when the group is cleared. Changing the group, or pressing **Reset** on the filter bar, returns the group-view state to that baseline. Filter-bar **Reset** also restores the normal scan filters to `DEFAULT_FILTERS` and keeps the selected group. The group-panel **Reset** (next to the period control, and in the results banner) clears the group and brings those scan filters back. It does not start a new scan.
+
+Every control applies as soon as it is pressed, including when the value equals a baseline. Re-enabling coiled + triggering, turning Above 50 SMA back on, or selecting every setup type hides or shows rows immediately. PR #5's rule (ignore a group filter that still equals the scanner default) is gone, which is why those controls used to look dead in group view.
 
 The banner `Showing N of M group stocks (filters hiding K)` counts every row the active group filters remove, including Above 200 DMA. A group whose members include below-200 names therefore opens as, for example, `Showing 18 of 20 group stocks (filters hiding 2)`. **Show all (incl. below 200 DMA)** turns Above 200 DMA off and sets every other group filter to its most permissive value (all stages, no SMA requirement, min RVOL 0, max % from high 100, all setup types, all earnings statuses, A+ only off, catalyst off, search cleared) so the full member list is shown. The Above 200 DMA chip toggles that gate by itself. Rows that are shown below the 200-day SMA keep the **Below 200** stage badge, the `<200` trend badge, and the `Below 200MA` characteristic. TradingView copy and the shown count use the rows on screen. Order stays the selected period's performance descending, nulls last, ticker ascending on a tie.
 
-The normal scan prefilters below-200 names server-side; toggle off only reveals names present in the payload, group view includes them. Stage 1.5 drops below-200 and below-50 names before deep scoring, and this change does not alter that server scan. Names that do reach the normal payload with `aboveSma200: false` are still subject to the other chips (they are staged `watching`, and Require 50 SMA is on by default). Filter values are not written to localStorage. If a stored filter object has no `requireAbove200`, it is read as on (`migrateStoredFilters`) and does not throw.
+The normal scan prefilters below-200 names server-side; toggle off only reveals names present in the payload, group view includes them. Stage 1.5 drops below-200 and below-50 names before deep scoring, and this change does not alter that server scan. Names that do reach the normal payload with `aboveSma200: false` are still subject to the other chips (they are staged `watching`, and Above 50 SMA is on by default). Filter values are not written to localStorage. If a stored filter object has no `requireAbove200`, it is read as on (`migrateStoredFilters`) and does not throw. `hasCatalyst` and the surfer flags migrate as booleans and do not throw.
 
 ## Dynamic watchlist
 
@@ -310,7 +323,7 @@ The normal scan prefilters below-200 names server-side; toggle off only reveals 
 - Storage key: `qullamaggie.userWatchlist.v1` (browser localStorage)  
 - Seed: `src/data/userWatchlist.json` (empty by default; documented threshold)  
 - **Auto-add threshold:** `kyleScore >= 4` **and** stage ∈ {`coiled`, `triggering`}  
-- Catalysts are **never** invented from market APIs
+- Catalyst text is a real headline (or a dated earnings-calendar line). It is never invented. The scan file leaves `catalyst` null; the HTTP response fills it.
 
 ## Market data cascade (no silent demo)
 
@@ -395,7 +408,7 @@ Use only for local UI work. Default when unset: **`live`**.
 2. **Stage 1.5 SMA** — `SMA_QUOTE_BATCH` (default 20), `SMA_QUOTE_GAP_MS` (default 120), `SMA_QUOTE_CACHE_TTL_MS` (default 5m). Always requires above 200 **and** above 50.
 3. **Staleness** — `SCAN_CACHE_STALE_MS` (default 45m).
 4. **Emergency list** — edit `SCAN_UNIVERSE` in `src/data/watchlist.ts` only as a last-resort fallback.
-5. **Catalysts** stay `null` from market APIs — fill later via notes.
+5. **Catalysts** — categories, weights, the 48h window, and the Finnhub budget live in `src/lib/catalyst.ts` and `server/catalystService.ts` (`CATALYST_FETCH`). They are not part of the scan file.
 
 ## Metrics & A+ badge
 
@@ -411,14 +424,14 @@ Use only for local UI work. Default when unset: **`live`**.
 | **DolVol / Avg $ volume** | 20-day average of close × volume |
 | **SMA200 / SMA50 / SMA20 / SMA10** | Simple moving averages of daily closes |
 | **aboveSma200** | **Above 200 DMA** filter (default on). Price above the daily 200-SMA, or the name is not a valid setup. The normal scan also drops these names in Stage 1.5 before the payload is built |
-| **aboveSma50** | Soft preference; filter **Require 50 SMA** defaults **ON** |
+| **aboveSma50** | Soft preference; filter **Above 50 SMA** (`requireSma50`) defaults **ON** |
 | **priorRunPct / tightDays / baseLengthDays** | Kyle-style consolidation proxies |
 | **kyleScore** | Heuristic 3–5 for sorting — **not** Kyle’s official Rating. Surfer points still use loose `aboveSma10` / `aboveSma20`. |
-| **setupStage** | watching / coiled / triggering. Coiled still uses loose `aboveSma10 \|\| aboveSma20`. |
-| **surfer10 / surfer20 / surfer50** | Strict ride-the-MA flags (see below). Table badges **10S / 20S / 50S** mean these, not merely price above the SMA. |
-| **tightConsolidation** | Strict contraction flag (see below). **Tight** badge in the Surfer column. |
-| **A+ (heuristic)** | Above 200 **and** 50 SMA, near highs, ADR% ≥ 2.5, elevated RVOL **or** prior run, preferably MA surfer; **earningsStatus must not be `avoid`** — heuristic, not a signal. “Surfer” here is still loose price-above-SMA10/20. |
-| **Catalyst** | Always blank from APIs (Earnings/GAP tags only if catalyst text is present) |
+| **setupStage** | watching / coiled / triggering. The legacy coiled rule uses loose `aboveShortMas` (`aboveSma10 \|\| aboveSma20`), which is not the strict surfer label. |
+| **surfer10 / surfer20 / surfer50** | ADR-relative ride-the-MA flags (see below). Table badges **10S / 20S / 50S** mean these, not merely price above the SMA. |
+| **tightConsolidation** | Strict contraction flag (see below). **Tight** badge is separate from the surfer badges. Requires price above the 50-day and 200-day SMAs. |
+| **A+ (heuristic)** | Above 200 **and** 50 SMA, near highs, ADR% ≥ 2.5, elevated RVOL **or** prior run, preferably loose MA surfer; **earningsStatus must not be `avoid`** — heuristic, not a signal. “Surfer” here is still loose price-above-SMA10/20. |
+| **hasCatalyst / catalyst** | True when an important headline (or a past earnings date) falls inside the rolling 48h window. `catalyst` is the display headline. See Catalyst classification. |
 
 ## Kyle Breakout Database field mapping (@kyletrades_)
 
@@ -429,7 +442,7 @@ All Kyle-style fields are **computed from live daily bars** in `src/lib/metrics.
 | Inc% / prior run into base | `priorRunPct` | % from the lowest low in the ~63 sessions **before** a recent ~15-day base window into that base’s high |
 | Tight / consolidation days | `tightDays` | Count of last 15 sessions with range &lt; 0.75× window ADR **or** close within 1.5% of SMA10/SMA20 |
 | Over Days / base length | `baseLengthDays` | Trailing streak of below-average-range days (up to ~40) |
-| 10MA / 20MA / 50MA Surfer | `surfer10`, `surfer20`, `surfer50` + 10S/20S/50S badges | Strict ride (touches + bounces). Loose price-above-SMA stays on `aboveSma*` / **Above 10/20 SMA** / **Require 50 SMA** |
+| 10MA / 20MA / 50MA Surfer | `surfer10`, `surfer20`, `surfer50` + 10S/20S/50S badges | ADR-relative proximity (see below). Loose price-above-SMA stays on `aboveSma*` / **Above 10/20/50 SMA** |
 | Above / below 200MA | `aboveSma200` | **Above 200 DMA** (ONE filter, default on). Off shows names present in the payload; group view includes below-200 names and flags them |
 | DolVol | `dollarVolume` | 20-day avg close × volume |
 | ADR% | `adrPct` | Same as above |
@@ -438,48 +451,55 @@ All Kyle-style fields are **computed from live daily bars** in `src/lib/metrics.
 
 ## Strict MA surfer
 
-A **10MA / 20MA / 50MA Surfer** badge is awarded only when the stock *rides* that SMA and bounces off it (`src/lib/surfer.ts`). Price merely sitting above the SMA is the loose `aboveSma10` / `aboveSma20` / `aboveSma50` flag.
+A **10MA / 20MA / 50MA Surfer** badge means the stock is riding that SMA, measured as percent distance relative to the stock's own ADR% (`src/lib/surfer.ts`). Discrete test counts are not used. Price merely sitting above the SMA is the loose `aboveSma10` / `aboveSma20` / `aboveSma50` flag and a different filter.
 
-SMA at bar *i* is the average of closes up to and including that bar. A **touch** is a bar whose low is within `touchProximityPct` above that SMA, or pierces it, and whose high still reaches the SMA. Consecutive touch bars count as **one episode**. A **bounce** is a later bar (within `bounceSessions`) whose close is back above the SMA *and* higher than the representative touch bar’s close (hence also its low). The most recent episode is exempt if it ends inside that bounce window and the latest close is still above the SMA.
+ADR% is the mean of `(high − low) / close × 100` over the 20 sessions before the latest bar. `computeIdeaMetrics` passes that already-computed value into `evaluateSurfer` so the two cannot diverge. SMA at bar *i* is the average of closes up to and including that bar.
 
-All of the following must hold across the window:
+`proximityPct = kProximity × adrPct`. A bar is **near** the SMA when `((low − SMA) / SMA) × 100` is at most `proximityPct` (the low is within that percent above the SMA, or through it). A high-ADR name may sit farther from the average, in percent, and still count.
 
-1. No close more than `closeBreakTolerancePct` below the SMA (as of that bar).
-2. At least `minTouches` distinct touch episodes.
-3. Every episode (except an open one in the last `bounceSessions` bars that is still holding) is followed by a bounce.
-4. Latest close is above the SMA.
-5. SMA now > SMA `slopeLookback` sessions ago.
+`breakTolerancePct = kBreak × adrPct` (must be ≥ 0). Over the lookback window, all of the following hold:
+
+1. Every close is at least `SMA × (1 − breakTolerancePct / 100)`. A deeper close fails even if price later comes back.
+2. A close under the SMA but inside that tolerance is allowed when a later close, within `recoverySessions`, is back at or above that later bar's SMA. A dip that has not recovered by the latest bar fails. The latest bar cannot recover itself.
+3. The stock was near the SMA on at least `nearFraction` of the window bars (0.40), **or** at least once in the last `recentNearSessions` bars of the window.
+4. Latest price is at or above the SMA, allowing `latestToleranceAdr × adrPct` underneath, and is not extended: distance above the SMA is at most `maxExtensionAdrMultiple × adrPct`. A name that has already run far above the average is not a surfer.
+5. SMA now is strictly greater than SMA `slopeLookback` sessions ago. `slopeAllowFlat` is false, so a flat slope fails. Soften it to `>=` only if a live scan shows the up-slope gate is too rare.
 
 | Constant | 10MA | 20MA | 50MA |
 |----------|------|------|------|
+| `kProximity` | 0.35 | 0.50 | 0.75 |
+| `kBreak` | 0.50 | 0.50 | 0.50 |
 | `windowSessions` | 15 | 15 | 25 |
-| `minTouches` | 3 | 3 | 2 |
 | `slopeLookback` | 5 | 5 | 10 |
-| `closeBreakTolerancePct` | 0.75 | 0.75 | 0.75 |
-| `touchProximityPct` | 1.5 | 1.5 | 1.5 |
-| `bounceSessions` | 3 | 3 | 3 |
 
-50MA uses 2 minimum touches because a 25-session window on a slower average rarely prints 3 clean tests.
+Shared constants: `latestToleranceAdr` 0.05, `maxExtensionAdrMultiple` 1.75, `nearFraction` 0.40, `recentNearSessions` 4, `recoverySessions` 3, `slopeAllowFlat` false, `adrSessions` 20.
 
-**Filters.** **Above 10 SMA** / **Above 20 SMA** (`requireSma10` / `requireSma20`) remain the loose price-above-SMA chips (tooltip: price above the SMA, not necessarily riding it). **10MA Surfer (strict)** / **20MA Surfer (strict)** / **50MA Surfer (strict)** (`requireSurfer10` / `requireSurfer20` / `requireSurfer50`) default off in both `DEFAULT_FILTERS` and `GROUP_VIEW_DEFAULT_FILTERS`. Missing stored fields migrate to `false` and do not throw.
+The slower average uses a larger proximity multiple because a normal pullback sits farther from a 50-day mean than from a 10-day mean. These are the values in `SURFER_CONFIG`. They were chosen so each flag stays roughly 3–15% of a full scan (the old test-count rule, schema 3 on 2026-10-02, printed 4 / 3 / 12 surfers out of 187 ideas). Retune `kProximity` if a fresh scan falls outside that band, and record the before/after counts.
 
-**A+ and kyleScore** still use the loose `aboveSma10` / `aboveSma20` flags. Switching them to strict would shrink A+ counts for a different reason than the original heuristic.
+Each idea stores `surferDetail` per average: `ok`, `distancePct`, `distanceAdr`, `nearBars`, `windowBars`, `minDistancePct`, `maxCloseBelowPct`, `recovered`, `slopePct`, `adrPct`, `proximityPct`, and `reason` when `ok` is false. The badge tooltip reads like `+0.8% above 20MA = 0.2 ADR`.
 
-**Coiled stage** still uses `surfer = aboveSma10 \|\| aboveSma20` (loose).
+**Filters.** **Above 10 SMA** / **Above 20 SMA** / **Above 50 SMA** (`requireSma10` / `requireSma20` / `requireSma50`) are the loose price-above-SMA chips. **10MA Surfer** / **20MA Surfer** / **50MA Surfer** (`requireSurfer10` / `requireSurfer20` / `requireSurfer50`) default off in both `DEFAULT_FILTERS` and `GROUP_VIEW_DEFAULT_FILTERS`. Missing stored fields migrate to `false` and do not throw.
 
-**Limitations.** Wick-to-SMA tests are sensitive to how the SMA is computed (closes only, that bar included). Intraday pokes that never print on the daily bar are invisible. The bounce rule uses daily closes, so a same-day bounce that still closes under the touch close does not count.
+**A+ and kyleScore** still use the loose `aboveSma10` / `aboveSma20` flags. Switching them to the strict label would shrink A+ counts for a different reason than the original heuristic.
+
+**Coiled stage.** The legacy branch uses a local named `aboveShortMas` (`aboveSma10 || aboveSma20`). That name is deliberate: it is not the strict surfer label. The extra coiled route is `tightConsolidation && near highs` and does not depend on SMA10 or SMA20.
+
+**Limitations.** Daily bars only; an intraday poke that never prints is invisible. The SMA uses closes only, with that bar included. A flat average fails the slope rule. Extension is capped in ADR multiples, so a strong trend that has left the average behind is not tagged.
 
 ## Tight consolidation
 
-`src/lib/tightConsolidation.ts` flags a short contraction vs a quieter baseline. `ok` requires every criterion:
+`src/lib/tightConsolidation.ts` flags a short contraction. It does not share helpers, fields, or filters with the surfer rule. `ok` requires every criterion:
 
-1. **Range contraction.** Average daily range% `(high−low)/close×100` over `recentWindow` divided by the average over the `baselineSessions` immediately before that window ≤ `rangeRatioMax`.
-2. **Close-to-close spread.** `(max close − min close) / min close` over the recent window, as a percent, ≤ `min(closeSpreadMaxMultipleOfAdr × baseline ADR%, closeSpreadAbsMaxPct)`.
-3. **Volume contraction.** Recent average volume / trailing `volumeAvgSessions` average ≤ `volumeRatioMax`.
-4. **Location.** Price within `nearHighMaxPct` of the 52-week high (`pctFrom52wHigh >= -10`, same convention as metrics) **and** above SMA10 and SMA20.
+1. **Above the 50-day SMA and the 200-day SMA.** Price must be above both. SMA10 and SMA20 are not part of this rule. The result exposes `aboveSma50` and `aboveSma200` (there is no `aboveMas` flag). Fewer than 200 bars fails closed.
+2. **Range contraction.** Average daily range% `(high−low)/close×100` over `recentWindow` divided by the average over the `baselineSessions` immediately before that window ≤ `rangeRatioMax`.
+3. **Close-to-close spread.** `(max close − min close) / min close` over the recent window, as a percent, ≤ `min(closeSpreadMaxMultipleOfAdr × baseline ADR%, closeSpreadAbsMaxPct)`.
+4. **Volume contraction.** Recent average volume / trailing `volumeAvgSessions` average ≤ `volumeRatioMax`.
+5. **Location.** Price within `nearHighMaxPct` of the 52-week high (`pctFrom52wHigh >= -10`, same convention as metrics).
 
 | Constant | Value | Notes |
 |----------|-------|-------|
+| `sma50Period` | 50 | Price must be above this average |
+| `sma200Period` | 200 | Price must be above this average |
 | `recentWindow` | 7 | Documented range 5–10 |
 | `baselineSessions` | 30 | Documented range 20–50 |
 | `rangeRatioMax` | 0.85 | Recent range vs prior baseline. 0.6 printed 0/187 ideas on a 2026-10-02 live scan; 0.85 still requires contraction. |
@@ -491,11 +511,78 @@ All of the following must hold across the window:
 | `highLookback` | 252 | Same 52-week window as metrics |
 | `useInCoiled` | `true` | Extra coiled OR-route. 2026-10-02 live scan: 66 → 67 coiled (+1.5%, NET only). |
 
-The **Tight** badge sits with the Surfer badges. Filter chip **Tight consolidation** (`requireTight`, default off). The detail panel lists range ratio, volume ratio, close spread, days, and per-criterion pass/fail plus strict surfer touches/bounces/slope per MA.
+The **Tight** badge is its own badge, not a surfer badge. Filter chip **Tight consolidation** (`requireTight`, default off) is its own group. The detail panel lists range ratio, volume ratio, close spread, days, near the 52-week high, above SMA50, and above the 200-day SMA. The surfer section of the same panel lists distance in percent and in ADR multiples, near-bar count, slope, and the recovered flag.
 
-**Coiled OR-route.** `coiled = (existing tightDays + loose-surfer rule) OR (tightConsolidation && near highs)`. `TIGHT_CONFIG.useInCoiled` is **true**. A 2026-10-02 live scan of 187 ideas had 66 coiled on the legacy rule and 67 with the OR-route (NET only, +1.5%), under the ~25% inflation cap. Triggering still wins over coiled. The coiled “surfer” term on the legacy rule is still loose `aboveSma10 || aboveSma20`.
+**Coiled OR-route.** `coiled = (existing tightDays + aboveShortMas) OR (tightConsolidation && near highs)`. `TIGHT_CONFIG.useInCoiled` is **true**. A 2026-10-02 live scan of 187 ideas had 66 coiled on the legacy rule and 67 with the OR-route (NET only, +1.5%), under the ~25% inflation cap. Triggering still wins over coiled. Dropping the SMA10/SMA20 gate from tight does not change the legacy branch.
 
-**Limitations.** The 7-day window is short; a single wide bar blows the range ratio. Volume uses a trailing 50-day average that includes the recent window, so contraction is slightly harder to print. 52-week high is the high of the last 252 daily bars, not a split-adjusted vendor field.
+**Limitations.** The 7-day window is short; a single wide bar blows the range ratio. Volume uses a trailing 50-day average that includes the recent window, so contraction is slightly harder to print. 52-week high is the high of the last 252 daily bars, not a split-adjusted vendor field. Requiring 200 bars means a newly listed name cannot pass.
+
+## Catalyst classification
+
+An idea **has a catalyst** when at least one **important** news item was published within the last **48 hours** (`CATALYST_WINDOW_HOURS`, 2 × 24h rolling, measured from fetch time, using the publication datetime, not the calendar day). Important means the **headline** classifies into a volume-moving category and the score is at least `CATALYST_MIN_SCORE` (3.0). The issuer has to be the **subject** of that headline. Precision wins over recall: a loose ticker tag or a name buried later in the headline does not count.
+
+Score = heaviest matching category weight + `CATALYST_EXTRA_CATEGORY_BONUS` (0.25) per extra distinct category, capped at `CATALYST_EXTRA_CATEGORY_CAP` (0.75), plus analyst bonuses. A lone analyst item weighs 2, so it qualifies only with a big-firm name (`ANALYST_BIG_FIRM_BONUS` +1) or a price-target raise (`ANALYST_PT_BONUS` +1). `breaking` weighs 2 and does not qualify alone. `product_launch` and `insider_inst_buy` are 3.0 rather than the illustrative 2.5 so one clear launch or insider buy meets the floor.
+
+Earnings **already reported** inside the same 48h window count as category Earnings (a real earnings-calendar date, source “earnings calendar”, no invented URL). That path does not change future-earnings `earningsStatus` / `classifyEarningsProximity`. A name can be `avoid` for an upcoming report and still have a catalyst from a different headline. Previews (“ahead of earnings”, “earnings preview”, “what to expect”) are noise.
+
+The Has-catalyst filter counts **both** directions. It is about volume-moving news. The table badge and the detail panel show direction (positive, negative, or mixed) explicitly. Pending and unchecked ideas do not pass the filter. The bar states how many ideas are not yet checked.
+
+| id | Label | Weight | Direction |
+|----|-------|--------|-----------|
+| `mna` | M&A | 5 | positive, strong (noise does not veto) |
+| `fda_clinical` | FDA / clinical | 5 | positive, strong |
+| `fda_reject` | FDA rejection | 5 | negative |
+| `earnings` | Earnings | 4 | positive, or negative on a miss |
+| `guidance` | Guidance | 4 | positive, or negative on a cut |
+| `offering_dilution` | Offering / dilution | 4 | negative |
+| `contract_deal` | Contract / partnership | 3.5 | positive |
+| `index_inclusion` | Index inclusion | 3.5 | positive |
+| `buyback_dividend` | Buyback / dividend | 3 | positive |
+| `activist_squeeze` | Activist / squeeze | 3 | positive |
+| `regulatory_win` | Regulatory win | 3 | positive |
+| `spinoff` | Spin-off | 3 | positive |
+| `downgrade` | Downgrade | 3 | negative |
+| `lawsuit_probe` | Lawsuit / probe | 3 | negative |
+| `product_launch` | Product launch | 3 | positive |
+| `insider_inst_buy` | Insider / institutional buy | 3 | positive |
+| `analyst` | Analyst | 2 | positive; needs a big firm or a price-target raise |
+| `breaking` | Breaking | 2 | positive; does not qualify alone |
+
+A category counts only when its pattern matches the **headline**. The summary may only confirm direction (an earnings miss or a guidance cut on a headline that already matched) or add the big-firm / price-target analyst bonus. It cannot add a category, and it cannot mark the item as noise. A 2026-10-02 Finnhub pass showed company-news returning wires about other companies, with `related` set to the queried symbol on every row, and summaries mentioning deals the headline never did. A same-day Yahoo pass tagged other companies' stories onto NVDA and AMD the same way.
+
+**Category guards.** `downgrade` matches `downgrad(e|es|ed|ing)`, or `cut` / `cuts` / `cutting` of a rating or price target (including “cut to Sell / Hold / Underperform”), or `lower(s)` / `lowered` / `reduce(s|d)` of a rating or price target. It does not match “down”, a cost or production cut, or “lowered expenses”. `buyback_dividend` matches an announcement: announces, authorizes, or approves a share repurchase or buyback, a repurchase or buyback program, a special dividend, a dividend hike, raises or initiates a dividend, or a stock split. “Returned $X to shareholders” and a “buyback-to-dividend split” explainer do not match. “Live Updates of … Outlook” is not a guidance change.
+
+An item counts only when the issuer is the **subject** of the headline (`headlineMentionsIssuer`, then `itemConcernsIssuer`):
+
+- The ticker appears as `(TICKER)`, `$TICKER`, `NASDAQ:TICKER`, or `NYSE:TICKER`, or as a **standalone uppercase** word of 3 or more letters, at a word index below `SUBJECT_MAX_WORD_INDEX` (**5**, the first five whitespace-separated words). A 1–2 letter ticker has no standalone match.
+- Or the company's **first significant name word** (4+ letters; legal suffixes and generic words such as Inc, Corp, Holdings, Technologies stripped) is in that same window. Later words in the name do not match on their own. A closed compound does not match a shorter word (`ExxonMobil` is not `Exxon`).
+- A name or ticker immediately followed by a hyphen modifier (`-backed`, `-owned`, `-linked`, `-powered`, `-based`, `-led`, `-funded`, `-supported`, `-focused`, `-related`, `-style`, `-ready`, `-rival`) is not the subject. “Nvidia-Backed Nebius Acquires …” is not an NVDA catalyst. A possessive still counts: “AMD's World Labs Buyout” is AMD.
+- Or the headline opens with a leading `Company (TICKER)` pattern: at most `SUBJECT_LEADING_NAME_WORDS` (**4**) capitalized words, then `(TICKER)`. An acquisition verb in that prefix does not count.
+- The issuer is not only the **object** of another party's `acquires` / `buys` / `purchases` / `orders` / `deploys` / `adopts` (including those inflections). `<Issuer> acquires …`, `<Issuer> to be acquired`, and `<Issuer> agrees to be acquired by …` stay. `<Other> to acquire <Issuer>` stays when the issuer is still inside the first five words. `<Other> acquires <Issuer>` does not, even inside the window.
+- Yahoo `relatedTickers` and Finnhub `related` **never admit a row on their own**, including a Finnhub list that is only the queried symbol and a multi-ticker list. If a list is present and **omits** the symbol, the row is dropped unless the subject match is in the first `SUBJECT_RELATED_OVERRIDE_WORDS` (**3**) words.
+
+Checked on 2026-10-02 headlines: “Nvidia-Backed Nebius Acquires Inferize…” is not an NVDA catalyst (the name is only a hyphen modifier of Nebius). “AMD's World Labs Buyout” is an AMD catalyst. “La Rosa Holdings Acquires Next-Generation NVIDIA GPUs…” is not an NVDA catalyst (NVIDIA is the sixth word and the object of Acquires). “ExxonMobil Returned $9.4 Billion to Shareholders… Here's the Buyback-to-Dividend Split.” is not an NVDA buyback. “EMS Broadens Product Offering … with Acquisition of …” is not an AMD deal, and “Product Offering” is not a share offering. “HPE stock … $1.2 billion AMD Helios order” counts for HPE and not for AMD. “Paramount antitrust settlement approved, Warner Bros. merger cleared” **does** count for Warner Bros. Discovery as M&A: “Warner” is word index 4, and the line is a merger clearance rather than a comparison or an acquires-object.
+
+When every Finnhub row fails that check, the ticker falls through to Yahoo search, same as an empty Finnhub body. Yahoo does not spend a Finnhub token.
+
+**Noise** vetoes the item unless M&A or FDA / clinical also matches **in the headline**: listicles (“stocks to watch”, “top/best stocks”, “stocks to buy”), “why it is up/down today” recaps, “should you buy”, “is it a buy”, “is … a buy/stock”, “here's the/why/how/what”, “returned $… to shareholders”, “which … stock”, “vs.” / “vs” comparisons, “X or Y” (ticker or capitalized name), “better buy/stock”, “why did … jump/fall/…”, Zacks rank, trending-stock blurbs, “what you need to know”, “analyst says”, rating reiterations (reiterates, maintains, reaffirms, keeps/stays a rating), earnings previews, earnings-call transcripts, podcasts. “Soars/Surges N% as” is noise **unless** the same headline matches earnings or guidance, so “Accenture (ACN) Soars 15.8% as Q4 Earnings …” stays an earnings catalyst. Publisher “Motley Fool” is noise. A bare “Zacks” publisher is not.
+
+**Research encoded in the weights** (keyword classifier, not a model of abnormal returns):
+
+- Qullamaggie, “How to master a setup: Episodic Pivots” (qullamaggie.com): earnings and guidance, FDA / biotech, contracts and partnerships, regulatory / political news, sector-wide repricing.
+- Qullamaggie / Kullamägi EP study guide (kristjankullamagi.com/setups/episodic-pivot/): earnings and guidance, regulatory decisions, FDA / clinical events, major contracts, partnerships.
+- qullamaggie.net, “Catalysts that create explosive moves”: earnings surprise, new contracts or orders, rapid earnings or sales growth, guidance above consensus.
+- NBER w13090, “The Earnings Announcement Premium and Trading Volume”: earnings announcements concentrate abnormal volume.
+- PLOS ONE 2024, “How does news affect biopharma stock prices?” (about 503k releases): acquisition news had the most positive abnormal returns; product development, investment, regulation, earnings guidance, and analyst ratings were significant; failed or halted development was strongly negative.
+- PMC9439234, “Reaction of sponsor stock prices to clinical trial outcomes”: Phase 2/3 and Phase 3 outcomes matter most, especially for small or early biotech.
+- Review of Financial Studies 2011 / NBER w14971, “When are analyst recommendation changes influential?”: only about 10–12% of rating changes move the price visibly, more often from star analysts and away from consensus. Upgrades and price-target raises count at a lower weight; reiterations are excluded; a named large firm adds a small bonus.
+- EventStudyTools comparative event-type page: M&A targets, then buybacks (about +3–4%), earnings surprises, dividend increases or splits (about +1–3%), analyst recommendations (about 1–3%).
+
+**Rate limit and honesty.** Finnhub’s free tier is 60 calls/min shared with the scan, so catalyst Finnhub calls are capped at **25/min** with concurrency 2 (`CATALYST_FETCH`). Yahoo search does not spend a Finnhub token. A 429 respects Retry-After (capped at 60s) and that ticker falls through to Yahoo. Candidates are ideas with stage coiled or triggering, or RVOL ≥ 1.5, or |day %| ≥ 4, or A+. The set is capped at 120, prioritized triggering, then coiled, then higher RVOL. Group view enriches that group’s ideas (already the top 20) with the same cap. Per-ticker cache TTL is 20 minutes, including a checked miss. Failures use a 5-minute negative TTL and keep a previous success (stale-on-error). Enrichment runs in the background after a scan and on dashboard / group-stock reads. It does not block the response and it is not written into `data/scan-cache.json`.
+
+A cold cache reports `hasCatalyst: false` and `catalystStatus: 'pending'` for candidates, `'unchecked'` for everyone else. The payload includes `catalystMeta: { checked, pending, failed, unchecked, candidates, asOf, windowHours, finnhubCalls, yahooCalls, maxFinnhubCallsPer60s }`. The client refetches the dashboard a few times with backoff while `pending > 0`. There is no separate catalyst polling route.
+
+**Limitations.** Keywords miss paraphrases and can fire on a coincidental phrase. The subject window drops a real item when the company is named only after the first five words, including an analyst-led line such as “Wells Fargo bullish on BP, downgrades Exxon Mobil…”. A line that leads with the issuer (“Exxon Mobil downgraded, BP upgraded…”) still counts; “upgraded” in that same headline also matches Analyst, so the direction is mixed. A closed compound such as “ExxonMobil” does not match the word “Exxon”. Related-ticker lists never create a catalyst. The classifier does not read the article body. Yahoo and Finnhub headlines are whatever those feeds returned; an empty feed is an honest miss, not a fabricated catalyst. Unchecked names are hidden when the filter is on, and the bar says so. Big-firm detection is a name list, not a measure of analyst influence.
 
 ## License / disclaimer
 

@@ -27,6 +27,8 @@ export interface GroupViewRow {
   isAPlus: boolean
   earningsStatus: EarningsStatus
   catalyst: string | null
+  hasCatalyst?: boolean
+  catalystStatus?: 'checked' | 'pending' | 'unchecked' | 'error'
   characteristics: readonly string[]
 }
 

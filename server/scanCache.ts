@@ -22,8 +22,11 @@ import type { DashboardData } from '../src/types/index.ts'
  * 1y chart is the close before that range, not yesterday, and poisoned v1.
  * v3: idea payload adds strict MA-surfer (surfer10/20/50 + surferDetail) and
  * tightConsolidation / tightDetail. Old caches are discarded.
+ * v4: surfer detail is ADR-relative distance (no touch counts) and tight
+ * consolidation requires price above the 50 and 200 SMAs. Catalyst fields
+ * are not written into this file; they are merged onto the HTTP response.
  */
-export const SCAN_CACHE_SCHEMA = 3
+export const SCAN_CACHE_SCHEMA = 4
 
 export interface ScanCacheMeta {
   schemaVersion?: number

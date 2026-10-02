@@ -400,6 +400,11 @@ export async function runFullScan(): Promise<ScanCachePayload> {
   }
 
   saveScanCache(payload)
+  void import('./catalystService.ts')
+    .then((mod) => mod.scheduleCatalystEnrichment(payload.ideas))
+    .catch(() => {
+      /* enrichment is best-effort and must not fail the scan */
+    })
   return payload
 }
 

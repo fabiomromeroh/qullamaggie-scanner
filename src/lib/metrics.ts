@@ -527,7 +527,7 @@ export function computeIdeaMetrics(
   const priorRunPct = priorRunPctProxy(bars)
   const tightDays = tightDaysProxy(bars)
   const baseLengthDays = baseLengthDaysProxy(bars)
-  const surferEval = evaluateSurfer(bars)
+  const surferEval = evaluateSurfer(bars, undefined, adrPct, price)
   const surfer10 = surferEval.sma10.ok
   const surfer20 = surferEval.sma20.ok
   const surfer50 = surferEval.sma50.ok
@@ -608,7 +608,7 @@ export function computeIdeaMetrics(
     setupType,
     catalyst,
     isAPlus,
-    notes: `Live metrics via ${snap.provider}. Catalyst left blank for brief fill-in. Kyle-style proxies from bars only.`,
+    notes: `Live metrics via ${snap.provider}. Catalyst is filled after the scan from news inside 48 hours. Kyle-style proxies from bars only.`,
     whyQualifies:
       earningsStatus === 'avoid'
         ? 'Earnings same day or next trading day — AVOID entry (hard fail). Not tradeable A+ regardless of other metrics.'

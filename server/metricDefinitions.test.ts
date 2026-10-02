@@ -29,6 +29,7 @@ import {
   type MetricId,
 } from '../src/lib/metricDefinitions.ts'
 import { STAGE_CONFIG, setupStageHeuristic } from '../src/lib/setupStage.ts'
+import { CATALYST_CATEGORIES, CATALYST_WINDOW_HOURS } from '../src/lib/catalyst.ts'
 import { SURFER_CONFIG } from '../src/lib/surfer.ts'
 import { TIGHT_CONFIG } from '../src/lib/tightConsolidation.ts'
 import {
@@ -153,12 +154,16 @@ test('tooltip text is built from the live scanner constants', () => {
   assert.ok(metricTooltipText('surfer20').includes(surferRuleText('sma20')))
   assert.ok(metricTooltipText('surfer50').includes(surferRuleText('sma50')))
   includes('surfer10', `${SURFER_CONFIG.windowSessions.sma10}`)
-  includes('surfer10', `${SURFER_CONFIG.closeBreakTolerancePct}%`)
-  includes('surfer10', `${SURFER_CONFIG.touchProximityPct}%`)
-  includes('surfer20', `${SURFER_CONFIG.minTouches.sma20}`)
-  includes('surfer20', `${SURFER_CONFIG.bounceSessions}`)
+  includes('surfer10', `${SURFER_CONFIG.kProximity.sma10}`)
+  includes('surfer10', `${SURFER_CONFIG.kBreak.sma10}`)
+  includes('surfer20', `${SURFER_CONFIG.kProximity.sma20}`)
+  includes('surfer20', `${SURFER_CONFIG.maxExtensionAdrMultiple}`)
   includes('surfer50', `${SURFER_CONFIG.slopeLookback.sma50}`)
   includes('surfer50', `${SURFER_CONFIG.windowSessions.sma50}`)
+  includes('surfer50', `${SURFER_CONFIG.kProximity.sma50}`)
+  assert.equal(metricTooltipText('surfer10').toLowerCase().includes('touch'), false)
+  assert.equal(metricTooltipText('surfer20').toLowerCase().includes('touch'), false)
+  assert.equal(metricTooltipText('surfer50').toLowerCase().includes('touch'), false)
 
   assert.ok(metricTooltipText('tightConsolidation').includes(tightRuleText()))
   includes('tightConsolidation', `${TIGHT_CONFIG.recentWindow}`)
@@ -169,8 +174,19 @@ test('tooltip text is built from the live scanner constants', () => {
   includes('tightConsolidation', `${TIGHT_CONFIG.volumeRatioMax}`)
   includes('tightConsolidation', `${TIGHT_CONFIG.volumeAvgSessions}`)
   includes('tightConsolidation', `${TIGHT_CONFIG.nearHighMaxPct}`)
-  includes('tightAboveMas', `SMA${TIGHT_CONFIG.smaFast}`)
-  includes('tightAboveMas', `SMA${TIGHT_CONFIG.smaSlow}`)
+  includes('tightAboveSma50', `${TIGHT_CONFIG.sma50Period}`)
+  includes('tightAboveSma200', `${TIGHT_CONFIG.sma200Period}`)
+  assert.match(tightRuleText(), /50-day SMA/)
+  assert.match(tightRuleText(), /200-day SMA/)
+  assert.doesNotMatch(tightRuleText(), /SMA10|SMA20|10-day|20-day/)
+
+  includes('hasCatalyst', `${CATALYST_WINDOW_HOURS}`)
+  includes('catalyst', `${CATALYST_WINDOW_HOURS}`)
+  for (const category of CATALYST_CATEGORIES) {
+    includes('hasCatalyst', category.label)
+  }
+  includes('catalystStatus', 'pending')
+  includes('catalystStatus', 'unchecked')
 
   assert.ok(metricTooltipText('stageTriggering').includes(stageRuleText('triggering')))
   assert.ok(metricTooltipText('stageCoiled').includes(stageRuleText('coiled')))
