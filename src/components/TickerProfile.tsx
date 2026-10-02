@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { fmtMarketCap } from '../utils/format'
+import { MetricTip } from './MetricTip'
 
 interface ProfilePayload {
   symbol: string
@@ -102,10 +103,16 @@ export function TickerProfile({ symbol }: { symbol: string }) {
       </h3>
       <div className="rounded border border-terminal-border bg-terminal-bg px-3 py-2 text-sm">
         <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-terminal-muted">
-          {facts!.industry ? <span>{facts!.industry}</span> : null}
-          {facts!.exchange ? <span>{facts!.exchange}</span> : null}
+          {facts!.industry ? (
+            <MetricTip id="profileIndustry">{facts!.industry}</MetricTip>
+          ) : null}
+          {facts!.exchange ? (
+            <MetricTip id="profileExchange">{facts!.exchange}</MetricTip>
+          ) : null}
           {facts!.marketCap != null ? (
-            <span className="font-mono text-terminal-fg">{fmtMarketCap(facts!.marketCap)}</span>
+            <MetricTip id="marketCap" className="font-mono text-terminal-fg">
+              {fmtMarketCap(facts!.marketCap)}
+            </MetricTip>
           ) : null}
           {facts!.weburl ? (
             <a

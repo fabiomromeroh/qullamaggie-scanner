@@ -3,7 +3,9 @@ import { FiltersBar } from './components/FiltersBar'
 import { GroupStrength } from './components/GroupStrength'
 import { Header } from './components/Header'
 import { IdeasTable } from './components/IdeasTable'
+import { MetricTipRoot } from './components/MetricTip'
 import { ResizeHandle } from './components/ResizeHandle'
+import { ScanStatsLine } from './components/ScanStatsLine'
 import { SplitDetailSheet } from './components/SplitDetailSheet'
 import { StatusBanner } from './components/StatusBanner'
 import { WatchlistPanel } from './components/WatchlistPanel'
@@ -72,6 +74,7 @@ export default function App() {
 
   return (
     /* Mobile: min-h-dvh + document scroll. Desktop (lg): locked h-dvh panel layout. */
+    <MetricTipRoot>
     <div className="flex min-h-dvh flex-col lg:h-dvh lg:min-h-0 lg:overflow-hidden">
       <StatusBanner mode={mode} source={data?.source} error={error} scanning={scanning} scanMessage={scanMessage} />
       <Header
@@ -106,27 +109,7 @@ export default function App() {
               Workflow: Stage1 liquid → Stage1.5 above 200+50 SMA → deep → coiled/triggering → pin.
               Auto-add kyleScore ≥ {userWatchlist.autoAddMinScore}. Catalysts blank from APIs.
             </span>
-            {data.scanUniverseSize != null ? (
-              <span className="font-mono">
-                Univ {data.stage1Count ?? data.scanUniverseSize}
-                {data.stage15Count != null ? (
-                  <> → SMA {data.stage15Count}</>
-                ) : null}{' '}
-                → deep {data.shortlistCount ?? data.stage15Count ?? data.scanUniverseSize} →{' '}
-                {data.scanHitCount ?? 0} hits · below200 {data.scanBelow200Count ?? 0} · fails{' '}
-                {data.scanFailCount ?? 0}
-                {data.stage15BelowSma200Count != null || data.stage15BelowSma50Count != null ? (
-                  <>
-                    {' '}
-                    · prefilter −200:{data.stage15BelowSma200Count ?? 0} −50:
-                    {data.stage15BelowSma50Count ?? 0}
-                    {data.stage15MissingSmaCount != null
-                      ? ` miss:${data.stage15MissingSmaCount}`
-                      : ''}
-                  </>
-                ) : null}
-              </span>
-            ) : null}
+            <ScanStatsLine data={data} />
           </div>
         </div>
       ) : null}
@@ -265,5 +248,6 @@ export default function App() {
         />
       ) : null}
     </div>
+    </MetricTipRoot>
   )
 }

@@ -6,6 +6,22 @@ import type { GroupPeriod, IndustryGroup } from '../types/index.ts'
 
 export const GROUP_PERIOD_IDS: readonly GroupPeriod[] = ['1d', '1w', '1m', '3m', '6m']
 
+/** Membership file older than this is flagged stale in the groups UI. */
+export const MEMBERSHIP_STALE_DAYS = 14
+export const MEMBERSHIP_STALE_MS = MEMBERSHIP_STALE_DAYS * 24 * 60 * 60 * 1000
+
+/** Server cache for the Finviz groups page (and scored group payloads). */
+export const FINVIZ_GROUPS_CACHE_MS = 12 * 60 * 1000
+
+/** Client poll interval for `GET /api/groups`. */
+export const GROUPS_POLL_MS = 5 * 60 * 1000
+
+/**
+ * Internal fallback `leaderCount`: scan members with
+ * `pctFrom52wHigh >= -FALLBACK_LEADER_NEAR_HIGH_PCT`.
+ */
+export const FALLBACK_LEADER_NEAR_HIGH_PCT = 10
+
 export type GroupPerfField =
   | 'dayPct'
   | 'weekPct'

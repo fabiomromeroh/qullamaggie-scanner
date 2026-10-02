@@ -1,8 +1,10 @@
+import type { MetricId } from '../lib/metricDefinitions'
 import type { TradingIdea } from '../types'
 import { stageLabel } from '../lib/setupStage'
 import { SURFER_CONFIG } from '../lib/surfer'
 import { TIGHT_CONFIG } from '../lib/tightConsolidation'
 import { fmtDollarVol, fmtPct, fmtPrice, fmtRvol, pctClass } from '../utils/format'
+import { MetricTip } from './MetricTip'
 import { MiniSparkline } from './MiniSparkline'
 import { TickerNews } from './TickerNews'
 import { TickerProfile } from './TickerProfile'
@@ -14,6 +16,15 @@ interface Props {
 
 function passFail(ok: boolean): string {
   return ok ? 'pass' : 'fail'
+}
+
+function MetricCell({ id, label, value }: { id: MetricId; label: string; value: string }) {
+  return (
+    <MetricTip id={id} className="block rounded border border-terminal-border bg-terminal-bg px-2 py-2">
+      <div className="text-[9px] uppercase tracking-wide text-terminal-dim">{label}</div>
+      <div className="mt-0.5 truncate font-mono text-xs text-terminal-fg">{value}</div>
+    </MetricTip>
+  )
 }
 
 function SurferDetailSection({ idea }: { idea: TradingIdea }) {
@@ -37,9 +48,13 @@ function SurferDetailSection({ idea }: { idea: TradingIdea }) {
         {rows.map((row) => {
           const d = idea.surferDetail?.[row.key]
           return (
-            <div
+            <MetricTip
               key={row.key}
-              className="rounded border border-terminal-border bg-terminal-bg px-2 py-2"
+              id={row.key === 'sma10' ? 'surfer10' : row.key === 'sma20' ? 'surfer20' : 'surfer50'}
+              extra={
+                d ? `${d.touches} touches · ${d.bounces} bounces · slope ${d.slopePct}%` : undefined
+              }
+              className="block rounded border border-terminal-border bg-terminal-bg px-2 py-2"
             >
               <div className="flex items-center justify-between gap-1">
                 <span className="text-[10px] font-semibold uppercase tracking-wide text-terminal-muted">
@@ -58,7 +73,7 @@ function SurferDetailSection({ idea }: { idea: TradingIdea }) {
                   ? `${d.touches} touches · ${d.bounces} bounces · slope ${d.slopePct}%`
                   : '—'}
               </div>
-            </div>
+            </MetricTip>
           )
         })}
       </div>
@@ -118,7 +133,7 @@ function TightDetailSection({ idea }: { idea: TradingIdea }) {
   return (
     <section>
       <h3 className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-terminal-dim">
-        Tight consolidation
+        <MetricTip id="tightConsolidation">Tight consolidation</MetricTip>
       </h3>
       <p className="mb-2 text-[11px] text-terminal-dim">
         {idea.tightConsolidation ? 'Passes' : 'Does not pass'} the strict contraction rule
@@ -126,10 +141,23 @@ function TightDetailSection({ idea }: { idea: TradingIdea }) {
       </p>
       <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
         {rows.map((row) => (
-          <div
+          <MetricTip
             key={row.label}
-            className="rounded border border-terminal-border bg-terminal-bg px-2 py-2"
-            title={row.hint}
+            id={
+              row.label === 'Range contraction'
+                ? 'tightRangeRatio'
+                : row.label === 'Volume ratio'
+                  ? 'tightVolumeRatio'
+                  : row.label === 'Close spread'
+                    ? 'tightCloseSpread'
+                    : row.label === 'Days'
+                      ? 'tightWindowDays'
+                      : row.label === 'Near 52w high'
+                        ? 'tightNearHigh'
+                        : 'tightAboveMas'
+            }
+            extra={row.hint}
+            className="block rounded border border-terminal-border bg-terminal-bg px-2 py-2"
           >
             <div className="text-[9px] uppercase tracking-wide text-terminal-dim">{row.label}</div>
             <div className="mt-0.5 font-mono text-xs text-terminal-fg">{row.value}</div>
@@ -138,7 +166,7 @@ function TightDetailSection({ idea }: { idea: TradingIdea }) {
             >
               {passFail(row.ok)}
             </div>
-          </div>
+          </MetricTip>
         ))}
       </div>
     </section>
@@ -151,23 +179,39 @@ export function DetailDrawer({ idea, source = 'live' }: Props) {
       <div className="border-b border-terminal-border px-4 py-3">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="font-mono text-lg font-bold text-terminal-fg">{idea.ticker}</h2>
+            <MetricTip id="ticker" className="font-mono text-lg font-bold text-terminal-fg">
+              {idea.ticker}
+            </MetricTip>
             {idea.earningsStatus === 'avoid' ? (
-              <span className="rounded border border-terminal-red/50 bg-terminal-red-dim px-1.5 py-0.5 text-[10px] font-bold text-terminal-red">
+              <MetricTip
+                id="earningsAvoid"
+                className="rounded border border-terminal-red/50 bg-terminal-red-dim px-1.5 py-0.5 text-[10px] font-bold text-terminal-red"
+              >
                 AVOID EARNINGS
-              </span>
+              </MetricTip>
             ) : idea.isAPlus ? (
-              <span className="rounded bg-terminal-a-plus px-1.5 py-0.5 text-[10px] font-bold text-terminal-bg">
+              <MetricTip
+                id="aPlus"
+                className="rounded bg-terminal-a-plus px-1.5 py-0.5 text-[10px] font-bold text-terminal-bg"
+              >
                 A+
-              </span>
+              </MetricTip>
             ) : null}
-            <span
+            <MetricTip
+              id="kyleScore"
+              extra={`kyleScore ${idea.kyleScore}`}
               className="rounded border border-terminal-amber/40 bg-terminal-amber-dim px-1.5 py-0.5 text-[10px] font-mono text-terminal-amber"
-              title="Heuristic kyleScore (not Kyle official Rating)"
             >
               ★ {idea.kyleScore}
-            </span>
-            <span
+            </MetricTip>
+            <MetricTip
+              id={
+                idea.setupStage === 'triggering'
+                  ? 'stageTriggering'
+                  : idea.setupStage === 'coiled'
+                    ? 'stageCoiled'
+                    : 'stageWatching'
+              }
               className={`rounded border px-1.5 py-0.5 text-[10px] ${
                 idea.setupStage === 'triggering'
                   ? 'border-terminal-amber/40 bg-terminal-amber-dim text-terminal-amber'
@@ -175,19 +219,34 @@ export function DetailDrawer({ idea, source = 'live' }: Props) {
                     ? 'border-terminal-purple/40 bg-terminal-purple/10 text-terminal-purple'
                     : 'border-terminal-border text-terminal-muted'
               }`}
-              title="Setup readiness stage"
             >
               {stageLabel(idea.setupStage)}
-            </span>
-            {idea.aboveSma200 && (
-              <span className="rounded border border-terminal-green/30 bg-terminal-green/15 px-1.5 py-0.5 text-[10px] text-terminal-green">
+            </MetricTip>
+            {idea.aboveSma200 ? (
+              <MetricTip
+                id="aboveSma200"
+                extra={`Price ${fmtPct(idea.pctAboveSma200)} vs 200 SMA (${fmtPrice(idea.sma200)})`}
+                className="rounded border border-terminal-green/30 bg-terminal-green/15 px-1.5 py-0.5 text-[10px] text-terminal-green"
+              >
                 &gt;200 SMA
-              </span>
+              </MetricTip>
+            ) : (
+              <MetricTip
+                id="belowSma200"
+                extra={`Price ${fmtPct(idea.pctAboveSma200)} vs 200 SMA (${fmtPrice(idea.sma200)})`}
+                className="rounded border border-terminal-red/40 bg-terminal-red-dim px-1.5 py-0.5 text-[10px] text-terminal-red"
+              >
+                Below 200
+              </MetricTip>
             )}
             {idea.aboveSma50 && (
-              <span className="rounded border border-terminal-blue/30 bg-terminal-blue/15 px-1.5 py-0.5 text-[10px] text-terminal-blue">
+              <MetricTip
+                id="aboveSma50"
+                extra={`${fmtPct(idea.pctAboveSma50)} vs 50 (${fmtPrice(idea.sma50)})`}
+                className="rounded border border-terminal-blue/30 bg-terminal-blue/15 px-1.5 py-0.5 text-[10px] text-terminal-blue"
+              >
                 above 50 SMA
-              </span>
+              </MetricTip>
             )}
             {source === 'demo' && (
               <span className="rounded bg-terminal-amber-dim px-1.5 py-0.5 text-[10px] font-mono text-terminal-amber">
@@ -195,74 +254,105 @@ export function DetailDrawer({ idea, source = 'live' }: Props) {
               </span>
             )}
           </div>
-          <p className="truncate text-xs text-terminal-muted">{idea.name}</p>
-          <p className="text-[11px] text-terminal-dim">{idea.groupName}</p>
+          <p className="truncate text-xs text-terminal-muted">
+            <MetricTip id="name">{idea.name}</MetricTip>
+          </p>
+          <p className="text-[11px] text-terminal-dim">
+            <MetricTip id="ideaGroup">{idea.groupName}</MetricTip>
+          </p>
         </div>
       </div>
 
       <div className="space-y-4 px-4 py-4">
         <div className="flex items-center justify-between gap-2 rounded-lg border border-terminal-border bg-terminal-elevated px-3 py-2">
           <div>
-            <div className="font-mono text-xl text-terminal-fg">{fmtPrice(idea.price)}</div>
+            <div className="font-mono text-xl text-terminal-fg">
+              <MetricTip id="price">{fmtPrice(idea.price)}</MetricTip>
+            </div>
             <div className={`font-mono text-sm ${pctClass(idea.dayPct)}`}>
-              {fmtPct(idea.dayPct)} today
+              <MetricTip id="dayPct">{fmtPct(idea.dayPct)} today</MetricTip>
             </div>
           </div>
-          <div className="shrink-0" title="Recent closes">
+          <MetricTip id="sparkline" extra={`3M ${fmtPct(idea.perf3M, 0)}`} className="shrink-0">
             <MiniSparkline data={idea.sparkline} positive={idea.perf3M >= 0} />
-          </div>
+          </MetricTip>
         </div>
 
         {idea.characteristics.length > 0 && (
           <div className="flex flex-wrap gap-1">
             {idea.characteristics.map((t) => (
-              <span
+              <MetricTip
                 key={t}
+                id={
+                  t === '10MA Surfer'
+                    ? 'surfer10'
+                    : t === '20MA Surfer'
+                      ? 'surfer20'
+                      : t === '50MA Surfer'
+                        ? 'surfer50'
+                        : t === 'near ATH'
+                          ? 'nearAth'
+                          : t === 'Earnings'
+                            ? 'charEarnings'
+                            : t === 'GAP'
+                              ? 'charGap'
+                              : 'belowSma200'
+                }
                 className="rounded border border-terminal-purple/30 bg-terminal-purple/10 px-1.5 py-0.5 text-[10px] text-terminal-purple"
               >
                 {t}
-              </span>
+              </MetricTip>
             ))}
           </div>
         )}
 
         <div className="grid grid-cols-2 gap-2 text-center sm:grid-cols-3">
-          {[
-            { label: 'RVOL', value: fmtRvol(idea.rvol) },
-            { label: 'ADR%', value: `${idea.adrPct.toFixed(1)}%` },
-            { label: 'vs 52w', value: fmtPct(idea.pctFrom52wHigh) },
-            { label: '1M', value: fmtPct(idea.perf1M, 0) },
-            { label: '3M', value: fmtPct(idea.perf3M, 0) },
-            { label: '6M', value: fmtPct(idea.perf6M, 0) },
-            { label: 'Setup', value: idea.setupType },
-            { label: 'vs 200 SMA', value: fmtPct(idea.pctAboveSma200) },
-            { label: 'vs 50 SMA', value: fmtPct(idea.pctAboveSma50) },
-            { label: 'SMA200', value: fmtPrice(idea.sma200) },
-            { label: 'Prior run%', value: fmtPct(idea.priorRunPct, 0) },
-            { label: 'Tight / Base', value: `${idea.tightDays} / ${idea.baseLengthDays}d` },
-            { label: 'DolVol', value: fmtDollarVol(idea.dollarVolume || idea.avgDollarVol) },
-            { label: 'SMA10', value: fmtPrice(idea.sma10) },
-            { label: 'SMA20', value: fmtPrice(idea.sma20) },
-            { label: 'kyleScore', value: String(idea.kyleScore) },
-          ].map((m) => (
-            <div
-              key={m.label}
-              className="rounded border border-terminal-border bg-terminal-bg px-2 py-2"
-            >
-              <div className="text-[9px] uppercase tracking-wide text-terminal-dim">{m.label}</div>
-              <div className="mt-0.5 truncate font-mono text-xs text-terminal-fg">{m.value}</div>
-            </div>
-          ))}
+          <MetricCell id="rvol" label="RVOL" value={fmtRvol(idea.rvol)} />
+          <MetricCell id="adrPct" label="ADR%" value={`${idea.adrPct.toFixed(1)}%`} />
+          <MetricCell id="pctFrom52wHigh" label="vs 52w" value={fmtPct(idea.pctFrom52wHigh)} />
+          <MetricCell id="perf1m" label="1M" value={fmtPct(idea.perf1M, 0)} />
+          <MetricCell id="perf3m" label="3M" value={fmtPct(idea.perf3M, 0)} />
+          <MetricCell id="perf6m" label="6M" value={fmtPct(idea.perf6M, 0)} />
+          <MetricTip
+            id={
+              idea.setupType === 'Range Breakout'
+                ? 'setupRangeBreakout'
+                : idea.setupType === 'Episodic Pivot'
+                  ? 'setupEpisodicPivot'
+                  : 'setupContinuation'
+            }
+            className="block rounded border border-terminal-border bg-terminal-bg px-2 py-2"
+          >
+            <div className="text-[9px] uppercase tracking-wide text-terminal-dim">Setup</div>
+            <div className="mt-0.5 truncate font-mono text-xs text-terminal-fg">{idea.setupType}</div>
+          </MetricTip>
+          <MetricCell id="pctAboveSma200" label="vs 200 SMA" value={fmtPct(idea.pctAboveSma200)} />
+          <MetricCell id="pctAboveSma50" label="vs 50 SMA" value={fmtPct(idea.pctAboveSma50)} />
+          <MetricCell id="sma200" label="SMA200" value={fmtPrice(idea.sma200)} />
+          <MetricCell id="priorRunPct" label="Prior run%" value={fmtPct(idea.priorRunPct, 0)} />
+          <MetricCell id="tightDays" label="Tight days" value={String(idea.tightDays)} />
+          <MetricCell id="baseLengthDays" label="Base length" value={`${idea.baseLengthDays}d`} />
+          <MetricCell id="dolVol" label="DolVol" value={fmtDollarVol(idea.dollarVolume || idea.avgDollarVol)} />
+          <MetricCell id="sma10" label="SMA10" value={fmtPrice(idea.sma10)} />
+          <MetricCell id="sma20" label="SMA20" value={fmtPrice(idea.sma20)} />
+          <MetricCell id="sma50" label="SMA50" value={fmtPrice(idea.sma50)} />
+          <MetricCell id="kyleScore" label="kyleScore" value={String(idea.kyleScore)} />
         </div>
 
         <section>
           <h3 className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-terminal-dim">
-            Trend gate
+            <MetricTip id="trendGate">Trend gate</MetricTip>
           </h3>
           <p className="rounded border border-terminal-border bg-terminal-bg px-3 py-2 text-sm text-terminal-muted">
-            aboveSma200={String(idea.aboveSma200)} · aboveSma50={String(idea.aboveSma50)} ·
-            aboveSma20={String(idea.aboveSma20)} · aboveSma10={String(idea.aboveSma10)} · SMA50{' '}
-            {fmtPrice(idea.sma50)}
+            <MetricTip id="aboveSma200">aboveSma200={String(idea.aboveSma200)}</MetricTip>
+            {' · '}
+            <MetricTip id="aboveSma50">aboveSma50={String(idea.aboveSma50)}</MetricTip>
+            {' · '}
+            <MetricTip id="aboveSma20">aboveSma20={String(idea.aboveSma20)}</MetricTip>
+            {' · '}
+            <MetricTip id="aboveSma10">aboveSma10={String(idea.aboveSma10)}</MetricTip>
+            {' · '}
+            <MetricTip id="sma50">SMA50 {fmtPrice(idea.sma50)}</MetricTip>
           </p>
         </section>
 
@@ -271,7 +361,16 @@ export function DetailDrawer({ idea, source = 'live' }: Props) {
 
         <section>
           <h3 className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-terminal-dim">
-            Earnings proximity
+            <MetricTip
+              id="earningsStatus"
+              extra={
+                idea.earningsDate != null
+                  ? `Next earnings ${idea.earningsDate} · ${idea.daysToEarnings ?? '?'} trading days · ${idea.earningsStatus}`
+                  : 'No upcoming earnings in calendar window · status clear'
+              }
+            >
+              Earnings proximity
+            </MetricTip>
           </h3>
           <p
             className={`rounded border px-3 py-2 text-sm ${
@@ -308,27 +407,37 @@ export function DetailDrawer({ idea, source = 'live' }: Props) {
 
         <section>
           <h3 className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-terminal-dim">
-            Catalyst
+            <MetricTip id="catalyst">Catalyst</MetricTip>
           </h3>
           <p className="rounded border border-terminal-border bg-terminal-bg px-3 py-2 text-sm text-terminal-fg">
-            {idea.catalyst ?? (
-              <span className="text-terminal-dim">No discrete catalyst — not preferred for A+.</span>
+            {idea.catalyst ? (
+              <MetricTip id="catalyst" extra={idea.catalyst}>
+                {idea.catalyst}
+              </MetricTip>
+            ) : (
+              <MetricTip id="catalyst" className="text-terminal-dim">
+                No discrete catalyst — not preferred for A+.
+              </MetricTip>
             )}
           </p>
         </section>
 
         <section>
           <h3 className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-terminal-dim">
-            Why it qualifies
+            <MetricTip id="whyQualifies">Why it qualifies</MetricTip>
           </h3>
-          <p className="text-sm leading-relaxed text-terminal-muted">{idea.whyQualifies}</p>
+          <p className="text-sm leading-relaxed text-terminal-muted">
+            <MetricTip id="whyQualifies">{idea.whyQualifies}</MetricTip>
+          </p>
         </section>
 
         <section>
           <h3 className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-terminal-dim">
-            Notes
+            <MetricTip id="ideaNotes">Notes</MetricTip>
           </h3>
-          <p className="text-sm leading-relaxed text-terminal-muted">{idea.notes}</p>
+          <p className="text-sm leading-relaxed text-terminal-muted">
+            <MetricTip id="ideaNotes">{idea.notes}</MetricTip>
+          </p>
         </section>
 
         <TickerProfile key={`profile-${idea.ticker}`} symbol={idea.ticker} />

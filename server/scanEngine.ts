@@ -12,6 +12,7 @@ import {
   type SymbolBars,
 } from '../src/lib/metrics.ts'
 import { SCAN_UNIVERSE, WATCHLIST_GROUPS } from '../src/data/watchlist.ts'
+import { FALLBACK_LEADER_NEAR_HIGH_PCT } from '../src/lib/groupPeriod.ts'
 import {
   fetchEarningsBatch,
   fetchSymbolSnapshot,
@@ -232,7 +233,7 @@ export function buildDynamicGroups(ideas: TradingIdea[]): IndustryGroup[] {
       id,
       name: names.get(id) ?? id,
       rsRank: 0,
-      leaderCount: members.filter((m) => m.pctFrom52wHigh >= -10).length,
+      leaderCount: members.filter((m) => m.pctFrom52wHigh >= -FALLBACK_LEADER_NEAR_HIGH_PCT).length,
       dayPct: Math.round(avg((m) => m.dayPct) * 100) / 100,
       weekPct: Math.round(avg((m) => m.perf1M / 4) * 100) / 100,
       monthPct: perf1m,

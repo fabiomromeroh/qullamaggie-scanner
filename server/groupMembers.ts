@@ -5,10 +5,10 @@
  */
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
 import { basename, dirname, resolve } from 'node:path'
-import { finvizLiquidityTokens, isGroupSlug } from '../src/lib/groupPeriod.ts'
+import { finvizLiquidityTokens, isGroupSlug, MEMBERSHIP_STALE_MS } from '../src/lib/groupPeriod.ts'
 
 export const MEMBERSHIP_VERSION = 1
-export const MEMBERSHIP_STALE_MS = 14 * 24 * 60 * 60 * 1000
+export { MEMBERSHIP_STALE_MS }
 export const MEMBERSHIP_PAGE_SIZE = 20
 export const MEMBERSHIP_MAX_PAGES = 15
 

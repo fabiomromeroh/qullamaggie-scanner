@@ -39,6 +39,9 @@ export interface TightConfig {
   nearHighMaxPct: number
   /** Bars used as the 52-week high window (same 252-session convention). */
   highLookback: number
+  /** Loose price-above test: price must clear both of these SMA periods. */
+  smaFast: number
+  smaSlow: number
   /**
    * When true, `setupStageHeuristic` treats tightConsolidation + near highs
    * as an extra route into coiled. Live scan 2026-10-02: 66 coiled by the
@@ -57,6 +60,8 @@ export const TIGHT_CONFIG: TightConfig = {
   volumeAvgSessions: 50,
   nearHighMaxPct: 10,
   highLookback: 252,
+  smaFast: 10,
+  smaSlow: 20,
   useInCoiled: true,
 }
 
@@ -120,7 +125,7 @@ export function evaluateTightConsolidation(
   const bars = [...barsIn].sort((a, b) => a.t - b.t)
   const need = config.recentWindow + config.baselineSessions
   const volNeed = config.volumeAvgSessions
-  const smaNeed = 20
+  const smaNeed = config.smaSlow
   if (bars.length < Math.max(need, volNeed, smaNeed)) {
     return empty
   }
@@ -159,9 +164,9 @@ export function evaluateTightConsolidation(
   const nearHigh = pctFrom52wHigh >= -config.nearHighMaxPct
 
   const allCloses = bars.map((b) => b.c)
-  const sma10 = smaClose(allCloses, 10)
-  const sma20 = smaClose(allCloses, 20)
-  const aboveMas = sma10 != null && sma20 != null && px > sma10 && px > sma20
+  const smaFast = smaClose(allCloses, config.smaFast)
+  const smaSlow = smaClose(allCloses, config.smaSlow)
+  const aboveMas = smaFast != null && smaSlow != null && px > smaFast && px > smaSlow
 
   const failedReasons: string[] = []
   if (!(baselineRange > 0) || rangeRatio > config.rangeRatioMax) {

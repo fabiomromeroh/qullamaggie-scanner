@@ -8,7 +8,9 @@ import {
   countActiveFilters,
   resetFilters,
 } from '../lib/ideaFilters'
+import { metricTipAttrs } from '../lib/metricDefinitions'
 import { ALL_SETUP_STAGES, stageLabel } from '../lib/setupStage'
+import { MetricTip } from './MetricTip'
 
 const FILTERS_EXPAND_KEY = 'qm-filters-expanded'
 
@@ -100,7 +102,10 @@ export function FiltersBar({
 
   const filterBody = (
     <div className="flex max-h-[50vh] flex-wrap items-end gap-2 overflow-y-auto overscroll-contain sm:max-h-none sm:gap-3">
-      <label className="flex min-w-[40%] flex-1 flex-col gap-0.5 text-[10px] text-terminal-dim sm:min-w-0 sm:flex-none">
+      <label
+        {...metricTipAttrs('filterSearch')}
+        className="flex min-w-[40%] flex-1 cursor-help flex-col gap-0.5 text-[10px] text-terminal-dim sm:min-w-0 sm:flex-none"
+      >
         Search
         <input
           value={filters.search}
@@ -110,7 +115,7 @@ export function FiltersBar({
         />
       </label>
 
-      <label className="flex flex-col gap-0.5 text-[10px] text-terminal-dim">
+      <label {...metricTipAttrs('filterMinRvol')} className="flex cursor-help flex-col gap-0.5 text-[10px] text-terminal-dim">
         Min RVOL
         <input
           type="number"
@@ -122,7 +127,10 @@ export function FiltersBar({
         />
       </label>
 
-      <label className="flex flex-col gap-0.5 text-[10px] text-terminal-dim">
+      <label
+        {...metricTipAttrs('filterMaxPctFromHigh')}
+        className="flex cursor-help flex-col gap-0.5 text-[10px] text-terminal-dim"
+      >
         Max % from highs
         <input
           type="number"
@@ -137,7 +145,7 @@ export function FiltersBar({
         />
       </label>
 
-      <label className="flex flex-col gap-0.5 text-[10px] text-terminal-dim">
+      <label {...metricTipAttrs('filterGroup')} className="flex cursor-help flex-col gap-0.5 text-[10px] text-terminal-dim">
         Group
         <select
           value={filters.groupId ?? ''}
@@ -165,7 +173,14 @@ export function FiltersBar({
                 key={s}
                 type="button"
                 onClick={() => toggleSetup(s)}
-                className={`rounded px-2.5 py-1.5 text-[10px] min-h-8 ${
+                {...metricTipAttrs(
+                  s === 'Range Breakout'
+                    ? 'setupRangeBreakout'
+                    : s === 'Episodic Pivot'
+                      ? 'setupEpisodicPivot'
+                      : 'setupContinuation',
+                )}
+                className={`cursor-help rounded px-2.5 py-1.5 text-[10px] min-h-8 ${
                   on
                     ? 'bg-terminal-blue/20 text-terminal-blue border border-terminal-blue/40'
                     : 'bg-terminal-bg text-terminal-dim border border-terminal-border'
@@ -188,14 +203,10 @@ export function FiltersBar({
                 key={s}
                 type="button"
                 onClick={() => toggleStage(s)}
-                title={
-                  s === 'watching'
-                    ? 'Above 200 SMA, building base'
-                    : s === 'coiled'
-                      ? 'Tight days + near highs + MA surfer'
-                      : 'Elevated RVOL / breakout-day heuristic'
-                }
-                className={`rounded px-2.5 py-1.5 text-[10px] min-h-8 ${
+                {...metricTipAttrs(
+                  s === 'watching' ? 'stageWatching' : s === 'coiled' ? 'stageCoiled' : 'stageTriggering',
+                )}
+                className={`cursor-help rounded px-2.5 py-1.5 text-[10px] min-h-8 ${
                   on
                     ? s === 'triggering'
                       ? 'bg-terminal-amber/20 text-terminal-amber border border-terminal-amber/40'
@@ -213,8 +224,8 @@ export function FiltersBar({
       </div>
 
       <label
-        title={ABOVE_200_DMA_TOOLTIP}
-        className={`flex min-h-8 cursor-pointer items-center gap-1.5 rounded border px-2 py-1.5 text-xs ${
+        {...metricTipAttrs('aboveSma200')}
+        className={`flex min-h-8 cursor-help items-center gap-1.5 rounded border px-2 py-1.5 text-xs ${
           filters.requireAbove200 !== false
             ? 'border-terminal-green/40 bg-terminal-green/15 text-terminal-green'
             : 'border-terminal-border bg-terminal-bg text-terminal-dim'
@@ -230,8 +241,8 @@ export function FiltersBar({
       </label>
 
       <label
-        title="Price above the 50-day SMA (loose; not a strict ride)."
-        className="flex min-h-8 cursor-pointer items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1.5 text-xs text-terminal-fg"
+        {...metricTipAttrs('aboveSma50')}
+        className="flex min-h-8 cursor-help items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1.5 text-xs text-terminal-fg"
       >
         <input
           type="checkbox"
@@ -243,8 +254,8 @@ export function FiltersBar({
       </label>
 
       <label
-        title="Price above the 10-day SMA, not necessarily riding it."
-        className="flex min-h-8 cursor-pointer items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1.5 text-xs text-terminal-fg"
+        {...metricTipAttrs('aboveSma10')}
+        className="flex min-h-8 cursor-help items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1.5 text-xs text-terminal-fg"
       >
         <input
           type="checkbox"
@@ -256,8 +267,8 @@ export function FiltersBar({
       </label>
 
       <label
-        title="Price above the 20-day SMA, not necessarily riding it."
-        className="flex min-h-8 cursor-pointer items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1.5 text-xs text-terminal-fg"
+        {...metricTipAttrs('aboveSma20')}
+        className="flex min-h-8 cursor-help items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1.5 text-xs text-terminal-fg"
       >
         <input
           type="checkbox"
@@ -269,8 +280,8 @@ export function FiltersBar({
       </label>
 
       <label
-        title="Strict 10MA surfer: the stock rides SMA10 over ~15 sessions with bounced touches, no close break beyond 0.75%, and a rising SMA. Price merely above the SMA is the 'Above 10 SMA' chip."
-        className="flex min-h-8 cursor-pointer items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1.5 text-xs text-terminal-fg"
+        {...metricTipAttrs('surfer10')}
+        className="flex min-h-8 cursor-help items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1.5 text-xs text-terminal-fg"
       >
         <input
           type="checkbox"
@@ -282,8 +293,8 @@ export function FiltersBar({
       </label>
 
       <label
-        title="Strict 20MA surfer: the stock rides SMA20 over ~15 sessions with bounced touches, no close break beyond 0.75%, and a rising SMA. Price merely above the SMA is the 'Above 20 SMA' chip."
-        className="flex min-h-8 cursor-pointer items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1.5 text-xs text-terminal-fg"
+        {...metricTipAttrs('surfer20')}
+        className="flex min-h-8 cursor-help items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1.5 text-xs text-terminal-fg"
       >
         <input
           type="checkbox"
@@ -295,8 +306,8 @@ export function FiltersBar({
       </label>
 
       <label
-        title="Strict 50MA surfer: the stock rides SMA50 over ~25 sessions with bounced touches, no close break beyond 0.75%, and a rising SMA."
-        className="flex min-h-8 cursor-pointer items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1.5 text-xs text-terminal-fg"
+        {...metricTipAttrs('surfer50')}
+        className="flex min-h-8 cursor-help items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1.5 text-xs text-terminal-fg"
       >
         <input
           type="checkbox"
@@ -308,8 +319,8 @@ export function FiltersBar({
       </label>
 
       <label
-        title="Range and volume contraction over the last 7 sessions vs the prior 30, close-to-close spread capped, within 10% of the 52-week high, and above SMA10 and SMA20."
-        className="flex min-h-8 cursor-pointer items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1.5 text-xs text-terminal-fg"
+        {...metricTipAttrs('tightConsolidation')}
+        className="flex min-h-8 cursor-help items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1.5 text-xs text-terminal-fg"
       >
         <input
           type="checkbox"
@@ -330,14 +341,10 @@ export function FiltersBar({
                 key={s}
                 type="button"
                 onClick={() => toggleEarnings(s)}
-                title={
-                  s === 'avoid'
-                    ? 'Same day or next trading day — hard fail for entry'
-                    : s === 'alert'
-                      ? '~2 trading days out'
-                      : 'Further out / none soon'
-                }
-                className={`rounded px-2.5 py-1.5 text-[10px] uppercase min-h-8 ${
+                {...metricTipAttrs(
+                  s === 'avoid' ? 'earningsAvoid' : s === 'alert' ? 'earningsAlert' : 'earningsClear',
+                )}
+                className={`cursor-help rounded px-2.5 py-1.5 text-[10px] uppercase min-h-8 ${
                   on
                     ? s === 'avoid'
                       ? 'bg-terminal-red-dim text-terminal-red border border-terminal-red/40'
@@ -354,7 +361,10 @@ export function FiltersBar({
         </div>
       </div>
 
-      <label className="flex min-h-8 cursor-pointer items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1.5 text-xs text-terminal-fg">
+      <label
+        {...metricTipAttrs('aPlus')}
+        className="flex min-h-8 cursor-help items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1.5 text-xs text-terminal-fg"
+      >
         <input
           type="checkbox"
           checked={filters.aPlusOnly}
@@ -364,7 +374,10 @@ export function FiltersBar({
         <span className="text-terminal-a-plus">A+ only</span>
       </label>
 
-      <label className="flex min-h-8 cursor-pointer items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1.5 text-xs text-terminal-fg">
+      <label
+        {...metricTipAttrs('catalyst')}
+        className="flex min-h-8 cursor-help items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1.5 text-xs text-terminal-fg"
+      >
         <input
           type="checkbox"
           checked={filters.hasCatalyst}
@@ -392,9 +405,6 @@ export function FiltersBar({
         >
           <span className="text-xs font-semibold uppercase tracking-wider text-terminal-muted">
             Filters
-            <span className="ml-1.5 font-mono normal-case tracking-normal text-terminal-dim">
-              · {activeCount} active
-            </span>
           </span>
           {expanded ? (
             <ChevronUp className="h-4 w-4 shrink-0 text-terminal-dim" />
@@ -402,10 +412,14 @@ export function FiltersBar({
             <ChevronDown className="h-4 w-4 shrink-0 text-terminal-dim" />
           )}
         </button>
+        <MetricTip id="filterActiveCount" className="shrink-0 font-mono text-[10px] normal-case tracking-normal text-terminal-dim">
+          {activeCount} active
+        </MetricTip>
         {expanded ? (
           <button
             type="button"
-            className="shrink-0 px-2 text-[10px] text-terminal-dim hover:text-terminal-blue"
+            {...metricTipAttrs('filterReset')}
+            className="shrink-0 cursor-help px-2 text-[10px] text-terminal-dim hover:text-terminal-blue"
             onClick={reset}
           >
             Reset
@@ -417,10 +431,14 @@ export function FiltersBar({
       <div className={`hidden items-center justify-between md:flex ${dense ? 'mb-1' : 'mb-2'}`}>
         <h2 className="text-xs font-semibold uppercase tracking-wider text-terminal-muted">
           Filters
+          <MetricTip id="filterActiveCount" className="ml-1.5 font-mono text-[10px] normal-case tracking-normal text-terminal-dim">
+            {activeCount} active
+          </MetricTip>
         </h2>
         <button
           type="button"
-          className="text-[10px] text-terminal-dim hover:text-terminal-blue"
+          {...metricTipAttrs('filterReset')}
+          className="cursor-help text-[10px] text-terminal-dim hover:text-terminal-blue"
           onClick={reset}
         >
           Reset

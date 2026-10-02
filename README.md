@@ -32,6 +32,14 @@ npm run preview   # preview also runs the /api/market proxy middleware
 
 Optional: copy `dist/` into the Windows package at `/workspace/qullamaggie-dashboard-win/app/dist` after a successful build.
 
+## Metric tooltips
+
+Every calculated label in the dashboard (table headers and cells, filter chips, the detail panel, group strength, the watchlist, the header, and the chart) opens a definition from `src/lib/metricDefinitions.ts`.
+
+Add one by extending `METRIC_DEFS` with a `label`, a one-line `short`, and a `how` (one to three sentences). Where a threshold already exists, interpolate that constant (`SURFER_CONFIG`, `TIGHT_CONFIG`, `STAGE_CONFIG`, `APLUS_CONFIG`, `KYLE_SCORE_CONFIG`, and the other exported configs) instead of typing the number again. Then render `<MetricTip id="yourId">` or spread `metricTipAttrs('yourId')` on a control that is already focusable. Pass `extra` when a row has a live detail (touches, a price versus its average, an earnings date) that should sit under the shared definition.
+
+Hover opens the tip after a short delay. Tab focuses the trigger and shows it immediately. Escape hides it. A tap on a touch screen toggles it, and a tap elsewhere closes it. One tooltip is shared for the whole page, so a large ideas table does not mount a popover per cell. Column-resize drags do not open it.
+
 ## Finnhub API key
 
 1. Sign up at [https://finnhub.io](https://finnhub.io) (free tier).  

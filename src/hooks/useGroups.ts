@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { GroupsResponse } from '../types'
-
-/** How often the panel re-reads `/api/groups`. The server cache TTL is 12 minutes. */
-const GROUPS_POLL_MS = 5 * 60 * 1000
+import { GROUPS_POLL_MS } from '../lib/groupPeriod'
 
 function isGroupsResponse(value: unknown): value is GroupsResponse {
   if (!value || typeof value !== 'object') return false
