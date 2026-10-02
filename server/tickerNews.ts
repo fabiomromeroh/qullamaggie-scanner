@@ -18,6 +18,8 @@ export interface NewsItem {
   datetime: string
   url: string
   summary?: string
+  /** Uppercase tickers from Finnhub `related` or Yahoo `relatedTickers`. */
+  related?: string[]
 }
 
 export interface TickerNewsPayload {
@@ -49,14 +51,29 @@ function unixToIso(value: unknown): string | null {
   return date.toISOString()
 }
 
+/** Comma-separated Finnhub `related`, or a Yahoo `relatedTickers` array. */
+export function parseRelatedTickers(value: unknown): string[] | undefined {
+  const parts = Array.isArray(value) ? value : typeof value === 'string' ? value.split(',') : []
+  const tickers: string[] = []
+  const seen = new Set<string>()
+  for (const part of parts) {
+    if (typeof part !== 'string') continue
+    const symbol = part.trim().toUpperCase()
+    if (!/^[A-Z][A-Z0-9.-]{0,14}$/.test(symbol) || seen.has(symbol)) continue
+    seen.add(symbol)
+    tickers.push(symbol)
+  }
+  return tickers.length ? tickers : undefined
+}
+
 function ymdUtc(date: Date): string {
   return date.toISOString().slice(0, 10)
 }
 
-export function newsWindowUtc(now = new Date()): { from: string; to: string } {
+export function newsWindowUtc(now = new Date(), lookbackDays = 7): { from: string; to: string } {
   const to = ymdUtc(now)
   const fromDate = new Date(now.getTime())
-  fromDate.setUTCDate(fromDate.getUTCDate() - 7)
+  fromDate.setUTCDate(fromDate.getUTCDate() - lookbackDays)
   return { from: ymdUtc(fromDate), to }
 }
 
@@ -74,8 +91,10 @@ export function parseFinnhubNews(raw: unknown): NewsItem[] {
       typeof rec.source === 'string' && rec.source.trim() ? rec.source.trim() : 'Finnhub'
     const summary =
       typeof rec.summary === 'string' && rec.summary.trim() ? rec.summary.trim() : undefined
+    const related = parseRelatedTickers(rec.related)
     const item: NewsItem = { headline, source, datetime, url }
     if (summary) item.summary = summary
+    if (related) item.related = related
     items.push(item)
   }
   return items
@@ -96,7 +115,10 @@ export function parseYahooNews(raw: unknown): NewsItem[] {
       typeof rec.publisher === 'string' && rec.publisher.trim()
         ? rec.publisher.trim()
         : 'Yahoo'
-    items.push({ headline, source, datetime, url })
+    const related = parseRelatedTickers(rec.relatedTickers)
+    const item: NewsItem = { headline, source, datetime, url }
+    if (related) item.related = related
+    items.push(item)
   }
   return items
 }
@@ -121,11 +143,20 @@ export function finalizeNewsItems(items: NewsItem[], cap = NEWS_CAP): NewsItem[]
   return out
 }
 
+function retryAfterMs(header: string | null): number | null {
+  if (!header) return null
+  const seconds = Number(header)
+  if (Number.isFinite(seconds)) return Math.min(60_000, Math.max(0, seconds * 1000))
+  const when = Date.parse(header)
+  if (!Number.isFinite(when)) return null
+  return Math.min(60_000, Math.max(0, when - Date.now()))
+}
+
 async function fetchJson(
   url: string,
   headers: Record<string, string>,
   timeoutMs = NEWS_TIMEOUT_MS,
-): Promise<{ status: number; json: unknown }> {
+): Promise<{ status: number; json: unknown; retryAfterMs: number | null }> {
   const res = await fetch(url, {
     headers,
     signal: AbortSignal.timeout(timeoutMs),
@@ -136,7 +167,50 @@ async function fetchJson(
   } catch {
     json = null
   }
-  return { status: res.status, json }
+  return { status: res.status, json, retryAfterMs: retryAfterMs(res.headers.get('retry-after')) }
+}
+
+export interface FinnhubNewsResult {
+  items: NewsItem[]
+  status: number
+  retryAfterMs: number | null
+  error?: string
+}
+
+/** Company-news for the catalyst window. Does not throw on HTTP errors. */
+export async function fetchFinnhubCompanyNews(
+  symbol: string,
+  token: string,
+  lookbackDays = 3,
+): Promise<FinnhubNewsResult> {
+  const { from, to } = newsWindowUtc(new Date(), lookbackDays)
+  const url =
+    `https://finnhub.io/api/v1/company-news?symbol=${encodeURIComponent(symbol)}` +
+    `&from=${from}&to=${to}&token=${encodeURIComponent(token)}`
+  try {
+    const { status, json, retryAfterMs: retry } = await fetchJson(url, { Accept: 'application/json' })
+    if (status !== 200) {
+      return {
+        items: [],
+        status,
+        retryAfterMs: retry,
+        error: status === 429 ? 'Finnhub news rate limited (429)' : `Finnhub news HTTP ${status}`,
+      }
+    }
+    return { items: parseFinnhubNews(json), status, retryAfterMs: null }
+  } catch (err) {
+    return {
+      items: [],
+      status: 0,
+      retryAfterMs: null,
+      error: err instanceof Error ? err.message : 'Finnhub news failed',
+    }
+  }
+}
+
+/** Yahoo search news. Throws when both hosts fail. Empty array is a successful miss. */
+export async function fetchYahooSearchNews(symbol: string): Promise<NewsItem[]> {
+  return loadYahooNews(symbol)
 }
 
 function originOnly(url: string): string {
@@ -149,21 +223,10 @@ function originOnly(url: string): string {
 }
 
 async function loadFinnhubNews(symbol: string, token: string): Promise<NewsItem[]> {
-  const { from, to } = newsWindowUtc()
-  const url =
-    `https://finnhub.io/api/v1/company-news?symbol=${encodeURIComponent(symbol)}` +
-    `&from=${from}&to=${to}&token=${encodeURIComponent(token)}`
-  const { status, json } = await fetchJson(url, { Accept: 'application/json' })
-  if (status === 401 || status === 403) {
-    throw new Error(`Finnhub news HTTP ${status}`)
-  }
-  if (status === 429) {
-    throw new Error('Finnhub news rate limited (429)')
-  }
-  if (status !== 200) {
-    throw new Error(`Finnhub news HTTP ${status} (${originOnly(url)})`)
-  }
-  return parseFinnhubNews(json)
+  const result = await fetchFinnhubCompanyNews(symbol, token, 7)
+  if (result.status === 200) return result.items
+  const where = result.status ? `HTTP ${result.status}` : 'request failed'
+  throw new Error(result.error ?? `Finnhub news ${where} (${originOnly('https://finnhub.io/api/v1/company-news')})`)
 }
 
 async function loadYahooNews(symbol: string): Promise<NewsItem[]> {

@@ -63,6 +63,7 @@ function isGroupStocksResponse(value: unknown): value is GroupStocksResponse {
 
 const SCAN_POLL_MS = 3000
 const SCAN_POLL_CAP_MS = 3 * 60 * 1000
+const CATALYST_BACKOFF_MS = [4000, 8000, 12000, 20000, 30000, 45000]
 
 export function useDashboard() {
   const [data, setData] = useState<DashboardData | null>(null)
@@ -85,17 +86,19 @@ export function useDashboard() {
     data: GroupStocksResponse | null
   } | null>(null)
   const groupReq = useRef(0)
+  const [catalystAttempt, setCatalystAttempt] = useState(0)
+  const [groupCatalystPoll, setGroupCatalystPoll] = useState(0)
 
   const { ingestScanIdeas, ...userWatchlistRest } = useUserWatchlist()
   const { payload: groupsPayload, loading: groupsFetchLoading } = useGroups()
   const pollStartedAt = useRef<number | null>(null)
-  const reloadRef = useRef<(opts?: { refreshScan?: boolean }) => Promise<void>>(
+  const reloadRef = useRef<(opts?: { refreshScan?: boolean; soft?: boolean }) => Promise<void>>(
     async () => undefined,
   )
 
-  const reload = useCallback(async (opts?: { refreshScan?: boolean }) => {
-    setLoading(true)
-    setError(null)
+  const reload = useCallback(async (opts?: { refreshScan?: boolean; soft?: boolean }) => {
+    if (!opts?.soft) setLoading(true)
+    if (!opts?.soft) setError(null)
     // Initial page load reads cache only. Explicit Refresh asks the server to rescan.
     if (opts?.refreshScan) {
       try {
@@ -132,7 +135,7 @@ export function useDashboard() {
       pollStartedAt.current = null
       setSelectedTicker(null)
     }
-    setLoading(false)
+    if (!opts?.soft) setLoading(false)
   }, [ingestScanIdeas])
 
   reloadRef.current = reload
@@ -307,7 +310,7 @@ export function useDashboard() {
       groupReq.current += 1
       ac.abort()
     }
-  }, [groupViewActive, groupSlug, period, groupRetry])
+  }, [groupViewActive, groupSlug, period, groupRetry, groupCatalystPoll])
 
   const groupView = useMemo(() => {
     if (!groupViewActive || !groupSlug) return null
@@ -327,6 +330,7 @@ export function useDashboard() {
       parsedCount: match?.data?.parsedCount ?? null,
       finvizPerf: match?.data?.finvizPerf ?? null,
       ideas: match?.data?.ideas ?? null,
+      catalystMeta: match?.data?.catalystMeta ?? null,
       source: match?.data?.source ?? null,
       membershipGeneratedAt: match?.data?.membership?.generatedAt ?? null,
       membershipStale: Boolean(match?.data?.membership?.stale),
@@ -371,6 +375,30 @@ export function useDashboard() {
     if (!data) return null
     return data.ideas.find((i) => i.ticker === selectedTicker) ?? null
   }, [data, selectedTicker, groupView])
+
+  const catalystPending = groupViewActive
+    ? (groupStocks?.data?.catalystMeta?.pending ?? 0)
+    : (data?.catalystMeta?.pending ?? 0)
+  const prevCatalystPending = useRef(0)
+
+  useEffect(() => {
+    if (catalystPending > 0 && prevCatalystPending.current === 0 && catalystAttempt !== 0) {
+      setCatalystAttempt(0)
+    }
+    prevCatalystPending.current = catalystPending
+  }, [catalystPending, catalystAttempt])
+
+  useEffect(() => {
+    if (catalystPending <= 0) return
+    if (catalystAttempt >= CATALYST_BACKOFF_MS.length) return
+    const delay = CATALYST_BACKOFF_MS[catalystAttempt] ?? 45000
+    const timer = setTimeout(() => {
+      setCatalystAttempt((n) => n + 1)
+      if (groupViewActive) setGroupCatalystPoll((n) => n + 1)
+      else void reloadRef.current({ soft: true })
+    }, delay)
+    return () => clearTimeout(timer)
+  }, [catalystPending, catalystAttempt, groupViewActive])
 
   const userWatchlist = { ingestScanIdeas, ...userWatchlistRest }
 

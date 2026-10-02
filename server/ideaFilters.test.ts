@@ -12,6 +12,7 @@ import {
   applyShowAllGroup,
   cloneIdeaFilters,
   countActiveFilters,
+  countCatalystUnchecked,
   matchesFilters,
   migrateStoredFilters,
   passesFilters,
@@ -267,6 +268,24 @@ test('passesFilters truth table for each normal-scan control', () => {
       row: idea({ catalyst: 'FDA' }),
       f: filters({ hasCatalyst: true }),
       pass: true,
+    },
+    {
+      name: 'hasCatalyst boolean wins over an empty string',
+      row: idea({ catalyst: null, hasCatalyst: true, catalystStatus: 'checked' }),
+      f: filters({ hasCatalyst: true }),
+      pass: true,
+    },
+    {
+      name: 'pending catalyst is excluded',
+      row: idea({ catalyst: 'leftover', hasCatalyst: true, catalystStatus: 'pending' }),
+      f: filters({ hasCatalyst: true }),
+      pass: false,
+    },
+    {
+      name: 'unchecked catalyst is excluded',
+      row: idea({ hasCatalyst: false, catalystStatus: 'unchecked' }),
+      f: filters({ hasCatalyst: true }),
+      pass: false,
     },
     {
       name: 'catalyst not required',
@@ -588,14 +607,59 @@ test('UI copy and README use the single Above 200 DMA label', () => {
   assert.match(table, /SHOW_ALL_GROUP_LABEL/)
   assert.match(bar, /Above 10 SMA/)
   assert.match(bar, /Above 20 SMA/)
-  assert.match(bar, /10MA Surfer \(strict\)/)
-  assert.match(bar, /20MA Surfer \(strict\)/)
-  assert.match(bar, /50MA Surfer \(strict\)/)
+  assert.match(bar, /Above 50 SMA/)
+  assert.match(bar, /10MA Surfer/)
+  assert.match(bar, /20MA Surfer/)
+  assert.match(bar, /50MA Surfer/)
+  assert.doesNotMatch(bar, /Surfer \(strict\)/)
   assert.match(bar, /Tight consolidation/)
+  assert.match(bar, /Max % from high/)
+  assert.match(bar, /return 'Clear'/)
+  assert.match(bar, /return 'Alert'/)
+  assert.match(bar, /return 'Avoid'/)
+  assert.match(bar, /\['watching', 'coiled', 'triggering'\]/)
+  let cursor = -1
+  for (const label of [
+    'Search',
+    'Group',
+    'Numeric',
+    'Above',
+    'Surfer (ADR-based)',
+    'Tight consolidation',
+    'Stage',
+    'Setup type',
+    'Earnings',
+    'Other',
+  ]) {
+    const at = bar.indexOf(`<FilterGroup label="${label}"`, cursor + 1)
+    assert.ok(at > cursor, label)
+    cursor = at
+  }
   assert.match(readme, /Above 200 DMA/)
   assert.match(readme, /ONE filter/)
   assert.match(
     readme,
     /normal scan prefilters below-200 names server-side; toggle off only reveals names present in the payload, group view includes them/,
   )
+})
+
+test('has-catalyst filter excludes pending and unchecked in both views', () => {
+  const rows = [
+    idea({ ticker: 'PEN', catalystStatus: 'pending', hasCatalyst: false, catalyst: 'leftover' }),
+    idea({ ticker: 'CHK', catalystStatus: 'checked', hasCatalyst: true, catalyst: 'FDA approval' }),
+    idea({ ticker: 'OLD', catalyst: 'FDA' }),
+    idea({ ticker: 'UN', catalystStatus: 'unchecked', hasCatalyst: false }),
+  ]
+  const on = filters({ hasCatalyst: true })
+  assert.equal(passesFilters(rows[0]!, on), false)
+  assert.equal(passesFilters(rows[1]!, on), true)
+  assert.equal(passesFilters(rows[2]!, on), true)
+  assert.equal(passesFilters(rows[0]!, on, { groupView: true }), false)
+  assert.equal(passesFilters(rows[1]!, on, { groupView: true }), true)
+  assert.equal(countCatalystUnchecked(rows, on), 2)
+  assert.equal(countCatalystUnchecked(rows, on, { groupView: true }), 2)
+  assert.equal(countCatalystUnchecked(rows, filters({ hasCatalyst: false })), 0)
+  const migrated = migrateStoredFilters({ hasCatalyst: true, requireSurfer10: true })
+  assert.equal(migrated.hasCatalyst, true)
+  assert.equal(migrated.requireSurfer10, true)
 })

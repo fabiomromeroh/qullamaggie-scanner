@@ -1,0 +1,427 @@
+{
+  "label": "real-data sample",
+  "fetchedAt": "2026-10-02",
+  "source": "https://query1.finance.yahoo.com/v1/finance/search newsCount=10 quotesCount=0 desktop User-Agent",
+  "symbols": {
+    "AAPL": [
+      {
+        "headline": "Micron is about to do something that would surprise most Magnificent 7 investors",
+        "publisher": "Yahoo Finance",
+        "providerPublishTime": 1790934450
+      },
+      {
+        "headline": "Ranking the \"Magnificent Seven\" From Most to Least Attractive, Based on Projected Cash Flow",
+        "publisher": "Motley Fool",
+        "providerPublishTime": 1790933162
+      },
+      {
+        "headline": "MSFT Stock Posts Best Quarter Since 1998 As Azure Growth Revives AI Optimism",
+        "publisher": "Stocktwits",
+        "providerPublishTime": 1790930776
+      },
+      {
+        "headline": "How Far Can Meta Stock Jump In The Year Ahead?",
+        "publisher": "Trefis",
+        "providerPublishTime": 1790929449
+      },
+      {
+        "headline": "Tesla Is the Only Magnificent Seven Stock in the Red for 2026",
+        "publisher": "Motley Fool",
+        "providerPublishTime": 1790909821
+      },
+      {
+        "headline": "3 Growth ETFs to Buy Before 2027: One Charges Just 0.03%",
+        "publisher": "24/7 Wall St.",
+        "providerPublishTime": 1790899381
+      },
+      {
+        "headline": "Apple Stocks Fall as India Payments Launch Meets UPI Dominance",
+        "publisher": "GuruFocus.com",
+        "providerPublishTime": 1790899084
+      },
+      {
+        "headline": "Stock Market Today: S&P Climbs To Start October, Micron Gains; Barbie Maker Soars On Deal News",
+        "publisher": "Investor's Business Daily",
+        "providerPublishTime": 1790887324
+      }
+    ],
+    "AMD": [
+      {
+        "headline": "AMD Stocks Slip as $8.2 Billion World Labs Deal Adds Dilution",
+        "publisher": "GuruFocus.com",
+        "providerPublishTime": 1790899048
+      },
+      {
+        "headline": "The 25-Year Stock Market Supercycle: Why The Biggest Acceleration Phase Is Still Ahead",
+        "publisher": "Investor's Business Daily",
+        "providerPublishTime": 1790886167
+      },
+      {
+        "headline": "HPE stock closes at record high on growing networking orders, $1.2 billion AMD Helios order",
+        "publisher": "Yahoo Finance",
+        "providerPublishTime": 1790886165
+      },
+      {
+        "headline": "Buy Micron Stock After AI Memory Demand Fuels Record Q4 Results?",
+        "publisher": "Zacks",
+        "providerPublishTime": 1790883960
+      },
+      {
+        "headline": "Is Marvell Stock Ready For A Slowdown In AI Demand?",
+        "publisher": "Trefis",
+        "providerPublishTime": 1790883153
+      },
+      {
+        "headline": "Applied Materials vs. AMD: Which AI Semiconductor Stock Is a Better Buy in 2026?",
+        "publisher": "Motley Fool",
+        "providerPublishTime": 1790882881
+      },
+      {
+        "headline": "Why Did AMD Stock Jump?",
+        "publisher": "Trefis",
+        "providerPublishTime": 1790878401
+      },
+      {
+        "headline": "Is NVIDIA Stock Increasing Your Market Risk?",
+        "publisher": "Trefis",
+        "providerPublishTime": 1790877959
+      }
+    ],
+    "BA": [
+      {
+        "headline": "Boeing (BA) Wins Navy F A XX Fighter Program In Fresh Defense Vote",
+        "publisher": "Simply Wall St.",
+        "providerPublishTime": 1790932064
+      },
+      {
+        "headline": "Boeing White-Collar Workers Ratify Four-Year Contract",
+        "publisher": "MT Newswires",
+        "providerPublishTime": 1790929024
+      },
+      {
+        "headline": "Boeing Workers Avert Strike Threat With New Four-Year Deal \u2014 BA Stock Jumps 3%",
+        "publisher": "Stocktwits",
+        "providerPublishTime": 1790894399
+      },
+      {
+        "headline": "Jim Cramer Likes HEICO (HEI) but Warns About Aerospace and Boeing (BA)",
+        "publisher": "Insider Monkey",
+        "providerPublishTime": 1790888950
+      },
+      {
+        "headline": "Boeing Engineers Bless New Contract After Summer Showdown",
+        "publisher": "The Wall Street Journal",
+        "providerPublishTime": 1790888880
+      },
+      {
+        "headline": "Boeing shares rise 4% as engineers approve contract, easing strike risk",
+        "publisher": "Investing.com",
+        "providerPublishTime": 1790886348
+      },
+      {
+        "headline": "Market Chatter: FAA May Convene Panel Friday for Boeing's Software Glitch",
+        "publisher": "MT Newswires",
+        "providerPublishTime": 1790879304
+      },
+      {
+        "headline": "Nearly 10K Boeing workers ratify contract, avoiding West Coast strike",
+        "publisher": "Manufacturing Dive",
+        "providerPublishTime": 1790878111
+      }
+    ],
+    "JPM": [
+      {
+        "headline": "Tech, Media & Telecom Roundup: Market Talk",
+        "publisher": "The Wall Street Journal",
+        "providerPublishTime": 1790888040
+      },
+      {
+        "headline": "Why Veteran Strategists on Wall Street Are Bracing for Greater Volatility",
+        "publisher": "Barrons.com",
+        "providerPublishTime": 1790886120
+      },
+      {
+        "headline": "JPMorgan Chase (JPM) Taps Bond Markets, Is The Stock Still Undervalued?",
+        "publisher": "Simply Wall St.",
+        "providerPublishTime": 1790878182
+      },
+      {
+        "headline": "JPMorgan M&A chief Hernan Cristerna retiring after 30 years",
+        "publisher": "Quartz",
+        "providerPublishTime": 1790877943
+      },
+      {
+        "headline": "Noah Holdings (NOAH) Stock Fair Value Moves Lower After JPMorgan Target Cut",
+        "publisher": "Simply Wall St.",
+        "providerPublishTime": 1790874597
+      },
+      {
+        "headline": "Bond selloff could mean outsized portfolio changes at quarter's end\u00a0",
+        "publisher": "Reuters",
+        "providerPublishTime": 1790872748
+      },
+      {
+        "headline": "Bank Stocks Slide as Money-Center Names Lead Financials Lower: Citigroup Falls 4%, Bank of America Drops 3%, JPMorgan Chase Slips",
+        "publisher": "24/7 Wall St.",
+        "providerPublishTime": 1790869867
+      },
+      {
+        "headline": "What It Actually Takes for Bank of America to Keep Raising Its Dividend",
+        "publisher": "24/7 Wall St.",
+        "providerPublishTime": 1790869550
+      }
+    ],
+    "LLY": [
+      {
+        "headline": "Twist Bioscience (TWST) Stock Could Be Reasonable On Its 9x Three Year Run",
+        "publisher": "Simply Wall St.",
+        "providerPublishTime": 1790915003
+      },
+      {
+        "headline": "Lilly Stocks Drop as EloraTZP Beats Zepbound but Tests Tolerability",
+        "publisher": "GuruFocus.com",
+        "providerPublishTime": 1790899386
+      },
+      {
+        "headline": "Johnson & Johnson vs. Eli Lilly: Which Pharma Stock Can Make Your Portfolio Healthier in 2026?",
+        "publisher": "Motley Fool",
+        "providerPublishTime": 1790892781
+      },
+      {
+        "headline": "Could Eli Lilly's Newest Weight Loss Strategy Pay Off for Decades?",
+        "publisher": "Motley Fool",
+        "providerPublishTime": 1790885641
+      },
+      {
+        "headline": "Sector Update: Healthcare Stocks Fall Late Afternoon",
+        "publisher": "MT Newswires",
+        "providerPublishTime": 1790884676
+      },
+      {
+        "headline": "Foghorn Stock Sinks as Lilly Scraps Cancer Deal, Forcing 40% Layoffs",
+        "publisher": "Barrons.com",
+        "providerPublishTime": 1790884260
+      },
+      {
+        "headline": "Sector Update: Healthcare",
+        "publisher": "MT Newswires",
+        "providerPublishTime": 1790882993
+      },
+      {
+        "headline": "How Eli Lilly Just Extended Its Lead in the Weight-Loss Drug Market",
+        "publisher": "Barrons.com",
+        "providerPublishTime": 1790882340
+      }
+    ],
+    "NVDA": [
+      {
+        "headline": "ExxonMobil Returned $9.4 Billion to Shareholders Last Quarter. Here's the Buyback-to-Dividend Split.",
+        "publisher": "Motley Fool",
+        "providerPublishTime": 1790933700
+      },
+      {
+        "headline": "If a Bear Market Is Coming, This Is Warren Buffett's Golden Rule for Preparing Your Investments",
+        "publisher": "Motley Fool",
+        "providerPublishTime": 1790933580
+      },
+      {
+        "headline": "Nebius vs. CoreWeave: Which Is the Better AI Stock to Own for the Next 5 Years?",
+        "publisher": "Motley Fool",
+        "providerPublishTime": 1790933400
+      },
+      {
+        "headline": "Ranking the \"Magnificent Seven\" From Most to Least Attractive, Based on Projected Cash Flow",
+        "publisher": "Motley Fool",
+        "providerPublishTime": 1790933162
+      },
+      {
+        "headline": "California Man Charged With Smuggling $300 Million Nvidia AI Chips to China",
+        "publisher": "MT Newswires",
+        "providerPublishTime": 1790933032
+      },
+      {
+        "headline": "My Honest Opinion of Shiba Inu",
+        "publisher": "Motley Fool",
+        "providerPublishTime": 1790932800
+      },
+      {
+        "headline": "Market Chatter: Nvidia Blackwell Chips Linked to Chinese State-Backed Financing",
+        "publisher": "MT Newswires",
+        "providerPublishTime": 1790932675
+      },
+      {
+        "headline": "Big Tech Will Spend $735 Billion on Data Centers. This Boring Electrical Contractor Collects the Checks.",
+        "publisher": "Motley Fool",
+        "providerPublishTime": 1790932500
+      }
+    ],
+    "PFE": [
+      {
+        "headline": "Pfizer Is Down 34% Over the Last 5 Years. Here's Why Its 6% Dividend Yield Might Finally Be Worth the Risk.",
+        "publisher": "Motley Fool",
+        "providerPublishTime": 1790929380
+      },
+      {
+        "headline": "Kevin Warsh's Inflation Stance Makes These Cheap Dividend Stocks Look a Lot More Attractive",
+        "publisher": "Motley Fool",
+        "providerPublishTime": 1790894100
+      },
+      {
+        "headline": "Pfizer (PFE) Stock Sinks As Market Gains: What You Should Know",
+        "publisher": "Zacks",
+        "providerPublishTime": 1790887507
+      },
+      {
+        "headline": "Sector Update: Healthcare Stocks Fall Late Afternoon",
+        "publisher": "MT Newswires",
+        "providerPublishTime": 1790884676
+      },
+      {
+        "headline": "Pfizer Says Eczema Drug Shows Significant Skin Clearance",
+        "publisher": "Benzinga",
+        "providerPublishTime": 1790880388
+      },
+      {
+        "headline": "Pfizer (PFE) Advances Tilrekimig After Positive Phase 2 Atopic Dermatitis Results",
+        "publisher": "Simply Wall St.",
+        "providerPublishTime": 1790878179
+      },
+      {
+        "headline": "Sector Update: Healthcare Stocks Fall in Afternoon Trading",
+        "publisher": "MT Newswires",
+        "providerPublishTime": 1790877059
+      },
+      {
+        "headline": "How Much Do You Need Invested to Collect $8,450 a Month for Life?",
+        "publisher": "24/7 Wall St.",
+        "providerPublishTime": 1790875263
+      }
+    ],
+    "SMCI": [
+      {
+        "headline": "What Is The Case For Waiting On Hewlett Packard Enterprise Stock?",
+        "publisher": "Trefis",
+        "providerPublishTime": 1790883676
+      },
+      {
+        "headline": "Vertiv Soars 49% YTD: Is This the Right Time to Buy the Stock?",
+        "publisher": "Zacks",
+        "providerPublishTime": 1790868480
+      },
+      {
+        "headline": "SMCI or WDC: Which Is the Better Value Stock Right Now?",
+        "publisher": "Zacks",
+        "providerPublishTime": 1790865602
+      },
+      {
+        "headline": "Why Super Micro Computer Stock Has More Room to Run",
+        "publisher": "Barchart",
+        "providerPublishTime": 1790864411
+      },
+      {
+        "headline": "Penguin Solutions' AI Backlog Grows: Is Future Sales Taking Shape?",
+        "publisher": "Zacks",
+        "providerPublishTime": 1790863620
+      },
+      {
+        "headline": "Top 3 AI Stocks With Revenue Growth Over 20%",
+        "publisher": "Simply Wall St.",
+        "providerPublishTime": 1790860210
+      },
+      {
+        "headline": "Top 3 AI Chip Stocks To Watch In September 2026",
+        "publisher": "Simply Wall St.",
+        "providerPublishTime": 1790791925
+      },
+      {
+        "headline": "Why Is Super Micro Computer (SMCI) Expanding Its Role In AI Infrastructure?",
+        "publisher": "Simply Wall St.",
+        "providerPublishTime": 1790784878
+      }
+    ],
+    "TSLA": [
+      {
+        "headline": "Micron is about to do something that would surprise most Magnificent 7 investors",
+        "publisher": "Yahoo Finance",
+        "providerPublishTime": 1790934450
+      },
+      {
+        "headline": "Dow Jones Futures Rise, Oil Prices Tumble With Tesla, Jobs Report Due; Micron In Buy Area",
+        "publisher": "Investor's Business Daily",
+        "providerPublishTime": 1790933838
+      },
+      {
+        "headline": "Ranking the \"Magnificent Seven\" From Most to Least Attractive, Based on Projected Cash Flow",
+        "publisher": "Motley Fool",
+        "providerPublishTime": 1790933162
+      },
+      {
+        "headline": "Nasdaq, S&P 500, Dow Futures Rise Ahead Of Jobs Report: NKE, META, RKLB, MRNA, SLS, TSLA Stocks In Focus",
+        "publisher": "Stocktwits",
+        "providerPublishTime": 1790929901
+      },
+      {
+        "headline": "Elon Musk Says Cutting Optimus Memory Was Tesla's 'Only Way' to Scale, As Micron Says Humanoid Robots Need 200GB+ of Memory Each",
+        "publisher": "Benzinga",
+        "providerPublishTime": 1790910146
+      },
+      {
+        "headline": "TSLA Eyes Worst Week In 2 Months As Q3 Delivery Numbers Loom \u2014 But Munster Bets On A Beat As 'EV Winter' Thaws",
+        "publisher": "Stocktwits",
+        "providerPublishTime": 1790910007
+      },
+      {
+        "headline": "Tesla Is the Only Magnificent Seven Stock in the Red for 2026",
+        "publisher": "Motley Fool",
+        "providerPublishTime": 1790909821
+      },
+      {
+        "headline": "What Is the Worst-Performing \"Magnificent Seven\" Stock in 2026?",
+        "publisher": "Motley Fool",
+        "providerPublishTime": 1790893500
+      }
+    ],
+    "XOM": [
+      {
+        "headline": "ExxonMobil Returned $9.4 Billion to Shareholders Last Quarter. Here's the Buyback-to-Dividend Split.",
+        "publisher": "Motley Fool",
+        "providerPublishTime": 1790933700
+      },
+      {
+        "headline": "The Supermajor vs. the Shale Specialist: Is ExxonMobil or Devon Energy the Better Buy at $100 Oil?",
+        "publisher": "Motley Fool",
+        "providerPublishTime": 1790908500
+      },
+      {
+        "headline": "Marathon Petroleum Climbs 5%, Valero Energy Gains 4% as Refiners Outrun Integrated Majors; Exxon Mobil Stays Flat",
+        "publisher": "24/7 Wall St.",
+        "providerPublishTime": 1790877193
+      },
+      {
+        "headline": "ExxonMobil's Advantageous Upstream Assets to Fuel Long-Term Growth",
+        "publisher": "Zacks",
+        "providerPublishTime": 1790872260
+      },
+      {
+        "headline": "Wells Fargo bullish on BP, downgrades Exxon Mobil amid valuation gap",
+        "publisher": "Investing.com",
+        "providerPublishTime": 1790868944
+      },
+      {
+        "headline": "Exxon Mobil downgraded, BP upgraded: Wall Street's top analyst calls",
+        "publisher": "The Fly",
+        "providerPublishTime": 1790861886
+      },
+      {
+        "headline": "Here Are Thursday\u2019s Top Wall Street Analyst Research Calls: BP, Dollar Tree, Exxon Mobil, Lennar, Occidental Petroleum, Rocket Lab, Teva Pharmaceuticals, United Therapeutics, and More",
+        "publisher": "24/7 Wall St.",
+        "providerPublishTime": 1790857040
+      },
+      {
+        "headline": "Market Chatter: US Uses Aviation Supplies as Leverage in Trade Talks With China",
+        "publisher": "MT Newswires",
+        "providerPublishTime": 1790853905
+      }
+    ]
+  }
+}

@@ -52,7 +52,7 @@ export function StatusBanner({ mode, source, error, scanning, scanMessage }: Pro
       <span className="min-w-0 text-terminal-muted">
         <span className="sm:hidden">Live market data</span>
         <span className="hidden sm:inline">
-          Real market data via Finnhub → Yahoo (unofficial) → Stooq cascade. Catalysts blank until briefed.
+          Real market data via Finnhub → Yahoo (unofficial) → Stooq cascade. Catalysts fill from headlines inside 48 hours after the scan.
         </span>
       </span>
     </div>

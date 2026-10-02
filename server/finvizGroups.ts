@@ -11,6 +11,7 @@ import { finvizRowsToGroups, parseFinvizGroupsPerformance } from './finvizParse.
 import { FINVIZ_CACHE_TTL_MS, finvizFetchText, looksLikeFinvizChallenge } from './finvizHttp.ts'
 import { getGroupLeaders } from './groupLeaders.ts'
 import { getGroupStocks } from './groupStocks.ts'
+import { mergeCatalystIntoIdeas, scheduleCatalystEnrichment } from './catalystService.ts'
 import { isMembershipStale, loadMembershipSnapshot } from './groupMembers.ts'
 
 export { finvizRowsToGroups, parseFinvizGroupsPerformance }
@@ -212,7 +213,9 @@ export function createGroupsMiddleware() {
         const match = groups.groups.find((group) => (group.slug || group.id) === slug)
         const label = match?.name ?? slug
         const body = await getGroupStocks(slug, periodParsed.period, label)
-        sendJson(res, 200, body)
+        const merged = mergeCatalystIntoIdeas(body.ideas ?? [])
+        scheduleCatalystEnrichment(body.ideas ?? [], { includeAll: true })
+        sendJson(res, 200, { ...body, ideas: merged.ideas, catalystMeta: merged.meta })
         return
       }
 

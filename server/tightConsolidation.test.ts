@@ -19,18 +19,22 @@ function makeBars(opts: {
   contracting?: boolean
   volumeContract?: boolean
   nearHigh?: boolean
-  aboveMas?: boolean
+  /** up: above 50 and 200. dip-short: under the short averages, still above 50 and 200. */
+  trend?: 'up' | 'dip-short' | 'below-50' | 'below-200'
 }): DailyBar[] {
-  const n = opts.n ?? 80
+  const n = opts.n ?? 260
   const contracting = opts.contracting ?? true
   const volumeContract = opts.volumeContract ?? true
   const nearHigh = opts.nearHigh ?? true
-  const aboveMas = opts.aboveMas ?? true
+  const trend = opts.trend ?? 'up'
   const bars: DailyBar[] = []
   let c = 100
   for (let i = 0; i < n; i += 1) {
     const inRecent = i >= n - TIGHT_CONFIG.recentWindow
-    const ret = aboveMas ? 0.003 : i < n - 25 ? 0.003 : -0.012
+    let ret = 0.003
+    if (trend === 'dip-short' && i >= n - 8) ret = -0.004
+    if (trend === 'below-50') ret = i < n - 30 ? 0.004 : -0.012
+    if (trend === 'below-200') ret = i < 30 ? 0.01 : -0.004
     c *= 1 + ret
     const range = contracting ? (inRecent ? 0.004 : 0.022) : inRecent ? 0.035 : 0.01
     const vol = volumeContract ? (inRecent ? 500_000 : 1_200_000) : inRecent ? 1_600_000 : 900_000
@@ -62,7 +66,11 @@ test('TIGHT_CONFIG documents the tunable constants', () => {
   assert.equal(TIGHT_CONFIG.volumeAvgSessions, 50)
   assert.equal(TIGHT_CONFIG.nearHighMaxPct, 10)
   assert.equal(TIGHT_CONFIG.highLookback, 252)
+  assert.equal(TIGHT_CONFIG.sma50Period, 50)
+  assert.equal(TIGHT_CONFIG.sma200Period, 200)
   assert.equal(TIGHT_CONFIG.useInCoiled, true)
+  assert.equal('smaFast' in TIGHT_CONFIG, false)
+  assert.equal('smaSlow' in TIGHT_CONFIG, false)
 })
 
 test('contracting range and volume near highs above MAs is ok', () => {
@@ -74,7 +82,8 @@ test('contracting range and volume near highs above MAs is ok', () => {
   assert.ok(result.closeSpreadPct > 0)
   assert.equal(result.days, 7)
   assert.equal(result.nearHigh, true)
-  assert.equal(result.aboveMas, true)
+  assert.equal(result.aboveSma50, true)
+  assert.equal(result.aboveSma200, true)
   const detail = compactTightDetail(result)
   assert.equal(detail.rangeRatio, result.rangeRatio)
   assert.equal(detail.days, 7)
@@ -101,11 +110,32 @@ test('far from 52-week high is not ok', () => {
   assert.equal(result.nearHigh, false)
 })
 
-test('below SMA10/20 is not ok', () => {
-  const result = evaluateTightConsolidation(makeBars({ aboveMas: false }))
+test('price under the 10 and 20 SMA is ok when it is still above the 50 and 200', () => {
+  const bars = makeBars({ trend: 'dip-short' })
+  const result = evaluateTightConsolidation(bars)
+  assert.equal(result.aboveSma50, true, result.failedReasons.join('; '))
+  assert.equal(result.aboveSma200, true)
+  assert.equal(result.failedReasons.some((r) => r === 'below-sma50' || r === 'below-sma200'), false)
+  const closes = bars.map((b) => b.c)
+  const price = closes[closes.length - 1]!
+  const sma10 = closes.slice(-10).reduce((a, b) => a + b, 0) / 10
+  const sma20 = closes.slice(-20).reduce((a, b) => a + b, 0) / 20
+  assert.ok(price < sma10, 'fixture should sit under SMA10')
+  assert.ok(price < sma20, 'fixture should sit under SMA20')
+})
+
+test('below the 50 SMA fails', () => {
+  const result = evaluateTightConsolidation(makeBars({ trend: 'below-50' }))
   assert.equal(result.ok, false)
-  assert.ok(result.failedReasons.includes('below-sma10-or-sma20'))
-  assert.equal(result.aboveMas, false)
+  assert.ok(result.failedReasons.includes('below-sma50'))
+  assert.equal(result.aboveSma50, false)
+})
+
+test('below the 200 SMA fails', () => {
+  const result = evaluateTightConsolidation(makeBars({ trend: 'below-200' }))
+  assert.equal(result.ok, false)
+  assert.ok(result.failedReasons.includes('below-sma200'))
+  assert.equal(result.aboveSma200, false)
 })
 
 test('insufficient bars is not ok and does not throw', () => {
@@ -171,7 +201,8 @@ test('real Yahoo daily bars produce internally consistent tight results', () => 
       assert.ok(result.rangeRatio <= TIGHT_CONFIG.rangeRatioMax)
       assert.ok(result.volumeRatio <= TIGHT_CONFIG.volumeRatioMax)
       assert.equal(result.nearHigh, true)
-      assert.equal(result.aboveMas, true)
+      assert.equal(result.aboveSma50, true)
+      assert.equal(result.aboveSma200, true)
     } else {
       assert.ok(result.failedReasons.length >= 1)
     }

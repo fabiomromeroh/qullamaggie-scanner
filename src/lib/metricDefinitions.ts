@@ -6,6 +6,7 @@
 import { AUTO_ADD_MIN_KYLE_SCORE, STAGE_CONFIG } from './setupStage'
 import { SURFER_CONFIG, type MaKey } from './surfer'
 import { TIGHT_CONFIG } from './tightConsolidation'
+import { catalystDefinitionText } from './catalyst'
 import {
   APLUS_CONFIG,
   BAR_WINDOWS,
@@ -54,16 +55,17 @@ const SURFER_PERIOD: Record<MaKey, number> = {
 /** Strict ride-the-MA rule for one average. Numbers come from {@link SURFER_CONFIG}. */
 export function surferRuleText(key: MaKey): string {
   const period = SURFER_PERIOD[key]
-  const window = SURFER_CONFIG.windowSessions[key]
-  const touches = SURFER_CONFIG.minTouches[key]
-  const slope = SURFER_CONFIG.slopeLookback[key]
-  return `Over the last ${window} sessions, every close must stay within ${SURFER_CONFIG.closeBreakTolerancePct}% under that bar's ${period}-day SMA (the average of the ${period} closes ending on the bar). A touch is a low at most ${SURFER_CONFIG.touchProximityPct}% above the SMA, or through it, with the high still reaching the SMA; consecutive touches are one episode and at least ${touches} are required. Each closed episode must bounce within ${SURFER_CONFIG.bounceSessions} sessions (close above the SMA and above the touch close), the latest close must be above the SMA, and the SMA must be strictly higher than ${slope} sessions ago.`
+  const c = SURFER_CONFIG
+  const window = c.windowSessions[key]
+  const slope = c.slopeLookback[key]
+  const slopeWord = c.slopeAllowFlat ? 'at least flat versus' : 'strictly higher than'
+  return `Over the last ${window} sessions the stock rides the ${period}-day SMA. Allowed distance is kProximity ${c.kProximity[key]} × ADR% (a bar is near when its low is within that percent above the SMA at that bar, or through it). A close may dip kBreak ${c.kBreak[key]} × ADR% under the SMA if a later close is back at the SMA within ${c.recoverySessions} sessions; a deeper close fails. Near on at least ${c.nearFraction * 100}% of the window or once in the last ${c.recentNearSessions} bars. The latest price must be at or above the SMA (tolerance ${c.latestToleranceAdr} × ADR%) and not more than ${c.maxExtensionAdrMultiple} × ADR% above it. The SMA must be ${slopeWord} its value ${slope} sessions ago.`
 }
 
 /** Strict contraction rule. Numbers come from {@link TIGHT_CONFIG}. */
 export function tightRuleText(): string {
   const c = TIGHT_CONFIG
-  return `All of these must pass over the last ${c.recentWindow} sessions versus the prior ${c.baselineSessions}: average daily range% ratio <= ${c.rangeRatioMax}, close-to-close spread ((max close − min close) / min close × 100) <= min(${c.closeSpreadMaxMultipleOfAdr} × baseline ADR%, ${c.closeSpreadAbsMaxPct}%), and average volume / the trailing ${c.volumeAvgSessions}-session average <= ${c.volumeRatioMax}. Price must also sit within ${c.nearHighMaxPct}% of the ${c.highLookback}-session high (pctFrom52wHigh >= -${c.nearHighMaxPct}) and above both SMA${c.smaFast} and SMA${c.smaSlow}.`
+  return `All of these must pass over the last ${c.recentWindow} sessions versus the prior ${c.baselineSessions}: average daily range% ratio <= ${c.rangeRatioMax}, close-to-close spread ((max close − min close) / min close × 100) <= min(${c.closeSpreadMaxMultipleOfAdr} × baseline ADR%, ${c.closeSpreadAbsMaxPct}%), and average volume / the trailing ${c.volumeAvgSessions}-session average <= ${c.volumeRatioMax}. Price must also sit within ${c.nearHighMaxPct}% of the ${c.highLookback}-session high (pctFrom52wHigh >= -${c.nearHighMaxPct}) and above both the ${c.sma50Period}-day SMA and the ${c.sma200Period}-day SMA. Shorter moving averages are not part of this rule.`
 }
 
 /** Stage rule. Numbers come from {@link STAGE_CONFIG}. */
@@ -300,7 +302,7 @@ export const METRIC_DEFS = {
     '50MA Surfer',
     'Strict ride of the 50-day SMA.',
     surferRuleText('sma50'),
-    'Badge 50S. The strict filter keeps rows where surfer50 is true. The 50-day window asks for fewer touches because a slow average rarely prints three clean tests.',
+    `Badge 50S. The strict filter keeps rows where surfer50 is true. The 50-day window is ${SURFER_CONFIG.windowSessions.sma50} sessions and kProximity is ${SURFER_CONFIG.kProximity.sma50}, wider than the 10-day average because a slower mean sits farther from price.`,
   ),
   nearAth: d(
     'Near ATH',
@@ -343,10 +345,15 @@ export const METRIC_DEFS = {
     'Tight rule distance from the high.',
     `${highHow()} The tight rule passes this part when the percent is >= -${TIGHT_CONFIG.nearHighMaxPct}.`,
   ),
-  tightAboveMas: d(
-    'Above SMA10 and SMA20',
-    'Loose moving-average half of the tight rule.',
-    `Price must be above both SMA${TIGHT_CONFIG.smaFast} and SMA${TIGHT_CONFIG.smaSlow}. These are the loose comparisons, not the strict surfer flags.`,
+  tightAboveSma50: d(
+    'Above SMA50',
+    'Tight rule versus the 50-day average.',
+    `Price must be above the ${TIGHT_CONFIG.sma50Period}-day SMA. This is the tight-consolidation gate, not the strict surfer flag and not the Above 50 SMA filter.`,
+  ),
+  tightAboveSma200: d(
+    'Above 200 DMA',
+    'Tight rule versus the 200-day average.',
+    `Price must be above the ${TIGHT_CONFIG.sma200Period}-day SMA. This is the tight-consolidation gate. Shorter averages are not required.`,
   ),
   priorRunPct: d(
     'Prior run%',
@@ -398,8 +405,20 @@ export const METRIC_DEFS = {
   earningsClear: d('Earnings clear', 'Further out, unknown, or already reported.', earningsHow(), earningsChipNote('clear')),
   catalyst: d(
     'Catalyst',
-    'Hand-entered reason, never filled by the APIs.',
-    'The scan stores null. The Has catalyst chip keeps rows where catalyst is non-null. Earnings and GAP characteristic tags are added only when this text matches earnings/eps or gap/gapped.',
+    'Important news inside the rolling 48h window.',
+    catalystDefinitionText(),
+    'The scan file stores null. The server merges a checked result onto the response. The Has catalyst chip keeps rows where hasCatalyst is true (or, on an older payload, where the display string is non-null). Pending and unchecked names are excluded and counted separately. Earnings and GAP tags are added only when the headline matches earnings/eps or gap/gapped. Future earnings avoid is a separate gate.',
+  ),
+  catalystStatus: d(
+    'Catalyst status',
+    'Whether this name has been looked up.',
+    'checked means a news lookup finished (a catalyst or an honest miss). pending means the name is a candidate and the lookup has not finished. unchecked means it was not a candidate this pass. error means the lookup failed and will be retried after the short negative cache.',
+  ),
+  hasCatalyst: d(
+    'Has catalyst',
+    'Filter for a volume-moving headline.',
+    catalystDefinitionText(),
+    'Counts positive and negative direction. Pending and unchecked ideas are hidden while this is on, and the bar reports how many of those are not yet checked.',
   ),
   charEarnings: d(
     'Earnings tag',
@@ -429,7 +448,7 @@ export const METRIC_DEFS = {
   ideaNotes: d(
     'Notes',
     'Provider note stored on the idea.',
-    'Live scans store which provider produced the bars and that the catalyst was left blank. It is not a second score.',
+    'Live scans store which provider produced the bars. Catalyst headlines are merged after the scan from news inside 48 hours. It is not a second score.',
   ),
   filterSearch: d(
     'Search',
@@ -673,7 +692,7 @@ export const METRIC_DEFS = {
   newsSource: d(
     'News source',
     'Where the headlines were loaded from.',
-    'Finnhub company-news when that call returns items, otherwise Yahoo search. The list is capped at 8 headlines. Headlines are not turned into catalysts.',
+    'Finnhub company-news when that call returns items, otherwise Yahoo search. The panel list is capped at 8 headlines. A separate 48h lookup classifies important headlines into catalyst categories.',
   ),
 } as const satisfies Record<string, MetricDef>
 

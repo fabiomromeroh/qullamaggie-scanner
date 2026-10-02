@@ -162,6 +162,8 @@ export interface GroupStocksResponse {
   stale: boolean
   ideas: TradingIdea[]
   failed: GroupStockFailure[]
+  /** News-catalyst coverage for this response. Not stored in the group-stocks cache. */
+  catalystMeta?: CatalystMeta
   /**
    * Selected-period performance percent, keyed by ticker.
    * Snapshot mode fills this from computed returns (same object as `perfByTicker`).
@@ -208,7 +210,31 @@ export interface TradingIdea {
   /** (price / SMA50 − 1) × 100 */
   pctAboveSma50: number
   setupType: SetupType
+  /**
+   * Display string for the top catalyst headline. The scan stores null;
+   * the server fills this when it merges a checked news result.
+   */
   catalyst: string | null
+  /**
+   * True when an important news item (or a past earnings date) falls inside
+   * the rolling 48h window. Absent on older payloads; the filter then falls
+   * back to a non-null `catalyst` string.
+   */
+  hasCatalyst?: boolean
+  /** Category labels, heaviest first. */
+  catalystCategories?: string[]
+  catalystDirection?: 'positive' | 'negative' | 'mixed'
+  catalystHeadline?: string
+  catalystUrl?: string
+  catalystSource?: string
+  /** ISO publication time of the top item. */
+  catalystAt?: string
+  catalystAgeHours?: number
+  catalystScore?: number
+  /** Important items inside the window, including a calendar earnings hit. */
+  catalystCount?: number
+  /** checked = looked up; pending = candidate not finished; unchecked = not a candidate; error = lookup failed. */
+  catalystStatus?: 'checked' | 'pending' | 'unchecked' | 'error'
   isAPlus: boolean
   notes: string
   whyQualifies: string
@@ -262,19 +288,22 @@ export interface TradingIdea {
   /** avoid = same/next trading day; alert ≈ 2 days; clear otherwise. */
   earningsStatus: EarningsStatus
   /**
-   * Strict 10MA surfer: price rides SMA10 with bounced touches (see src/lib/surfer.ts).
-   * Distinct from `aboveSma10` (price merely above the SMA).
+   * Strict 10MA surfer: price rides SMA10 within an ADR-scaled distance
+   * (see src/lib/surfer.ts). Distinct from `aboveSma10` (price merely above the SMA).
    */
   surfer10: boolean
   surfer20: boolean
   surfer50: boolean
-  /** Compact touches/bounces/slopePct per MA for tooltips. */
+  /** ADR-relative distance, near-bar count, slope, and recovery per MA. */
   surferDetail?: {
-    sma10: { touches: number; bounces: number; slopePct: number }
-    sma20: { touches: number; bounces: number; slopePct: number }
-    sma50: { touches: number; bounces: number; slopePct: number }
+    sma10: SurferMaSnapshot
+    sma20: SurferMaSnapshot
+    sma50: SurferMaSnapshot
   }
-  /** Strict tight-consolidation flag (see src/lib/tightConsolidation.ts). */
+  /**
+   * Strict tight consolidation (see src/lib/tightConsolidation.ts).
+   * Requires price above the 50-day and 200-day SMAs. Independent of surfer.
+   */
   tightConsolidation: boolean
   /** Compact ratios for the Tight badge tooltip and detail panel. */
   tightDetail?: {
@@ -282,8 +311,41 @@ export interface TradingIdea {
     closeSpreadPct: number
     volumeRatio: number
     days: number
+    nearHigh: boolean
+    aboveSma50: boolean
+    aboveSma200: boolean
     failedReasons?: string[]
   }
+}
+
+/** One MA on `surferDetail`. Mirrors src/lib/surfer.ts without importing it (cycle). */
+export interface SurferMaSnapshot {
+  ok: boolean
+  distancePct: number
+  distanceAdr: number
+  nearBars: number
+  windowBars: number
+  minDistancePct: number
+  maxCloseBelowPct: number
+  recovered: boolean
+  slopePct: number
+  adrPct: number
+  proximityPct: number
+  reason?: string
+}
+
+/** Coverage of the 48h catalyst lookup. Attached at response time, not in the scan file. */
+export interface CatalystMeta {
+  checked: number
+  pending: number
+  failed: number
+  unchecked: number
+  candidates: number
+  asOf: string
+  windowHours: number
+  finnhubCalls: number
+  yahooCalls: number
+  maxFinnhubCallsPer60s: number
 }
 
 export interface DashboardData {
@@ -320,6 +382,8 @@ export interface DashboardData {
   stage15BelowSma200Count?: number
   stage15BelowSma50Count?: number
   stage15MissingSmaCount?: number
+  /** Catalyst lookup coverage for the ideas in this payload. */
+  catalystMeta?: CatalystMeta
 }
 
 

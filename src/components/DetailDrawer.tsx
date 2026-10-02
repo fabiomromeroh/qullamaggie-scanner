@@ -1,7 +1,8 @@
+import type { ReactNode } from 'react'
 import type { MetricId } from '../lib/metricDefinitions'
 import type { TradingIdea } from '../types'
 import { stageLabel } from '../lib/setupStage'
-import { SURFER_CONFIG } from '../lib/surfer'
+import { formatSurferDistance, SURFER_CONFIG } from '../lib/surfer'
 import { TIGHT_CONFIG } from '../lib/tightConsolidation'
 import { fmtDollarVol, fmtPct, fmtPrice, fmtRvol, pctClass } from '../utils/format'
 import { MetricTip } from './MetricTip'
@@ -39,10 +40,11 @@ function SurferDetailSection({ idea }: { idea: TradingIdea }) {
         Strict MA surfer
       </h3>
       <p className="mb-2 text-[11px] text-terminal-dim">
-        Ride the SMA and bounce off it (window {SURFER_CONFIG.windowSessions.sma10}/
-        {SURFER_CONFIG.windowSessions.sma50} sessions, min touches {SURFER_CONFIG.minTouches.sma10}/
-        {SURFER_CONFIG.minTouches.sma50}, bounce {SURFER_CONFIG.bounceSessions}d, close-break ≤{' '}
-        {SURFER_CONFIG.closeBreakTolerancePct}%). Loose above-SMA flags stay on Trend gate.
+        ADR-relative ride (window {SURFER_CONFIG.windowSessions.sma10}/
+        {SURFER_CONFIG.windowSessions.sma20}/{SURFER_CONFIG.windowSessions.sma50} sessions,
+        kProximity {SURFER_CONFIG.kProximity.sma10}/{SURFER_CONFIG.kProximity.sma20}/
+        {SURFER_CONFIG.kProximity.sma50} × ADR%, extension cap {SURFER_CONFIG.maxExtensionAdrMultiple}× ADR).
+        Loose above-SMA flags stay on Trend gate.
       </p>
       <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-3">
         {rows.map((row) => {
@@ -51,9 +53,7 @@ function SurferDetailSection({ idea }: { idea: TradingIdea }) {
             <MetricTip
               key={row.key}
               id={row.key === 'sma10' ? 'surfer10' : row.key === 'sma20' ? 'surfer20' : 'surfer50'}
-              extra={
-                d ? `${d.touches} touches · ${d.bounces} bounces · slope ${d.slopePct}%` : undefined
-              }
+              extra={d ? formatSurferDistance(row.label, d) : undefined}
               className="block rounded border border-terminal-border bg-terminal-bg px-2 py-2"
             >
               <div className="flex items-center justify-between gap-1">
@@ -69,15 +69,27 @@ function SurferDetailSection({ idea }: { idea: TradingIdea }) {
                 </span>
               </div>
               <div className="mt-1 font-mono text-[11px] text-terminal-fg">
-                {d
-                  ? `${d.touches} touches · ${d.bounces} bounces · slope ${d.slopePct}%`
-                  : '—'}
+                {d ? formatSurferDistance(row.label, d) : '—'}
               </div>
             </MetricTip>
           )
         })}
       </div>
     </section>
+  )
+}
+
+const tightCardClass = 'block rounded border border-terminal-border bg-terminal-bg px-2 py-2'
+
+function tightRowBody(row: { label: string; value: string; ok: boolean }): ReactNode {
+  return (
+    <>
+      <div className="text-[9px] uppercase tracking-wide text-terminal-dim">{row.label}</div>
+      <div className="mt-0.5 font-mono text-xs text-terminal-fg">{row.value}</div>
+      <div className={`text-[10px] ${row.ok ? 'text-terminal-green' : 'text-terminal-dim'}`}>
+        {passFail(row.ok)}
+      </div>
+    </>
   )
 }
 
@@ -90,44 +102,58 @@ function TightDetailSection({ idea }: { idea: TradingIdea }) {
   const spreadOk = reasons.length
     ? !has('close-spread')
     : d != null && d.closeSpreadPct <= TIGHT_CONFIG.closeSpreadAbsMaxPct
-  const nearHigh = idea.pctFrom52wHigh >= -TIGHT_CONFIG.nearHighMaxPct
-  const aboveMas = idea.aboveSma10 && idea.aboveSma20
-  const rows = [
+  const nearHigh = d?.nearHigh ?? idea.pctFrom52wHigh >= -TIGHT_CONFIG.nearHighMaxPct
+  const above50 = d?.aboveSma50 ?? idea.aboveSma50
+  const above200 = d?.aboveSma200 ?? idea.aboveSma200
+  const rows: { label: string; value: string; ok: boolean; hint: string; id: MetricId }[] = [
     {
       label: 'Range contraction',
       value: d ? `${d.rangeRatio}×` : '—',
       ok: rangeOk,
       hint: `≤ ${TIGHT_CONFIG.rangeRatioMax} vs prior ${TIGHT_CONFIG.baselineSessions}d`,
+      id: 'tightRangeRatio',
     },
     {
       label: 'Volume ratio',
       value: d ? `${d.volumeRatio}×` : '—',
       ok: volumeOk,
       hint: `≤ ${TIGHT_CONFIG.volumeRatioMax} vs ${TIGHT_CONFIG.volumeAvgSessions}d avg`,
+      id: 'tightVolumeRatio',
     },
     {
       label: 'Close spread',
       value: d ? `${d.closeSpreadPct}%` : '—',
       ok: spreadOk,
       hint: `cap ${TIGHT_CONFIG.closeSpreadAbsMaxPct}% and ${TIGHT_CONFIG.closeSpreadMaxMultipleOfAdr}× baseline ADR`,
+      id: 'tightCloseSpread',
     },
     {
       label: 'Days',
       value: d ? String(d.days) : String(TIGHT_CONFIG.recentWindow),
       ok: Boolean(d),
       hint: 'recent window',
+      id: 'tightWindowDays',
     },
     {
       label: 'Near 52w high',
       value: fmtPct(idea.pctFrom52wHigh),
       ok: nearHigh,
       hint: `within ${TIGHT_CONFIG.nearHighMaxPct}%`,
+      id: 'tightNearHigh',
     },
     {
-      label: 'Above SMA10+20',
-      value: `${idea.aboveSma10 ? '10' : '·'} / ${idea.aboveSma20 ? '20' : '·'}`,
-      ok: aboveMas,
-      hint: 'loose price-above-SMA',
+      label: 'Above SMA50',
+      value: above50 ? 'yes' : 'no',
+      ok: above50,
+      hint: 'price above the 50-day SMA',
+      id: 'tightAboveSma50',
+    },
+    {
+      label: 'Above 200 DMA',
+      value: above200 ? 'yes' : 'no',
+      ok: above200,
+      hint: 'price above the 200-day SMA',
+      id: 'tightAboveSma200',
     },
   ]
   return (
@@ -140,34 +166,27 @@ function TightDetailSection({ idea }: { idea: TradingIdea }) {
         {d ? ` (${d.days}d window)` : ''}.
       </p>
       <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
-        {rows.map((row) => (
-          <MetricTip
-            key={row.label}
-            id={
-              row.label === 'Range contraction'
-                ? 'tightRangeRatio'
-                : row.label === 'Volume ratio'
-                  ? 'tightVolumeRatio'
-                  : row.label === 'Close spread'
-                    ? 'tightCloseSpread'
-                    : row.label === 'Days'
-                      ? 'tightWindowDays'
-                      : row.label === 'Near 52w high'
-                        ? 'tightNearHigh'
-                        : 'tightAboveMas'
-            }
-            extra={row.hint}
-            className="block rounded border border-terminal-border bg-terminal-bg px-2 py-2"
-          >
-            <div className="text-[9px] uppercase tracking-wide text-terminal-dim">{row.label}</div>
-            <div className="mt-0.5 font-mono text-xs text-terminal-fg">{row.value}</div>
-            <div
-              className={`text-[10px] ${row.ok ? 'text-terminal-green' : 'text-terminal-dim'}`}
-            >
-              {passFail(row.ok)}
-            </div>
-          </MetricTip>
-        ))}
+        <MetricTip id="tightRangeRatio" extra={rows[0]!.hint} className={tightCardClass}>
+          {tightRowBody(rows[0]!)}
+        </MetricTip>
+        <MetricTip id="tightVolumeRatio" extra={rows[1]!.hint} className={tightCardClass}>
+          {tightRowBody(rows[1]!)}
+        </MetricTip>
+        <MetricTip id="tightCloseSpread" extra={rows[2]!.hint} className={tightCardClass}>
+          {tightRowBody(rows[2]!)}
+        </MetricTip>
+        <MetricTip id="tightWindowDays" extra={rows[3]!.hint} className={tightCardClass}>
+          {tightRowBody(rows[3]!)}
+        </MetricTip>
+        <MetricTip id="tightNearHigh" extra={rows[4]!.hint} className={tightCardClass}>
+          {tightRowBody(rows[4]!)}
+        </MetricTip>
+        <MetricTip id="tightAboveSma50" extra={rows[5]!.hint} className={tightCardClass}>
+          {tightRowBody(rows[5]!)}
+        </MetricTip>
+        <MetricTip id="tightAboveSma200" extra={rows[6]!.hint} className={tightCardClass}>
+          {tightRowBody(rows[6]!)}
+        </MetricTip>
       </div>
     </section>
   )
@@ -409,17 +428,34 @@ export function DetailDrawer({ idea, source = 'live' }: Props) {
           <h3 className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-terminal-dim">
             <MetricTip id="catalyst">Catalyst</MetricTip>
           </h3>
-          <p className="rounded border border-terminal-border bg-terminal-bg px-3 py-2 text-sm text-terminal-fg">
-            {idea.catalyst ? (
-              <MetricTip id="catalyst" extra={idea.catalyst}>
-                {idea.catalyst}
-              </MetricTip>
+          <div className="rounded border border-terminal-border bg-terminal-bg px-3 py-2 text-sm text-terminal-fg">
+            <p className="text-[11px] text-terminal-dim">
+              <MetricTip id="catalystStatus">{idea.catalystStatus ?? 'unchecked'}</MetricTip>
+              {idea.catalystDirection ? ` · ${idea.catalystDirection}` : ''}
+              {idea.catalystCount != null ? ` · ${idea.catalystCount} important` : ''}
+              {idea.catalystAgeHours != null ? ` · ${idea.catalystAgeHours}h ago` : ''}
+              {idea.catalystSource ? ` · ${idea.catalystSource}` : ''}
+            </p>
+            {idea.catalystCategories?.length ? (
+              <p className="mt-1 text-[11px] text-terminal-muted">{idea.catalystCategories.join(' · ')}</p>
+            ) : null}
+            {idea.catalystHeadline || idea.catalyst ? (
+              idea.catalystUrl ? (
+                <a
+                  href={idea.catalystUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="mt-1 block text-terminal-blue underline"
+                >
+                  {idea.catalystHeadline ?? idea.catalyst}
+                </a>
+              ) : (
+                <p className="mt-1">{idea.catalystHeadline ?? idea.catalyst}</p>
+              )
             ) : (
-              <MetricTip id="catalyst" className="text-terminal-dim">
-                No discrete catalyst — not preferred for A+.
-              </MetricTip>
+              <p className="mt-1 text-terminal-dim">No important headline inside the 48h window.</p>
             )}
-          </p>
+          </div>
         </section>
 
         <section>

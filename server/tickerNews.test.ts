@@ -6,6 +6,7 @@ import {
   finalizeNewsItems,
   isHttpUrl,
   parseFinnhubNews,
+  parseRelatedTickers,
   parseYahooNews,
   type NewsItem,
 } from './tickerNews.ts'
@@ -27,6 +28,7 @@ test('parseFinnhubNews reads a trimmed live AMD sample', () => {
   )
   assert.equal(items[0]?.source, 'Yahoo')
   assert.equal(items[2]?.source, 'SeekingAlpha')
+  assert.deepEqual(items[0]?.related, ['AMD'])
 })
 
 test('parseYahooNews reads a trimmed live AMD search sample', () => {
@@ -39,6 +41,9 @@ test('parseYahooNews reads a trimmed live AMD search sample', () => {
   assert.equal(items[0]?.source, 'Insider Monkey')
   assert.ok(items[0]?.url.startsWith('https://'))
   assert.ok(items[0]?.datetime.startsWith('20'))
+  assert.deepEqual(items[0]?.related, ['AMD'])
+  assert.deepEqual(parseRelatedTickers('AAPL, MSFT, aapl'), ['AAPL', 'MSFT'])
+  assert.equal(parseRelatedTickers(''), undefined)
 })
 
 test('parseFinnhubNews and parseYahooNews ignore empty/invalid payloads', () => {

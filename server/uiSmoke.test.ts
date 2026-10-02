@@ -2,22 +2,48 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { test } from 'node:test'
-import { surferBadgeTitle, type SurferDetail } from '../src/lib/surfer.ts'
+import { surferBadgeTitle, type SurferDetail, type SurferMaDetail } from '../src/lib/surfer.ts'
 import { tightBadgeTitle } from '../src/lib/tightConsolidation.ts'
+
+function ma(partial: Partial<SurferMaDetail>): SurferMaDetail {
+  return {
+    ok: true,
+    distancePct: 0.8,
+    distanceAdr: 0.2,
+    nearBars: 6,
+    windowBars: 15,
+    minDistancePct: -0.2,
+    maxCloseBelowPct: 0.1,
+    recovered: true,
+    slopePct: 1.2,
+    adrPct: 4,
+    proximityPct: 2,
+    ...partial,
+  }
+}
 
 test('badge titles and detail-panel copy for strict surfer + tight', () => {
   const detail: SurferDetail = {
-    sma10: { touches: 3, bounces: 3, slopePct: 0.42 },
-    sma20: { touches: 3, bounces: 2, slopePct: 0.61 },
-    sma50: { touches: 1, bounces: 0, slopePct: -0.1 },
+    sma10: ma({ slopePct: 0.42, nearBars: 8 }),
+    sma20: ma({ distancePct: 0.8, distanceAdr: 0.2, slopePct: 1.2 }),
+    sma50: ma({ ok: false, distancePct: -0.4, distanceAdr: -0.1, recovered: false, slopePct: -0.1, windowBars: 25 }),
   }
   assert.equal(
-    surferBadgeTitle('10MA Surfer', detail),
-    '10MA Surfer: 3 touches, 3 bounces, slope 0.42%',
+    surferBadgeTitle('20MA Surfer', detail),
+    '20MA Surfer: +0.8% above 20MA = 0.2 ADR · near 6/15 · slope 1.2% · recovered',
   )
-  assert.match(surferBadgeTitle('20MA Surfer', detail), /2 bounces/)
+  assert.match(surferBadgeTitle('10MA Surfer', detail), /near 8\/15/)
+  assert.match(surferBadgeTitle('50MA Surfer', detail), /not recovered/)
   assert.match(
-    tightBadgeTitle({ rangeRatio: 0.44, closeSpreadPct: 2.1, volumeRatio: 0.7, days: 7 }),
+    tightBadgeTitle({
+      rangeRatio: 0.44,
+      closeSpreadPct: 2.1,
+      volumeRatio: 0.7,
+      days: 7,
+      nearHigh: true,
+      aboveSma50: true,
+      aboveSma200: true,
+    }),
     /range 0\.44/,
   )
 

@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
-import type { EarningsStatus, IdeaFilters, IndustryGroup, SetupStage, SetupType } from '../types'
+import type { CatalystMeta, EarningsStatus, IdeaFilters, IndustryGroup, SetupStage, SetupType } from '../types'
 import { ALL_EARNINGS_STATUSES, ALL_SETUP_TYPES, DEFAULT_FILTERS } from '../types'
 import {
   ABOVE_200_DMA_LABEL,
@@ -8,17 +8,75 @@ import {
   countActiveFilters,
   resetFilters,
 } from '../lib/ideaFilters'
-import { metricTipAttrs } from '../lib/metricDefinitions'
-import { ALL_SETUP_STAGES, stageLabel } from '../lib/setupStage'
+import { metricTipAttrs, type MetricId } from '../lib/metricDefinitions'
+import { stageLabel } from '../lib/setupStage'
 import { MetricTip } from './MetricTip'
 
 const FILTERS_EXPAND_KEY = 'qm-filters-expanded'
+
+const STAGE_CHIP_ORDER: SetupStage[] = ['watching', 'coiled', 'triggering']
+
+const CHIP =
+  'flex min-h-8 cursor-help items-center gap-1.5 rounded border px-2.5 py-1.5 text-[10px]'
+
+function chipClass(on: boolean, tone: 'green' | 'blue' | 'amber' | 'purple' | 'red' | 'gold' = 'green'): string {
+  if (!on) return `${CHIP} border-terminal-border bg-terminal-bg text-terminal-dim`
+  if (tone === 'blue') return `${CHIP} border-terminal-blue/40 bg-terminal-blue/20 text-terminal-blue`
+  if (tone === 'amber') return `${CHIP} border-terminal-amber/40 bg-terminal-amber/20 text-terminal-amber`
+  if (tone === 'purple') return `${CHIP} border-terminal-purple/40 bg-terminal-purple/20 text-terminal-purple`
+  if (tone === 'red') return `${CHIP} border-terminal-red/40 bg-terminal-red-dim text-terminal-red`
+  if (tone === 'gold') return `${CHIP} border-terminal-a-plus/40 bg-terminal-a-plus/15 text-terminal-a-plus`
+  return `${CHIP} border-terminal-green/40 bg-terminal-green/15 text-terminal-green`
+}
+
+function earningsLabel(status: EarningsStatus): string {
+  if (status === 'clear') return 'Clear'
+  if (status === 'alert') return 'Alert'
+  return 'Avoid'
+}
+
+function FilterGroup({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-0.5" data-filter-group={label}>
+      <span className="text-[10px] uppercase tracking-wide text-terminal-dim">{label}</span>
+      <div className="flex flex-wrap items-center gap-1">{children}</div>
+    </div>
+  )
+}
+
+function CheckChip({
+  id,
+  label,
+  checked,
+  onChange,
+  tone = 'green',
+}: {
+  id: MetricId
+  label: string
+  checked: boolean
+  onChange: (checked: boolean) => void
+  tone?: 'green' | 'gold'
+}) {
+  return (
+    <label {...metricTipAttrs(id)} className={chipClass(checked, tone)}>
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={(e) => onChange(e.target.checked)}
+        className="accent-terminal-green"
+      />
+      <span>{label}</span>
+    </label>
+  )
+}
 
 interface Props {
   filters: IdeaFilters
   onChange: (next: IdeaFilters) => void
   /** Restores the scan defaults and the group-view baseline. */
   onReset?: () => void
+  /** Clears the selected group and its stock payload. */
+  onClearGroup?: () => void
   /**
    * Values treated as "not active" in the counter.
    * Normal scan uses DEFAULT_FILTERS. Group view uses GROUP_VIEW_DEFAULT_FILTERS.
@@ -27,6 +85,10 @@ interface Props {
   groups: IndustryGroup[]
   /** Compact top-band layout (no tall help blurb). */
   dense?: boolean
+  /** Lookup coverage for the active view. */
+  catalystMeta?: CatalystMeta | null
+  /** Ideas that pass every other filter but are still pending or unchecked. */
+  uncheckedCount?: number
 }
 
 function readExpandedPreference(): boolean {
@@ -37,16 +99,19 @@ function readExpandedPreference(): boolean {
   } catch {
     /* ignore */
   }
-  return false // collapsed by default on mobile
+  return false
 }
 
 export function FiltersBar({
   filters,
   onChange,
   onReset,
+  onClearGroup,
   baseline = DEFAULT_FILTERS,
   groups,
   dense = false,
+  catalystMeta = null,
+  uncheckedCount = 0,
 }: Props) {
   const [expanded, setExpanded] = useState(readExpandedPreference)
   const activeCount = useMemo(
@@ -75,7 +140,7 @@ export function FiltersBar({
     const stages = has ? filters.stages.filter((x) => x !== s) : [...filters.stages, s]
     onChange({
       ...filters,
-      stages: stages.length ? stages : [...ALL_SETUP_STAGES],
+      stages: stages.length ? stages : [...STAGE_CHIP_ORDER],
     })
   }
 
@@ -100,292 +165,190 @@ export function FiltersBar({
     onChange(resetFilters(filters, baseline))
   }
 
+  const clearGroup = () => {
+    if (onClearGroup) {
+      onClearGroup()
+      return
+    }
+    onChange({ ...filters, groupId: null })
+  }
+
   const filterBody = (
     <div className="flex max-h-[50vh] flex-wrap items-end gap-2 overflow-y-auto overscroll-contain sm:max-h-none sm:gap-3">
-      <label
-        {...metricTipAttrs('filterSearch')}
-        className="flex min-w-[40%] flex-1 cursor-help flex-col gap-0.5 text-[10px] text-terminal-dim sm:min-w-0 sm:flex-none"
-      >
-        Search
-        <input
-          value={filters.search}
-          onChange={(e) => onChange({ ...filters, search: e.target.value })}
-          placeholder="Ticker / name / tag"
-          className="w-full min-w-[8rem] rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1.5 text-xs text-terminal-fg outline-none focus:border-terminal-blue sm:w-32 sm:py-1"
-        />
-      </label>
-
-      <label {...metricTipAttrs('filterMinRvol')} className="flex cursor-help flex-col gap-0.5 text-[10px] text-terminal-dim">
-        Min RVOL
-        <input
-          type="number"
-          min={0}
-          step={0.1}
-          value={filters.minRvol}
-          onChange={(e) => onChange({ ...filters, minRvol: Number(e.target.value) || 0 })}
-          className="w-16 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1 font-mono text-xs text-terminal-fg outline-none focus:border-terminal-blue sm:w-20"
-        />
-      </label>
-
-      <label
-        {...metricTipAttrs('filterMaxPctFromHigh')}
-        className="flex cursor-help flex-col gap-0.5 text-[10px] text-terminal-dim"
-      >
-        Max % from highs
-        <input
-          type="number"
-          min={0}
-          max={100}
-          step={1}
-          value={filters.maxPctFromHigh}
-          onChange={(e) =>
-            onChange({ ...filters, maxPctFromHigh: Number(e.target.value) || 0 })
-          }
-          className="w-20 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1 font-mono text-xs text-terminal-fg outline-none focus:border-terminal-blue sm:w-24"
-        />
-      </label>
-
-      <label {...metricTipAttrs('filterGroup')} className="flex cursor-help flex-col gap-0.5 text-[10px] text-terminal-dim">
-        Group
-        <select
-          value={filters.groupId ?? ''}
-          onChange={(e) =>
-            onChange({ ...filters, groupId: e.target.value || null })
-          }
-          className="min-w-[120px] rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1 text-xs text-terminal-fg outline-none focus:border-terminal-blue sm:min-w-[140px]"
+      <FilterGroup label="Search">
+        <label
+          {...metricTipAttrs('filterSearch')}
+          className="flex min-w-[8rem] cursor-help flex-col gap-0.5 text-[10px] text-terminal-dim"
         >
-          <option value="">All groups</option>
-          {groups.map((g) => (
-            <option key={g.id} value={g.id}>
-              {g.name}
-            </option>
-          ))}
-        </select>
-      </label>
+          <input
+            value={filters.search}
+            onChange={(e) => onChange({ ...filters, search: e.target.value })}
+            placeholder="Ticker / name / tag"
+            aria-label="Search"
+            className="w-full min-w-[8rem] rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1.5 text-xs text-terminal-fg outline-none focus:border-terminal-blue sm:w-32"
+          />
+        </label>
+      </FilterGroup>
 
-      <div className="flex flex-col gap-0.5 text-[10px] text-terminal-dim">
-        Setup type
-        <div className="flex flex-wrap gap-1">
-          {ALL_SETUP_TYPES.map((s) => {
-            const on = filters.setupTypes.includes(s)
-            return (
-              <button
-                key={s}
-                type="button"
-                onClick={() => toggleSetup(s)}
-                {...metricTipAttrs(
-                  s === 'Range Breakout'
-                    ? 'setupRangeBreakout'
-                    : s === 'Episodic Pivot'
-                      ? 'setupEpisodicPivot'
-                      : 'setupContinuation',
-                )}
-                className={`cursor-help rounded px-2.5 py-1.5 text-[10px] min-h-8 ${
-                  on
-                    ? 'bg-terminal-blue/20 text-terminal-blue border border-terminal-blue/40'
-                    : 'bg-terminal-bg text-terminal-dim border border-terminal-border'
-                }`}
-              >
-                {s}
-              </button>
-            )
-          })}
-        </div>
-      </div>
+      <FilterGroup label="Group">
+        <label {...metricTipAttrs('filterGroup')} className="flex cursor-help flex-col gap-0.5 text-[10px] text-terminal-dim">
+          <select
+            value={filters.groupId ?? ''}
+            aria-label="Group"
+            onChange={(e) => onChange({ ...filters, groupId: e.target.value || null })}
+            className="min-h-8 min-w-[120px] rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1 text-[10px] text-terminal-fg outline-none focus:border-terminal-blue sm:min-w-[140px]"
+          >
+            <option value="">All groups</option>
+            {groups.map((g) => (
+              <option key={g.id} value={g.id}>
+                {g.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        {filters.groupId ? (
+          <button
+            type="button"
+            {...metricTipAttrs('filterGroup')}
+            className={chipClass(false)}
+            onClick={clearGroup}
+          >
+            Clear group
+          </button>
+        ) : null}
+      </FilterGroup>
 
-      <div className="flex flex-col gap-0.5 text-[10px] text-terminal-dim">
-        Setup stage
-        <div className="flex flex-wrap gap-1">
-          {ALL_SETUP_STAGES.map((s) => {
-            const on = filters.stages.includes(s)
-            return (
-              <button
-                key={s}
-                type="button"
-                onClick={() => toggleStage(s)}
-                {...metricTipAttrs(
-                  s === 'watching' ? 'stageWatching' : s === 'coiled' ? 'stageCoiled' : 'stageTriggering',
-                )}
-                className={`cursor-help rounded px-2.5 py-1.5 text-[10px] min-h-8 ${
-                  on
-                    ? s === 'triggering'
-                      ? 'bg-terminal-amber/20 text-terminal-amber border border-terminal-amber/40'
-                      : s === 'coiled'
-                        ? 'bg-terminal-purple/20 text-terminal-purple border border-terminal-purple/40'
-                        : 'bg-terminal-blue/20 text-terminal-blue border border-terminal-blue/40'
-                    : 'bg-terminal-bg text-terminal-dim border border-terminal-border'
-                }`}
-              >
-                {stageLabel(s)}
-              </button>
-            )
-          })}
-        </div>
-      </div>
+      <FilterGroup label="Numeric">
+        <label {...metricTipAttrs('filterMinRvol')} className="flex cursor-help flex-col gap-0.5 text-[10px] text-terminal-dim">
+          Min RVOL
+          <input
+            type="number"
+            min={0}
+            step={0.1}
+            value={filters.minRvol}
+            aria-label="Min RVOL"
+            onChange={(e) => onChange({ ...filters, minRvol: Number(e.target.value) || 0 })}
+            className="w-16 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1 font-mono text-xs text-terminal-fg outline-none focus:border-terminal-blue sm:w-20"
+          />
+        </label>
+        <label
+          {...metricTipAttrs('filterMaxPctFromHigh')}
+          className="flex cursor-help flex-col gap-0.5 text-[10px] text-terminal-dim"
+        >
+          Max % from high
+          <input
+            type="number"
+            min={0}
+            max={100}
+            step={1}
+            value={filters.maxPctFromHigh}
+            aria-label="Max % from high"
+            onChange={(e) => onChange({ ...filters, maxPctFromHigh: Number(e.target.value) || 0 })}
+            className="w-20 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1 font-mono text-xs text-terminal-fg outline-none focus:border-terminal-blue sm:w-24"
+          />
+        </label>
+      </FilterGroup>
 
-      <label
-        {...metricTipAttrs('aboveSma200')}
-        className={`flex min-h-8 cursor-help items-center gap-1.5 rounded border px-2 py-1.5 text-xs ${
-          filters.requireAbove200 !== false
-            ? 'border-terminal-green/40 bg-terminal-green/15 text-terminal-green'
-            : 'border-terminal-border bg-terminal-bg text-terminal-dim'
-        }`}
-      >
-        <input
-          type="checkbox"
+      <FilterGroup label="Above">
+        <CheckChip id="aboveSma10" label="Above 10 SMA" checked={Boolean(filters.requireSma10)} onChange={(checked) => onChange({ ...filters, requireSma10: checked })} />
+        <CheckChip id="aboveSma20" label="Above 20 SMA" checked={Boolean(filters.requireSma20)} onChange={(checked) => onChange({ ...filters, requireSma20: checked })} />
+        <CheckChip id="aboveSma50" label="Above 50 SMA" checked={Boolean(filters.requireSma50)} onChange={(checked) => onChange({ ...filters, requireSma50: checked })} />
+        <CheckChip
+          id="aboveSma200"
+          label={ABOVE_200_DMA_LABEL}
           checked={filters.requireAbove200 !== false}
-          onChange={(e) => onChange({ ...filters, requireAbove200: e.target.checked })}
-          className="accent-terminal-green"
+          onChange={(checked) => onChange({ ...filters, requireAbove200: checked })}
         />
-        <span>{ABOVE_200_DMA_LABEL}</span>
-      </label>
+      </FilterGroup>
 
-      <label
-        {...metricTipAttrs('aboveSma50')}
-        className="flex min-h-8 cursor-help items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1.5 text-xs text-terminal-fg"
-      >
-        <input
-          type="checkbox"
-          checked={filters.requireSma50}
-          onChange={(e) => onChange({ ...filters, requireSma50: e.target.checked })}
-          className="accent-terminal-green"
-        />
-        <span>Require 50 SMA</span>
-      </label>
+      <FilterGroup label="Surfer (ADR-based)">
+        <CheckChip id="surfer10" label="10MA Surfer" checked={Boolean(filters.requireSurfer10)} onChange={(checked) => onChange({ ...filters, requireSurfer10: checked })} />
+        <CheckChip id="surfer20" label="20MA Surfer" checked={Boolean(filters.requireSurfer20)} onChange={(checked) => onChange({ ...filters, requireSurfer20: checked })} />
+        <CheckChip id="surfer50" label="50MA Surfer" checked={Boolean(filters.requireSurfer50)} onChange={(checked) => onChange({ ...filters, requireSurfer50: checked })} />
+      </FilterGroup>
 
-      <label
-        {...metricTipAttrs('aboveSma10')}
-        className="flex min-h-8 cursor-help items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1.5 text-xs text-terminal-fg"
-      >
-        <input
-          type="checkbox"
-          checked={filters.requireSma10}
-          onChange={(e) => onChange({ ...filters, requireSma10: e.target.checked })}
-          className="accent-terminal-green"
-        />
-        <span>Above 10 SMA</span>
-      </label>
+      <FilterGroup label="Tight consolidation">
+        <CheckChip id="tightConsolidation" label="Tight consolidation" checked={Boolean(filters.requireTight)} onChange={(checked) => onChange({ ...filters, requireTight: checked })} />
+      </FilterGroup>
 
-      <label
-        {...metricTipAttrs('aboveSma20')}
-        className="flex min-h-8 cursor-help items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1.5 text-xs text-terminal-fg"
-      >
-        <input
-          type="checkbox"
-          checked={filters.requireSma20}
-          onChange={(e) => onChange({ ...filters, requireSma20: e.target.checked })}
-          className="accent-terminal-green"
-        />
-        <span>Above 20 SMA</span>
-      </label>
+      <FilterGroup label="Stage">
+        {STAGE_CHIP_ORDER.map((s) => {
+          const on = filters.stages.includes(s)
+          const tone = s === 'triggering' ? 'amber' : s === 'coiled' ? 'purple' : 'blue'
+          return (
+            <button
+              key={s}
+              type="button"
+              onClick={() => toggleStage(s)}
+              {...metricTipAttrs(s === 'watching' ? 'stageWatching' : s === 'coiled' ? 'stageCoiled' : 'stageTriggering')}
+              className={chipClass(on, tone)}
+            >
+              {stageLabel(s)}
+            </button>
+          )
+        })}
+      </FilterGroup>
 
-      <label
-        {...metricTipAttrs('surfer10')}
-        className="flex min-h-8 cursor-help items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1.5 text-xs text-terminal-fg"
-      >
-        <input
-          type="checkbox"
-          checked={Boolean(filters.requireSurfer10)}
-          onChange={(e) => onChange({ ...filters, requireSurfer10: e.target.checked })}
-          className="accent-terminal-green"
-        />
-        <span>10MA Surfer (strict)</span>
-      </label>
+      <FilterGroup label="Setup type">
+        {ALL_SETUP_TYPES.map((s) => {
+          const on = filters.setupTypes.includes(s)
+          return (
+            <button
+              key={s}
+              type="button"
+              onClick={() => toggleSetup(s)}
+              {...metricTipAttrs(
+                s === 'Range Breakout' ? 'setupRangeBreakout' : s === 'Episodic Pivot' ? 'setupEpisodicPivot' : 'setupContinuation',
+              )}
+              className={chipClass(on, 'blue')}
+            >
+              {s}
+            </button>
+          )
+        })}
+      </FilterGroup>
 
-      <label
-        {...metricTipAttrs('surfer20')}
-        className="flex min-h-8 cursor-help items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1.5 text-xs text-terminal-fg"
-      >
-        <input
-          type="checkbox"
-          checked={Boolean(filters.requireSurfer20)}
-          onChange={(e) => onChange({ ...filters, requireSurfer20: e.target.checked })}
-          className="accent-terminal-green"
-        />
-        <span>20MA Surfer (strict)</span>
-      </label>
+      <FilterGroup label="Earnings">
+        {ALL_EARNINGS_STATUSES.map((s) => {
+          const on = filters.earningsStatuses.includes(s)
+          const tone = s === 'avoid' ? 'red' : s === 'alert' ? 'amber' : 'green'
+          return (
+            <button
+              key={s}
+              type="button"
+              onClick={() => toggleEarnings(s)}
+              {...metricTipAttrs(s === 'avoid' ? 'earningsAvoid' : s === 'alert' ? 'earningsAlert' : 'earningsClear')}
+              className={chipClass(on, tone)}
+            >
+              {earningsLabel(s)}
+            </button>
+          )
+        })}
+      </FilterGroup>
 
-      <label
-        {...metricTipAttrs('surfer50')}
-        className="flex min-h-8 cursor-help items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1.5 text-xs text-terminal-fg"
-      >
-        <input
-          type="checkbox"
-          checked={Boolean(filters.requireSurfer50)}
-          onChange={(e) => onChange({ ...filters, requireSurfer50: e.target.checked })}
-          className="accent-terminal-green"
-        />
-        <span>50MA Surfer (strict)</span>
-      </label>
+      <FilterGroup label="Other">
+        <CheckChip id="aPlus" label="A+ only" tone="gold" checked={filters.aPlusOnly} onChange={(checked) => onChange({ ...filters, aPlusOnly: checked })} />
+        <label {...metricTipAttrs('hasCatalyst')} className={chipClass(filters.hasCatalyst, 'green')}>
+          <input
+            type="checkbox"
+            checked={filters.hasCatalyst}
+            onChange={(e) => onChange({ ...filters, hasCatalyst: e.target.checked })}
+            className="accent-terminal-green"
+          />
+          <span>Has catalyst</span>
+        </label>
+      </FilterGroup>
 
-      <label
-        {...metricTipAttrs('tightConsolidation')}
-        className="flex min-h-8 cursor-help items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1.5 text-xs text-terminal-fg"
-      >
-        <input
-          type="checkbox"
-          checked={Boolean(filters.requireTight)}
-          onChange={(e) => onChange({ ...filters, requireTight: e.target.checked })}
-          className="accent-terminal-green"
-        />
-        <span>Tight consolidation</span>
-      </label>
-
-      <div className="flex flex-col gap-0.5 text-[10px] text-terminal-dim">
-        Earnings
-        <div className="flex flex-wrap gap-1">
-          {ALL_EARNINGS_STATUSES.map((s) => {
-            const on = filters.earningsStatuses.includes(s)
-            return (
-              <button
-                key={s}
-                type="button"
-                onClick={() => toggleEarnings(s)}
-                {...metricTipAttrs(
-                  s === 'avoid' ? 'earningsAvoid' : s === 'alert' ? 'earningsAlert' : 'earningsClear',
-                )}
-                className={`cursor-help rounded px-2.5 py-1.5 text-[10px] uppercase min-h-8 ${
-                  on
-                    ? s === 'avoid'
-                      ? 'bg-terminal-red-dim text-terminal-red border border-terminal-red/40'
-                      : s === 'alert'
-                        ? 'bg-terminal-amber/20 text-terminal-amber border border-terminal-amber/40'
-                        : 'bg-terminal-green/15 text-terminal-green border border-terminal-green/40'
-                    : 'bg-terminal-bg text-terminal-dim border border-terminal-border'
-                }`}
-              >
-                {s}
-              </button>
-            )
-          })}
-        </div>
-      </div>
-
-      <label
-        {...metricTipAttrs('aPlus')}
-        className="flex min-h-8 cursor-help items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1.5 text-xs text-terminal-fg"
-      >
-        <input
-          type="checkbox"
-          checked={filters.aPlusOnly}
-          onChange={(e) => onChange({ ...filters, aPlusOnly: e.target.checked })}
-          className="accent-terminal-a-plus"
-        />
-        <span className="text-terminal-a-plus">A+ only</span>
-      </label>
-
-      <label
-        {...metricTipAttrs('catalyst')}
-        className="flex min-h-8 cursor-help items-center gap-1.5 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1.5 text-xs text-terminal-fg"
-      >
-        <input
-          type="checkbox"
-          checked={filters.hasCatalyst}
-          onChange={(e) => onChange({ ...filters, hasCatalyst: e.target.checked })}
-          className="accent-terminal-green"
-        />
-        Has catalyst
-      </label>
+      {catalystMeta ? (
+        <p className="w-full text-[10px] text-terminal-dim" data-catalyst-coverage>
+          Catalyst: checked {catalystMeta.checked} of {catalystMeta.candidates} candidates
+          {filters.hasCatalyst && uncheckedCount > 0 ? ` · ${uncheckedCount} ideas not yet checked` : ''}
+        </p>
+      ) : filters.hasCatalyst && uncheckedCount > 0 ? (
+        <p className="w-full text-[10px] text-terminal-dim" data-catalyst-coverage>
+          {uncheckedCount} ideas not yet checked
+        </p>
+      ) : null}
     </div>
   )
 
@@ -395,7 +358,6 @@ export function FiltersBar({
         dense ? 'px-2.5 py-1' : 'px-3 py-2.5'
       }`}
     >
-      {/* Mobile: one-row collapse toggle */}
       <div className="flex items-center justify-between gap-2 md:hidden">
         <button
           type="button"
@@ -427,7 +389,6 @@ export function FiltersBar({
         ) : null}
       </div>
 
-      {/* Desktop header */}
       <div className={`hidden items-center justify-between md:flex ${dense ? 'mb-1' : 'mb-2'}`}>
         <h2 className="text-xs font-semibold uppercase tracking-wider text-terminal-muted">
           Filters
@@ -449,14 +410,13 @@ export function FiltersBar({
         <p className="mb-2 hidden text-[10px] text-terminal-dim md:block">
           <span className="font-mono text-terminal-green">{ABOVE_200_DMA_LABEL}</span> is on by
           default. {ABOVE_200_DMA_TOOLTIP} Default stages:{' '}
-          <span className="text-terminal-purple">coiled</span> +{' '}
-          <span className="text-terminal-amber">triggering</span> (enable Watching to see
-          base-builders). Group view starts with every stage and does not require the 10/20/50 SMAs
-          or the strict surfer / tight chips.
+          <span className="text-terminal-purple">Coiled</span> +{' '}
+          <span className="text-terminal-amber">Triggering</span> (enable Watching to see
+          base-builders). Group view starts with every stage. Above 10/20/50 SMA, Surfer, and
+          Tight consolidation start off in group view.
         </p>
       ) : null}
 
-      {/* Body: always on md+, toggle on mobile */}
       <div className={`${expanded ? 'mt-1.5 block' : 'hidden'} md:mt-0 md:block`}>
         {filterBody}
       </div>

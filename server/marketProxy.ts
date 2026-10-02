@@ -16,6 +16,7 @@ import { matchMarketSymbolRoute, parseMarketSymbol } from './marketSymbol.ts'
 import { getScanRuntimeStatus, loadScanCache } from './scanCache.ts'
 import { kickScanOnBoot, triggerScan } from './scanEngine.ts'
 import { fetchTickerNews } from './tickerNews.ts'
+import { mergeCatalystIntoIdeas, scheduleCatalystEnrichment } from './catalystService.ts'
 import { fetchTickerProfile } from './tickerProfile.ts'
 import { refreshYahooCrumb } from './yahooScreener.ts'
 
@@ -1122,10 +1123,14 @@ if (url.pathname === '/api/market/dashboard') {
           return
         }
         const { meta, ...dashboard } = cache
+        const merged = mergeCatalystIntoIdeas(dashboard.ideas ?? [])
+        scheduleCatalystEnrichment(dashboard.ideas ?? [])
         res.statusCode = 200
         res.end(
           JSON.stringify({
             ...dashboard,
+            ideas: merged.ideas,
+            catalystMeta: merged.meta,
             stage1Source: meta?.stage1Source,
             stage1Count: meta?.stage1Count,
             stage15Count: meta?.stage15Count,

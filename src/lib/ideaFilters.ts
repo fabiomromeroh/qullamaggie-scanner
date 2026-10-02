@@ -53,6 +53,10 @@ export interface FilterableIdea {
   isAPlus: boolean
   earningsStatus: EarningsStatus
   catalyst: string | null
+  /** Present on merged payloads. Undefined falls back to a non-null `catalyst` string. */
+  hasCatalyst?: boolean
+  /** pending/unchecked are not a catalyst yet; the Has-catalyst chip excludes them. */
+  catalystStatus?: 'checked' | 'pending' | 'unchecked' | 'error'
   characteristics?: readonly string[]
 }
 
@@ -224,6 +228,38 @@ export function migrateStoredFilters(raw: unknown): IdeaFilters {
 }
 
 /**
+ * Has-catalyst predicate. A real `hasCatalyst` boolean wins. Older payloads
+ * that only have the display string still match. Pending and unchecked rows
+ * never match, so the chip does not treat "not looked up yet" as a no.
+ */
+export function ideaHasCatalyst(idea: {
+  catalyst?: string | null
+  hasCatalyst?: boolean
+  catalystStatus?: 'checked' | 'pending' | 'unchecked' | 'error'
+}): boolean {
+  if (idea.catalystStatus === 'pending' || idea.catalystStatus === 'unchecked') return false
+  if (idea.hasCatalyst !== undefined) return idea.hasCatalyst
+  return Boolean(idea.catalyst)
+}
+
+/**
+ * Rows that pass every other filter but have not been news-checked yet.
+ * Shown next to the Has-catalyst chip so those names are not silently dropped.
+ */
+export function countCatalystUnchecked(
+  ideas: readonly FilterableIdea[],
+  filters: IdeaFilters,
+  options: PassesFiltersOptions = {},
+): number {
+  if (!filters.hasCatalyst) return 0
+  const relaxed: IdeaFilters = { ...filters, hasCatalyst: false }
+  return ideas.filter((idea) => {
+    if (!passesFilters(idea, relaxed, options)) return false
+    return idea.catalystStatus === 'pending' || idea.catalystStatus === 'unchecked'
+  }).length
+}
+
+/**
  * Shared predicate for the scanner table and group drill-down.
  * Every filter value is applied as written. `groupView` skips only `groupId`.
  * Above 200 DMA replaces the old normal-scan hard gate (`requireAbove200`
@@ -252,7 +288,7 @@ export function passesFilters(
   if (f.setupTypes && !f.setupTypes.includes(idea.setupType)) return false
   if (f.aPlusOnly && !idea.isAPlus) return false
   if (f.earningsStatuses?.length && !f.earningsStatuses.includes(idea.earningsStatus)) return false
-  if (f.hasCatalyst && !idea.catalyst) return false
+  if (f.hasCatalyst && !ideaHasCatalyst(idea)) return false
   if (!groupView && f.groupId) {
     const groups = options.groups ?? []
     if (options.groupSource === 'finviz') {
