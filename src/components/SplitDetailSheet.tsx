@@ -17,6 +17,8 @@ interface Props {
   source?: 'live' | 'demo'
   /** Pixels that stay visible to the left of the sheet (groups + results strip). */
   reservedLeft: number
+  isPinned?: (ticker: string) => boolean
+  onTogglePin?: (ticker: string) => void
 }
 
 function cssEscape(value: string): string {
@@ -40,6 +42,8 @@ export function SplitDetailSheet({
   onClose,
   source = 'live',
   reservedLeft,
+  isPinned,
+  onTogglePin,
 }: Props) {
   const [maximized, setMaximized] = useState(false)
   const { sheet, panel, resizeSheetEdge, resizeDivider } = useSplitLayout(reservedLeft, maximized)
@@ -184,7 +188,12 @@ export function SplitDetailSheet({
               onDelta={resizeDivider}
             />
             <div className="qm-split-panel">
-              <DetailDrawer idea={idea} source={source} />
+              <DetailDrawer
+                idea={idea}
+                source={source}
+                isPinned={isPinned?.(idea.ticker) ?? false}
+                onTogglePin={onTogglePin ? () => onTogglePin(idea.ticker) : undefined}
+              />
             </div>
           </div>
         </div>

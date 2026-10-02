@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
-import type { MetricId } from '../lib/metricDefinitions'
+import { Pin, PinOff } from 'lucide-react'
+import { metricTipAttrs, type MetricId } from '../lib/metricDefinitions'
 import type { TradingIdea } from '../types'
 import { stageLabel } from '../lib/setupStage'
 import { formatSurferDistance, SURFER_CONFIG } from '../lib/surfer'
@@ -13,6 +14,8 @@ import { TickerProfile } from './TickerProfile'
 interface Props {
   idea: TradingIdea
   source?: 'live' | 'demo'
+  isPinned?: boolean
+  onTogglePin?: () => void
 }
 
 function passFail(ok: boolean): string {
@@ -192,10 +195,11 @@ function TightDetailSection({ idea }: { idea: TradingIdea }) {
   )
 }
 
-export function DetailDrawer({ idea, source = 'live' }: Props) {
+export function DetailDrawer({ idea, source = 'live', isPinned, onTogglePin }: Props) {
   return (
     <div className="flex flex-col bg-terminal-panel">
       <div className="border-b border-terminal-border px-4 py-3">
+        <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <MetricTip id="ticker" className="font-mono text-lg font-bold text-terminal-fg">
@@ -279,6 +283,23 @@ export function DetailDrawer({ idea, source = 'live' }: Props) {
           <p className="text-[11px] text-terminal-dim">
             <MetricTip id="ideaGroup">{idea.groupName}</MetricTip>
           </p>
+        </div>
+        {onTogglePin ? (
+          <button
+            type="button"
+            title={isPinned ? 'Remove from watchlist' : 'Pin to watchlist'}
+            aria-label={isPinned ? 'Remove from watchlist' : 'Pin to watchlist'}
+            {...metricTipAttrs('watchlistPin')}
+            onClick={onTogglePin}
+            className={`min-h-9 min-w-9 shrink-0 rounded p-2 ${
+              isPinned
+                ? 'text-terminal-amber hover:bg-terminal-bg'
+                : 'text-terminal-dim hover:bg-terminal-bg hover:text-terminal-amber'
+            }`}
+          >
+            {isPinned ? <Pin className="h-4 w-4" /> : <PinOff className="h-4 w-4" />}
+          </button>
+        ) : null}
         </div>
       </div>
 

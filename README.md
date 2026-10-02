@@ -4,7 +4,7 @@ Dark, desktop-first scanner + watchlist for a swing trader who follows **Kristja
 
 1. Hunt **strong uptrending industry groups** first  
 2. **Scan** a liquid US universe for leaders forming a **coil / base about to break**  
-3. Surface **setup readiness** (`watching` → `coiled` → `triggering`) and maintain a **dynamic watchlist**  
+3. Surface **setup readiness** (`watching` → `coiled` → `triggering`) and maintain a **manual watchlist**  
 4. Prefer **A+ setups with a real catalyst** (an important headline inside 48 hours, or earnings reported in that window — never invented)
 
 > **Default mode is live market data.** Demo seed rows load only when you explicitly set `VITE_MARKET_DATA_MODE=demo`. Live failures show an error UI — they never silently fall back to fake prices.
@@ -21,7 +21,7 @@ npm run dev
 
 Open the URL Vite prints (usually `http://localhost:5173`).
 
-**Run a scan:** open the app (or click **Refresh**). Live mode runs Stage 1 (Yahoo liquid screen) → Stage 1.5 (above 200+50 SMA quotes) → Stage 2 deep Kyle metrics, and auto-adds coiled/triggering names with `kyleScore ≥ 4` to the dynamic watchlist.
+**Run a scan:** open the app (or click **Refresh**). Live mode runs Stage 1 (Yahoo liquid screen) → Stage 1.5 (above 200+50 SMA quotes) → Stage 2 deep Kyle metrics. Pin a results row or type tickers in the Watchlist panel to keep names across refresh.
 
 Production build:
 
@@ -317,13 +317,19 @@ The banner `Showing N of M group stocks (filters hiding K)` counts every row the
 
 The normal scan prefilters below-200 names server-side; toggle off only reveals names present in the payload, group view includes them. Stage 1.5 drops below-200 and below-50 names before deep scoring, and this change does not alter that server scan. Names that do reach the normal payload with `aboveSma200: false` are still subject to the other chips (they are staged `watching`, and Above 50 SMA is on by default). Filter values are not written to localStorage. If a stored filter object has no `requireAbove200`, it is read as on (`migrateStoredFilters`) and does not throw. `hasCatalyst` and the surfer flags migrate as booleans and do not throw.
 
-## Dynamic watchlist
+## Watchlist (manual)
 
-- Panel: pin / unpin / remove  
-- Storage key: `qullamaggie.userWatchlist.v1` (browser localStorage)  
-- Seed: `src/data/userWatchlist.json` (empty by default; documented threshold)  
-- **Auto-add threshold:** `kyleScore >= 4` **and** stage ∈ {`coiled`, `triggering`}  
-- Catalyst text is a real headline (or a dated earnings-calendar line). It is never invented. The scan file leaves `catalyst` null; the HTTP response fills it.
+The Watchlist panel holds **only** tickers you add or pin. Scans never insert names.
+
+- **Storage:** `qm.userWatchlist.v2` in browser localStorage. Insertion order is stored (oldest first). The panel **displays newest first**. Cap **200**; adding past the cap is refused with an inline message. Corrupt JSON or a wrong shape loads as an empty list and never throws.
+- **Add:** type or paste in the panel (Enter or **Add**). Separators: commas, spaces, semicolons, newlines. A leading `$` is stripped; symbols are uppercased. Pattern: 1–5 letters, optional class suffix (`BRK.B` / `BRK-B` / `PBR-A`). Duplicates against the current list are skipped. Feedback looks like `Added 3, skipped 2 duplicates, rejected: FOO$ (invalid)`.
+- **Pin:** the ideas table star and the detail-panel pin write the same list (same module/hook). Unpin or the row **x** removes that ticker.
+- **Clear all:** inline confirm (`Clear all N? Yes / No`, no `window.confirm`). Disabled when empty. After a clear, **Cleared N tickers — Undo** restores the previous list until the next add/remove/pin or 15 seconds.
+- **Not in the current scan:** the row still shows. If the ticker is in `data.ideas`, the panel uses that scan row (price, 1D %, stage, kyleScore, RVOL, ADR%). Otherwise it lazily calls `GET /api/market/quote/:symbol` (price, prevClose, dayPct, asOf, source; symbol validated with `parseMarketSymbol`; cache ~60s; at most 3 in flight). Scan-only metrics render as `-`. States: `Loading...`, `Unavailable` + Retry, `No data` (invalid/delisted) with remove. Fetch never blocks the panel; display order does not wait on quotes.
+- **Migration:** `qullamaggie.userWatchlist.v1` is read once when v2 is missing. Tickers you had explicitly pinned or added (`pinned` or `source === 'manual'`) are kept; scan-populated **auto-added** unpinned rows are dropped. The result is written to v2 and the v1 key is removed.
+- **Limitations:** localStorage is per-browser / per-device and is not synced. Clearing site data clears the list.
+
+Catalyst text is a real headline (or a dated earnings-calendar line). It is never invented. The scan file leaves `catalyst` null; the HTTP response fills it.
 
 ## Market data cascade (no silent demo)
 
@@ -363,18 +369,18 @@ Use only for local UI work. Default when unset: **`live`**.
 | Path | Role |
 |------|------|
 | `src/data/watchlist.ts` | `SCAN_UNIVERSE` + industry groups + scan batch defaults |
-| `src/data/userWatchlist.json` | Optional watchlist seed (threshold documented) |
 | `src/data/demoData.ts` | Seed data — demo mode only |
 | `src/adapters/marketData.ts` | Live scan / demo adapters (no live→demo fallback) |
 | `src/lib/metrics.ts` | RVOL, ADR%, SMAs, Kyle proxies, A+ |
 | `src/lib/surfer.ts` | Strict MA-surfer (`SURFER_CONFIG`, `evaluateSurfer`) |
 | `src/lib/tightConsolidation.ts` | Tight consolidation (`TIGHT_CONFIG`) |
 | `src/lib/setupStage.ts` | watching / coiled / triggering |
-| `src/lib/userWatchlistStore.ts` | localStorage pin + auto-add |
+| `src/lib/userWatchlistStore.ts` | Manual watchlist localStorage (`qm.userWatchlist.v2`) |
 | `server/yahooScreener.ts` | Stage-1 Yahoo EquityQuery client (crumb + pagination) |
 | `server/scanEngine.ts` | Stage-1→1.5→2 orchestration + cache writer |
 | `server/scanCache.ts` | `data/scan-cache.json` load/save + scan lock |
-| `server/marketProxy.ts` | Cascade + TTL cache + Vite middleware (`/api/market/*` including bars/news/profile) |
+| `server/marketProxy.ts` | Cascade + TTL cache + Vite middleware (`/api/market/*` including bars/news/profile/quote) |
+| `server/marketQuote.ts` | Quote payload (price, prevClose, dayPct) + 60s cache |
 | `server/marketBars.ts` | Bars payload shaping (last 500, sort, drop NaN) + 15 min cache |
 | `server/tickerNews.ts` | Finnhub company-news + Yahoo search fallback, 10 min cache |
 | `server/tickerProfile.ts` | Finnhub profile2 facts + verified Wikipedia summary, 24h cache |
@@ -399,7 +405,7 @@ Use only for local UI work. Default when unset: **`live`**.
 | `src/hooks/useGroups.ts` | Client poll of `/api/groups` (keeps last good payload) |
 | `src/hooks/useGroupLeaders.ts` | Lazy `/api/groups/leaders` for the visible groups |
 | `src/hooks/useDashboard.ts` | Load + filters + stage sort |
-| `src/components/WatchlistPanel.tsx` | Dynamic watchlist UI |
+| `src/components/WatchlistPanel.tsx` | Manual watchlist UI |
 | `src/components/*` | Header, table, filters, drawer |
 
 ## How to extend / tune the scan

@@ -32,7 +32,7 @@ Do **not** commit `.env` (it is gitignored). Secrets stay on Render.
 
 - Listens on `process.env.PORT` (Render sets this) or `5173`, host **`0.0.0.0`**.
 - Serves the Vite `dist/` SPA.
-- Proxies live market data at `/api/market/*` (health, snapshot, dashboard, scan, **bars / news / profile** for the ticker detail panel).
+- Proxies live market data at `/api/market/*` (health, snapshot, dashboard, scan, **bars / news / profile / quote** for the ticker detail panel and watchlist).
 - Serves leading industry groups at `GET /api/groups` (Finviz **groups** page, 12-minute memory cache). If Finviz fails and a previous payload exists, that payload is returned with `stale: true`. With no cache, the response falls back to the internal scan ranking (`source: "fallback"`).
 - Group **membership** comes from the committed file `server/data/finviz-group-members.json`, not from `finviz.com/screener.ashx` at request time. Render's IPs get HTTP 403 from that screener. The build does not try to get around the block. Refresh the file on a machine that can reach Finviz (`npm run build:groups`, about weekly) and commit it before deploy. Render's build command cannot regenerate it.
 - `GET /api/groups/leaders?period=3m&slugs=a,b` ranks snapshot members with Yahoo / Finnhub / Stooq bars. One call computes at most about 8 seconds or 40 uncached symbols, then returns `pending: true` for groups that are not finished. The UI polls those. A slug missing from the file returns an error string and no invented rows.

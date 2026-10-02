@@ -48,6 +48,13 @@ import {
   clampToViewport,
   placeTooltip,
 } from '../src/lib/tooltipPosition.ts'
+import { QUOTE_CACHE_TTL_MS } from '../src/lib/marketQuote.ts'
+import { US_EQUITY_SYMBOL_PATTERN } from '../src/lib/tickerSymbol.ts'
+import {
+  USER_WATCHLIST_CAP,
+  USER_WATCHLIST_STORAGE_KEY,
+  USER_WATCHLIST_UNDO_MS,
+} from '../src/lib/userWatchlistStore.ts'
 
 /** Ids that may live in the registry before a surface renders them. */
 const UNUSED_ALLOWLIST: readonly string[] = []
@@ -385,4 +392,35 @@ test('MetricTip source keeps one shared portal and a focusable trigger', () => {
   assert.match(source, /document\.body/)
   assert.match(source, /Escape/)
   assert.equal(source.includes('stopPropagation'), true)
+})
+
+test('watchlist metric ids exist, cite cap/pattern/TTL, and have no auto-add copy', () => {
+  for (const id of [
+    'watchlistPin',
+    'watchlistAdd',
+    'watchlistClear',
+    'watchlistUndo',
+    'watchlistRemove',
+    'watchlistOrder',
+    'watchlistMissing',
+    'watchlistQuoteLoading',
+    'watchlistQuoteUnavailable',
+    'watchlistNoData',
+  ] as const) {
+    assert.equal(isMetricId(id), true, id)
+  }
+  includes('watchlistAdd', `${USER_WATCHLIST_CAP}`)
+  includes('watchlistAdd', US_EQUITY_SYMBOL_PATTERN)
+  includes('watchlistPin', `${USER_WATCHLIST_CAP}`)
+  includes('watchlistPin', USER_WATCHLIST_STORAGE_KEY)
+  includes('watchlistOrder', `${USER_WATCHLIST_CAP}`)
+  includes('watchlistClear', USER_WATCHLIST_STORAGE_KEY)
+  includes('watchlistUndo', `${USER_WATCHLIST_UNDO_MS / 1000}`)
+  includes('watchlistMissing', `${QUOTE_CACHE_TTL_MS / 1000}`)
+  includes('watchlistQuoteLoading', `${QUOTE_CACHE_TTL_MS / 1000}`)
+  for (const id of Object.keys(METRIC_DEFS) as MetricId[]) {
+    const text = metricTooltipText(id)
+    assert.equal(/auto-?add/i.test(text), false, `${id} tooltip still mentions auto-add`)
+    assert.equal(/autoAdd/.test(text), false, `${id} tooltip still mentions autoAdd`)
+  }
 })

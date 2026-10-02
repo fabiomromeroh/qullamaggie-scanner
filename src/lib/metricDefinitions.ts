@@ -3,7 +3,14 @@
  * same constants the scanners use. Add a metric by extending {@link METRIC_DEFS},
  * then render it with `<MetricTip id="...">` or `{...metricTipAttrs('...')}`.
  */
-import { AUTO_ADD_MIN_KYLE_SCORE, STAGE_CONFIG } from './setupStage'
+import { STAGE_CONFIG } from './setupStage'
+import { QUOTE_CACHE_TTL_MS } from './marketQuote'
+import { US_EQUITY_SYMBOL_PATTERN } from './tickerSymbol'
+import {
+  USER_WATCHLIST_CAP,
+  USER_WATCHLIST_STORAGE_KEY,
+  USER_WATCHLIST_UNDO_MS,
+} from './userWatchlistStore'
 import { SURFER_CONFIG, type MaKey } from './surfer'
 import { TIGHT_CONFIG } from './tightConsolidation'
 import { catalystDefinitionText } from './catalyst'
@@ -384,9 +391,7 @@ export const METRIC_DEFS = {
     'kyleScore',
     'Heuristic quality score, not the official Rating.',
     kyleScoreRuleText(),
-    'Surfer additions use loose above-SMA10/20 flags. Auto-add to the watchlist requires this score >= ' +
-      String(AUTO_ADD_MIN_KYLE_SCORE) +
-      ' and a coiled or triggering stage.',
+    'Surfer additions use loose above-SMA10/20 flags. Pinning a row writes the ticker into the manual watchlist (same list as the Watchlist panel).',
   ),
   aPlus: d(
     'A+',
@@ -489,18 +494,53 @@ export const METRIC_DEFS = {
   ),
   watchlistPin: d(
     'Pin',
-    'Keep a name on the dynamic watchlist.',
-    `Pin writes the ticker into the localStorage watchlist and keeps it when a later scan would not auto-add it. Unpin removes that protection. Auto-add still requires kyleScore >= ${AUTO_ADD_MIN_KYLE_SCORE} and stage coiled or triggering.`,
+    'Add or remove this ticker on the manual watchlist.',
+    `Pin writes the ticker into ${USER_WATCHLIST_STORAGE_KEY} (cap ${USER_WATCHLIST_CAP}). Unpin or the row remove button drops it. The ideas table, detail panel, and Watchlist panel share this list.`,
   ),
-  watchlistAutoAdd: d(
-    'Auto-add',
-    'Coiled and triggering names land on the watchlist.',
-    `After a scan, names with kyleScore >= ${AUTO_ADD_MIN_KYLE_SCORE} and stage coiled or triggering are inserted with source auto. Pin keeps a row; unpin or remove drops it. The list is sorted pinned first, then by kyleScore.`,
+  watchlistAdd: d(
+    'Add tickers',
+    'Type or paste symbols onto the manual watchlist.',
+    `Enter or Add accepts one or many tickers separated by commas, spaces, semicolons, or newlines. A leading $ is stripped. Symbols must match ${US_EQUITY_SYMBOL_PATTERN}. Duplicates are skipped. Adding past ${USER_WATCHLIST_CAP} names is refused.`,
+  ),
+  watchlistClear: d(
+    'Clear all',
+    'Remove every ticker from the watchlist.',
+    `Asks "Clear all N? Yes / No" in the panel (no window.confirm). Disabled when the list is empty. Yes writes an empty list to ${USER_WATCHLIST_STORAGE_KEY}.`,
+  ),
+  watchlistUndo: d(
+    'Undo clear',
+    'Restore the list after Clear all.',
+    `Shows "Cleared N tickers — Undo" until the next add/remove/pin or ${USER_WATCHLIST_UNDO_MS / 1000} seconds. Undo writes the previous tickers back in insertion order.`,
+  ),
+  watchlistRemove: d(
+    'Remove',
+    'Drop this ticker from the watchlist.',
+    `The row X button removes only this symbol from ${USER_WATCHLIST_STORAGE_KEY}. Pin in the ideas table or detail panel does the same.`,
+  ),
+  watchlistOrder: d(
+    'Newest first',
+    'The panel shows the most recently added ticker at the top.',
+    `Storage keeps insertion order (oldest first). The panel reverses that list so the newest name is first. Cap ${USER_WATCHLIST_CAP}. localStorage key ${USER_WATCHLIST_STORAGE_KEY} is per browser and per device.`,
   ),
   watchlistMissing: d(
-    'Not in the scan',
-    'The watchlist ticker has no current idea.',
-    'The row is stored locally but the current dashboard ideas do not include it. That happens when it is at or under the 200-day SMA, failed the fetch, or was filtered out of the loaded set before this map was built from data.ideas.',
+    'Not in scan',
+    'This watchlist ticker is not in the current scan results.',
+    `Price and 1D % then come from GET /api/market/quote/:symbol (cache ${QUOTE_CACHE_TTL_MS / 1000}s). Stage, RVOL, ADR%, and kyleScore stay "-" because only the scan computes them.`,
+  ),
+  watchlistQuoteLoading: d(
+    'Loading quote',
+    'Fetching a live quote for a name not in the scan.',
+    `GET /api/market/quote/:symbol is in flight. The panel stays usable; row order does not wait on the fetch. At most 3 quote requests run at once. Cache TTL ${QUOTE_CACHE_TTL_MS / 1000}s on the server; the tab also keeps a session cache.`,
+  ),
+  watchlistQuoteUnavailable: d(
+    'Unavailable',
+    'The quote request failed.',
+    'The provider cascade returned an error. Retry runs GET /api/market/quote/:symbol again. The ticker stays on the list until you remove it.',
+  ),
+  watchlistNoData: d(
+    'No data',
+    'No usable quote for this ticker.',
+    'The symbol is invalid for the quote route or the cascade returned no price/prevClose (delisted or unknown). Remove drops it from the watchlist.',
   ),
   groupRank: d(
     '#',
