@@ -4,6 +4,7 @@ import type { TradingIdea } from '../types'
 import { stageLabel } from '../lib/setupStage'
 import type { UserWatchlistEntry } from '../lib/userWatchlistStore'
 import { fmtPct, pctClass } from '../utils/format'
+import { MetricTip } from './MetricTip'
 
 const WATCHLIST_EXPAND_KEY = 'qm-watchlist-expanded'
 
@@ -64,7 +65,11 @@ export function WatchlistPanel({
     <div className="lg:flex-1 lg:overflow-y-auto">
       {!sorted.length ? (
         <p className="px-3 py-6 text-center text-[11px] text-terminal-dim">
-          Empty — pin a scan row or wait for auto-add (coiled/triggering ★≥{autoAddMinScore}).
+          Empty — pin a scan row or wait for{' '}
+          <MetricTip id="watchlistAutoAdd">
+            auto-add (coiled/triggering ★≥{autoAddMinScore})
+          </MetricTip>
+          .
         </p>
       ) : (
         <ul className="divide-y divide-terminal-border/60">
@@ -79,24 +84,42 @@ export function WatchlistPanel({
                   selected ? 'bg-terminal-elevated ring-1 ring-inset ring-terminal-blue/40' : ''
                 }`}
               >
-                <button
-                  type="button"
+                <div
+                  role="button"
+                  tabIndex={0}
                   data-idea-ticker={entry.ticker}
                   className="min-w-0 flex-1 text-left"
                   onClick={() => onSelect(entry.ticker)}
+                  onKeyDown={(event) => {
+                    if (event.target !== event.currentTarget) return
+                    if (event.key !== 'Enter' && event.key !== ' ') return
+                    event.preventDefault()
+                    onSelect(entry.ticker)
+                  }}
                 >
                   <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="font-mono text-xs font-semibold text-terminal-fg">
+                    <MetricTip id="ticker" className="font-mono text-xs font-semibold text-terminal-fg">
                       {entry.ticker}
-                    </span>
+                    </MetricTip>
                     {entry.pinned ? (
-                      <span className="text-[9px] text-terminal-amber">PIN</span>
+                      <MetricTip id="watchlistPin" className="text-[9px] text-terminal-amber">
+                        PIN
+                      </MetricTip>
                     ) : null}
                     {entry.source === 'auto' ? (
-                      <span className="text-[9px] text-terminal-dim">auto</span>
+                      <MetricTip id="watchlistAutoAdd" className="text-[9px] text-terminal-dim">
+                        auto
+                      </MetricTip>
                     ) : null}
                     {stage ? (
-                      <span
+                      <MetricTip
+                        id={
+                          stage === 'triggering'
+                            ? 'stageTriggering'
+                            : stage === 'coiled'
+                              ? 'stageCoiled'
+                              : 'stageWatching'
+                        }
                         className={`rounded border px-1 py-0.5 text-[9px] ${
                           stage === 'triggering'
                             ? 'border-terminal-amber/40 bg-terminal-amber-dim text-terminal-amber'
@@ -106,24 +129,30 @@ export function WatchlistPanel({
                         }`}
                       >
                         {stageLabel(stage)}
-                      </span>
+                      </MetricTip>
                     ) : (
-                      <span className="text-[9px] text-terminal-dim">no scan hit</span>
+                      <MetricTip id="watchlistMissing" className="text-[9px] text-terminal-dim">
+                        no scan hit
+                      </MetricTip>
                     )}
                   </div>
                   {idea ? (
                     <div className="mt-0.5 flex flex-wrap gap-2 font-mono text-[10px] text-terminal-muted">
-                      <span className={pctClass(idea.dayPct)}>{fmtPct(idea.dayPct)}</span>
-                      <span>★{idea.kyleScore}</span>
-                      <span>RVOL {idea.rvol.toFixed(1)}</span>
-                      <span>{fmtPct(idea.pctFrom52wHigh)} Hi</span>
+                      <MetricTip id="dayPct" className={pctClass(idea.dayPct)}>
+                        {fmtPct(idea.dayPct)}
+                      </MetricTip>
+                      <MetricTip id="kyleScore">★{idea.kyleScore}</MetricTip>
+                      <MetricTip id="rvol">RVOL {idea.rvol.toFixed(1)}</MetricTip>
+                      <MetricTip id="pctFrom52wHigh">{fmtPct(idea.pctFrom52wHigh)} Hi</MetricTip>
                     </div>
                   ) : (
                     <p className="mt-0.5 text-[10px] text-terminal-dim">
-                      Not in current scan results (below 200 / failed fetch).
+                      <MetricTip id="watchlistMissing">
+                        Not in current scan results (below 200 / failed fetch).
+                      </MetricTip>
                     </p>
                   )}
-                </button>
+                </div>
                 <button
                   type="button"
                   title={entry.pinned ? 'Unpin' : 'Pin'}
@@ -174,11 +203,15 @@ export function WatchlistPanel({
           <>
             <div className="border-b border-terminal-border px-3 py-1.5">
               <p className="text-[10px] text-terminal-dim">
-                Auto-add ★≥{autoAddMinScore} · pin to keep
+                <MetricTip id="watchlistAutoAdd">Auto-add ★≥{autoAddMinScore}</MetricTip>
+                {' · '}
+                <MetricTip id="watchlistPin">pin to keep</MetricTip>
               </p>
               {regimeDowntrend ? (
                 <p className="mt-1 text-[10px] text-terminal-amber">
-                  QQQ ST Downtrend — new breakouts deprioritized (soft warn).
+                  <MetricTip id="marketRegimeWarn">
+                    QQQ ST Downtrend — new breakouts deprioritized (soft warn).
+                  </MetricTip>
                 </p>
               ) : null}
               {lastAutoAdded.length ? (
@@ -204,12 +237,16 @@ export function WatchlistPanel({
           </div>
           <p className="mt-1 text-[10px] leading-snug text-terminal-dim">
             Persists in localStorage. Auto-adds when{' '}
-            <span className="font-mono text-terminal-amber">kyleScore ≥ {autoAddMinScore}</span> and
-            stage is coiled/triggering. Pin to keep; unpin/remove to drop.
+            <MetricTip id="watchlistAutoAdd" className="font-mono text-terminal-amber">
+              kyleScore ≥ {autoAddMinScore}
+            </MetricTip>{' '}
+            and stage is coiled/triggering. Pin to keep; unpin/remove to drop.
           </p>
           {regimeDowntrend ? (
             <p className="mt-1 text-[10px] text-terminal-amber">
-              QQQ ST Downtrend — new breakouts deprioritized (soft warn).
+              <MetricTip id="marketRegimeWarn">
+                QQQ ST Downtrend — new breakouts deprioritized (soft warn).
+              </MetricTip>
             </p>
           ) : null}
           {lastAutoAdded.length ? (

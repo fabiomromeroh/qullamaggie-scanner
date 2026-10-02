@@ -14,7 +14,10 @@ import {
   type UTCTimestamp,
 } from 'lightweight-charts'
 import { smaSeries, toCandles, toVolume, type OhlcvBar } from '../lib/chartData'
+import { SMA_PERIODS } from '../lib/metrics'
+import { metricTipAttrs } from '../lib/metricDefinitions'
 import { fmtPct, fmtPrice, pctClass } from '../utils/format'
+import { MetricTip } from './MetricTip'
 
 interface BarsResponse {
   symbol: string
@@ -34,10 +37,10 @@ interface Props {
 }
 
 const SMA_META = [
-  { n: 10, label: 'SMA 10', color: '#c792ea', defaultOn: false },
-  { n: 20, label: 'SMA 20', color: '#59c2ff', defaultOn: true },
-  { n: 50, label: 'SMA 50', color: '#ffcc66', defaultOn: true },
-  { n: 200, label: 'SMA 200', color: '#e6edf3', defaultOn: true },
+  { n: SMA_PERIODS.sma10, label: 'SMA 10', color: '#c792ea', defaultOn: false },
+  { n: SMA_PERIODS.sma20, label: 'SMA 20', color: '#59c2ff', defaultOn: true },
+  { n: SMA_PERIODS.sma50, label: 'SMA 50', color: '#ffcc66', defaultOn: true },
+  { n: SMA_PERIODS.sma200, label: 'SMA 200', color: '#e6edf3', defaultOn: true },
 ] as const
 
 type SmaN = (typeof SMA_META)[number]['n']
@@ -93,10 +96,10 @@ function isAbort(err: unknown): boolean {
  */
 export default function DailyChartPanel({ symbol, name, price, dayPct }: Props) {
   const [enabled, setEnabled] = useState<Record<SmaN, boolean>>({
-    10: false,
-    20: true,
-    50: true,
-    200: true,
+    [SMA_PERIODS.sma10]: false,
+    [SMA_PERIODS.sma20]: true,
+    [SMA_PERIODS.sma50]: true,
+    [SMA_PERIODS.sma200]: true,
   })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -359,15 +362,27 @@ export default function DailyChartPanel({ symbol, name, price, dayPct }: Props) 
     <div className="flex h-full min-h-0 w-full flex-col bg-terminal-bg">
       <header className="shrink-0 px-3 py-2 sm:px-4">
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-          <h2 className="font-mono text-lg font-bold text-terminal-fg">{symbol}</h2>
-          {name ? <span className="truncate text-xs text-terminal-muted">{name}</span> : null}
+          <MetricTip id="ticker" className="font-mono text-lg font-bold text-terminal-fg">
+            {symbol}
+          </MetricTip>
+          {name ? (
+            <MetricTip id="name" className="truncate text-xs text-terminal-muted">
+              {name}
+            </MetricTip>
+          ) : null}
           {priceLabel ? (
-            <span className="font-mono text-sm text-terminal-fg">{priceLabel}</span>
+            <MetricTip id="price" className="font-mono text-sm text-terminal-fg">
+              {priceLabel}
+            </MetricTip>
           ) : null}
           {dayLabel ? (
-            <span className={`font-mono text-sm ${pctClass(dayPct ?? 0)}`}>{dayLabel}</span>
+            <MetricTip id="dayPct" className={`font-mono text-sm ${pctClass(dayPct ?? 0)}`}>
+              {dayLabel}
+            </MetricTip>
           ) : null}
-          <span className="text-[10px] uppercase tracking-wide text-terminal-dim">Daily</span>
+          <MetricTip id="chartDaily" className="text-[10px] uppercase tracking-wide text-terminal-dim">
+            Daily
+          </MetricTip>
         </div>
         <div className="mt-2 flex flex-wrap gap-1.5">
           {SMA_META.map((meta) => {
@@ -378,7 +393,16 @@ export default function DailyChartPanel({ symbol, name, price, dayPct }: Props) 
                 type="button"
                 onClick={() => toggleSma(meta.n)}
                 aria-pressed={on}
-                className={`min-h-10 rounded-full border px-3 text-[11px] font-mono ${
+                {...metricTipAttrs(
+                  meta.n === SMA_PERIODS.sma10
+                    ? 'chartSma10'
+                    : meta.n === SMA_PERIODS.sma20
+                      ? 'chartSma20'
+                      : meta.n === SMA_PERIODS.sma50
+                        ? 'chartSma50'
+                        : 'chartSma200',
+                )}
+                className={`min-h-10 cursor-help rounded-full border px-3 text-[11px] font-mono ${
                   on
                     ? 'border-terminal-border-bright bg-terminal-elevated text-terminal-fg'
                     : 'border-terminal-border text-terminal-dim'
@@ -394,15 +418,31 @@ export default function DailyChartPanel({ symbol, name, price, dayPct }: Props) 
 
       {hover ? (
         <div className="shrink-0 px-3 py-1 font-mono text-[11px] text-terminal-muted sm:px-4">
-          <span className="text-terminal-fg">{barDate(hover.time)}</span>
-          {'  '}O {fmtPrice(hover.open)} H {fmtPrice(hover.high)} L {fmtPrice(hover.low)} C{' '}
-          {fmtPrice(hover.close)}
-          {hover.volume != null ? `  V ${fmtVol(hover.volume)}` : ''}
+          <MetricTip id="chartOhlc" className="text-terminal-fg">
+            {barDate(hover.time)}
+            {'  '}O {fmtPrice(hover.open)} H {fmtPrice(hover.high)} L {fmtPrice(hover.low)} C{' '}
+            {fmtPrice(hover.close)}
+          </MetricTip>
+          {hover.volume != null ? (
+            <MetricTip id="chartVolume"> V {fmtVol(hover.volume)}</MetricTip>
+          ) : null}
           {SMA_META.filter((m) => enabled[m.n] && hover.sma[m.n] != null).map((m) => (
-            <span key={m.n} style={{ color: m.color }}>
+            <MetricTip
+              key={m.n}
+              id={
+                m.n === SMA_PERIODS.sma10
+                  ? 'chartSma10'
+                  : m.n === SMA_PERIODS.sma20
+                    ? 'chartSma20'
+                    : m.n === SMA_PERIODS.sma50
+                      ? 'chartSma50'
+                      : 'chartSma200'
+              }
+              style={{ color: m.color }}
+            >
               {'  '}
               {m.n}:{fmtPrice(hover.sma[m.n]!)}
-            </span>
+            </MetricTip>
           ))}
         </div>
       ) : null}

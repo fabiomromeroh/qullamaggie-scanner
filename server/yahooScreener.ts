@@ -6,6 +6,12 @@
  * Equities only (quoteType EQUITY — excludes ETFs/funds).
  * Region US; exchanges NMS / NYQ / NGM / NCM.
  */
+import {
+  SCAN_MIN_AVG_VOL_DEFAULT,
+  SCAN_MIN_PRICE_DEFAULT,
+  SCAN_STAGE1_CAP_DEFAULT,
+  SCAN_STAGE1_PAGE_SIZE,
+} from '../src/lib/scanDefaults.ts'
 
 export interface ScreenerHit {
   symbol: string
@@ -30,10 +36,10 @@ export interface ScreenerResult {
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
 
-export const MIN_AVG_DAILY_VOL = Number(process.env.SCAN_MIN_AVG_VOL || 750_000)
-export const MIN_PRICE = Number(process.env.SCAN_MIN_PRICE || 5)
-export const SCREENER_PAGE_SIZE = 250
-export const STAGE1_CAP = Number(process.env.SCAN_STAGE1_CAP || 800)
+export const MIN_AVG_DAILY_VOL = Number(process.env.SCAN_MIN_AVG_VOL || SCAN_MIN_AVG_VOL_DEFAULT)
+export const MIN_PRICE = Number(process.env.SCAN_MIN_PRICE || SCAN_MIN_PRICE_DEFAULT)
+export const SCREENER_PAGE_SIZE = SCAN_STAGE1_PAGE_SIZE
+export const STAGE1_CAP = Number(process.env.SCAN_STAGE1_CAP || SCAN_STAGE1_CAP_DEFAULT)
 
 const SCREENER_ENDPOINTS = [
   'https://query2.finance.yahoo.com/v1/finance/screener',

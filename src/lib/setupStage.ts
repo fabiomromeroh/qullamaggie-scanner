@@ -23,6 +23,30 @@ export const DEFAULT_VISIBLE_STAGES: SetupStage[] = ['coiled', 'triggering']
 /** Auto-add to user watchlist when kyleScore >= this AND stage is coiled/triggering. */
 export const AUTO_ADD_MIN_KYLE_SCORE = 4
 
+/**
+ * Thresholds for {@link setupStageHeuristic}. Comparisons use the negative
+ * distance form `pctFrom52wHigh >= -nearHighPct` (same sign as metrics.ts).
+ */
+export const STAGE_CONFIG = {
+  /** Near highs for the first trigger path and the coiled gate. */
+  nearHighPct: 10,
+  /** Tighter band: third trigger path, and the coiled "closer to the high" OR. */
+  nearHighTightPct: 5,
+  /** Path 1: RVOL >= this, within nearHighPct, and day% >= triggerDayPctNearHigh. */
+  triggerRvolNearHigh: 1.8,
+  triggerDayPctNearHigh: 1,
+  /** Path 2: RVOL >= this and day% >= triggerDayPctStrong (no near-high test). */
+  triggerRvolStrong: 2.2,
+  triggerDayPctStrong: 2,
+  /** Path 3: RVOL >= this, within nearHighTightPct, and day% >= triggerDayPctTight. */
+  triggerRvolTight: 1.5,
+  triggerDayPctTight: 2.5,
+  /** Legacy coiled: tightDays must be at least this. */
+  coiledTightDaysMin: 5,
+  /** Legacy coiled: priorRunPct >= this, or the tighter near-high band. */
+  coiledPriorRunMin: 15,
+} as const
+
 export function setupStageHeuristic(m: {
   aboveSma200: boolean
   aboveSma10: boolean
@@ -37,14 +61,18 @@ export function setupStageHeuristic(m: {
 }): SetupStage | null {
   if (!m.aboveSma200) return null
 
-  const nearHighs = m.pctFrom52wHigh >= -10
-  const nearHighsTight = m.pctFrom52wHigh >= -5
+  const nearHighs = m.pctFrom52wHigh >= -STAGE_CONFIG.nearHighPct
+  const nearHighsTight = m.pctFrom52wHigh >= -STAGE_CONFIG.nearHighTightPct
 
   // Breakout / trigger day: volume expansion near highs (or strong green + RVOL).
   const triggering =
-    (m.rvol >= 1.8 && nearHighs && m.dayPct >= 1) ||
-    (m.rvol >= 2.2 && m.dayPct >= 2) ||
-    (m.rvol >= 1.5 && nearHighsTight && m.dayPct >= 2.5)
+    (m.rvol >= STAGE_CONFIG.triggerRvolNearHigh &&
+      nearHighs &&
+      m.dayPct >= STAGE_CONFIG.triggerDayPctNearHigh) ||
+    (m.rvol >= STAGE_CONFIG.triggerRvolStrong && m.dayPct >= STAGE_CONFIG.triggerDayPctStrong) ||
+    (m.rvol >= STAGE_CONFIG.triggerRvolTight &&
+      nearHighsTight &&
+      m.dayPct >= STAGE_CONFIG.triggerDayPctTight)
 
   if (triggering) return 'triggering'
 
@@ -61,10 +89,16 @@ export function coiledByLegacyRule(m: {
   tightDays: number
   priorRunPct: number
 }): boolean {
-  const nearHighs = m.pctFrom52wHigh >= -10
+  const nearHighs = m.pctFrom52wHigh >= -STAGE_CONFIG.nearHighPct
   const surfer = m.aboveSma10 || m.aboveSma20
-  const tight = m.tightDays >= 5
-  return tight && nearHighs && surfer && (m.priorRunPct >= 15 || m.pctFrom52wHigh >= -5)
+  const tight = m.tightDays >= STAGE_CONFIG.coiledTightDaysMin
+  return (
+    tight &&
+    nearHighs &&
+    surfer &&
+    (m.priorRunPct >= STAGE_CONFIG.coiledPriorRunMin ||
+      m.pctFrom52wHigh >= -STAGE_CONFIG.nearHighTightPct)
+  )
 }
 
 /**

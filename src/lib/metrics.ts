@@ -55,6 +55,128 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100
 }
 
+/** Periods passed to {@link smaClose} for idea metrics and the QQQ regime. */
+export const SMA_PERIODS = { sma10: 10, sma20: 20, sma50: 50, sma200: 200 } as const
+
+/** Session windows used by {@link computeIdeaMetrics}. */
+export const BAR_WINDOWS = {
+  /** Prior sessions for RVOL, ADR%, and dollar volume (excludes the latest bar). */
+  rvolSessions: 20,
+  adrSessions: 20,
+  dolVolSessions: 20,
+  /** Max high over this many sessions is the 52-week high. */
+  high52Sessions: 252,
+  perf1mSessions: 21,
+  perf3mSessions: 63,
+  perf6mSessions: 126,
+  sparkSessions: 40,
+} as const
+
+/**
+ * priorRunPctProxy lookbacks. The short-history fallback uses
+ * `shortHistoryOffset` sessions (the 3-month-style window), not `runLookback`.
+ */
+export const PRIOR_RUN_PROXY = {
+  runLookback: 63,
+  baseLookback: 15,
+  /** Need run + base + this many bars or the short-history fallback is used. */
+  minExtraBars: 5,
+  shortHistoryOffset: 63,
+} as const
+
+/** tightDaysProxy: narrow range vs the window average, or a close near SMA10/20. */
+export const TIGHT_DAYS_PROXY = {
+  lookback: 15,
+  /** Return 0 when bars.length < lookback + historyExtra. */
+  historyExtra: 20,
+  /** A day is tight when (high−low)/close < rangeFactor × the window's mean range%. */
+  rangeFactor: 0.75,
+  /** Or when |close vs SMA10 or SMA20| is within this percent. */
+  maProximityPct: 1.5,
+} as const
+
+/** baseLengthDaysProxy: trailing streak of narrow-range days. */
+export const BASE_LENGTH_PROXY = {
+  maxLookback: 40,
+  /** Return 0 when fewer than this many bars exist. */
+  minBars: 25,
+  /** Window length is min(maxLookback, bars.length − historyReserve). */
+  historyReserve: 20,
+  rangeFactor: 0.75,
+} as const
+
+/** classifyEarningsProximity trading-day buckets. Weekends are skipped; holidays are not. */
+export const EARNINGS_PROXIMITY = {
+  /** days <= this → avoid (same calendar day is 0, next trading day is 1). */
+  avoidMaxTradingDays: 1,
+  /** days === this → alert. Further out, missing, or already past → clear. */
+  alertTradingDays: 2,
+} as const
+
+/**
+ * isAPlusHeuristic gates. "Surfer" in the soft path is loose aboveSma10 || aboveSma20.
+ */
+export const APLUS_CONFIG = {
+  adrMin: 2.5,
+  nearHighPct: 5,
+  nearHighSoftPct: 10,
+  rvolOrRunRvol: 1.5,
+  rvolOrRunPrior: 30,
+  softPathRvol: 1.2,
+} as const
+
+/**
+ * kyleScoreHeuristic points. Below the 200 SMA returns `below200Score` and skips
+ * the 3–5 clamp. Otherwise the score starts at `base` and is clamped to
+ * [clampMin, clampMax] after rounding to 2 decimals. isAPlus lifts the score
+ * to at least `aPlusFloor` before the clamp.
+ */
+export const KYLE_SCORE_CONFIG = {
+  below200Score: 1,
+  base: 3,
+  aboveSma50: 0.4,
+  aboveSma20: 0.3,
+  aboveSma10: 0.3,
+  nearHighPct: 5,
+  nearHighPoints: 0.5,
+  nearHighSoftPct: 10,
+  nearHighSoftPoints: 0.25,
+  rvolHigh: 1.5,
+  rvolHighPoints: 0.3,
+  rvolMid: 1.2,
+  rvolMidPoints: 0.15,
+  priorRunHigh: 40,
+  priorRunHighPoints: 0.25,
+  priorRunMid: 25,
+  priorRunMidPoints: 0.1,
+  adrMin: 2.5,
+  adrMax: 8,
+  adrPoints: 0.15,
+  aPlusFloor: 4.5,
+  clampMin: 3,
+  clampMax: 5,
+} as const
+
+/** setupTypeHeuristic, checked in this order. */
+export const SETUP_TYPE_CONFIG = {
+  episodicRvol: 2.5,
+  episodicDayPct: 3,
+  rangeHighPct: 8,
+  rangeRvol: 1.2,
+} as const
+
+/** deriveCharacteristics "near ATH" band: pctFrom52wHigh >= -this. */
+export const NEAR_ATH_PCT = 5
+
+/** computeMarketRegime thresholds on QQQ daily bars. */
+export const REGIME_CONFIG = {
+  minBars: 55,
+  /** SMA50 slope compares the current SMA50 with SMA50 on closes dropping this many sessions. */
+  slopeLookbackSessions: 5,
+  upSlopeMinPct: 0.15,
+  downSlopeMaxPct: -0.15,
+} as const
+
 /** True if local calendar day is Sat/Sun. */
 export function isWeekend(d: Date): boolean {
   const day = d.getUTCDay()
@@ -108,8 +230,12 @@ export function classifyEarningsProximity(
     // Past date — treat as clear (already reported)
     return { daysToEarnings: null, earningsStatus: 'clear' }
   }
-  if (days <= 1) return { daysToEarnings: days, earningsStatus: 'avoid' }
-  if (days === 2) return { daysToEarnings: days, earningsStatus: 'alert' }
+  if (days <= EARNINGS_PROXIMITY.avoidMaxTradingDays) {
+    return { daysToEarnings: days, earningsStatus: 'avoid' }
+  }
+  if (days === EARNINGS_PROXIMITY.alertTradingDays) {
+    return { daysToEarnings: days, earningsStatus: 'alert' }
+  }
   return { daysToEarnings: days, earningsStatus: 'clear' }
 }
 
@@ -127,13 +253,13 @@ export function smaClose(closes: number[], period: number): number | null {
  */
 export function priorRunPctProxy(
   bars: DailyBar[],
-  runLookback = 63,
-  baseLookback = 15,
+  runLookback = PRIOR_RUN_PROXY.runLookback,
+  baseLookback = PRIOR_RUN_PROXY.baseLookback,
 ): number {
-  if (bars.length < runLookback + baseLookback + 5) {
+  if (bars.length < runLookback + baseLookback + PRIOR_RUN_PROXY.minExtraBars) {
     // Fallback: 3M perf-style when history is short
     const last = bars[bars.length - 1]!
-    const older = bars[Math.max(0, bars.length - 1 - 63)]!
+    const older = bars[Math.max(0, bars.length - 1 - PRIOR_RUN_PROXY.shortHistoryOffset)]!
     return round2(pctChange(older.l, last.h))
   }
   const baseStart = bars.length - baseLookback
@@ -149,12 +275,12 @@ export function priorRunPctProxy(
  * Tight-days proxy: in the last `lookback` sessions, count days where
  * (high−low)/close < 0.75 × average ADR of that window, OR close within 1.5% of SMA10 or SMA20.
  */
-export function tightDaysProxy(bars: DailyBar[], lookback = 15): number {
-  if (bars.length < lookback + 20) return 0
+export function tightDaysProxy(bars: DailyBar[], lookback = TIGHT_DAYS_PROXY.lookback): number {
+  if (bars.length < lookback + TIGHT_DAYS_PROXY.historyExtra) return 0
   const window = bars.slice(-lookback)
   const ranges = window.map((b) => (b.c > 0 ? ((b.h - b.l) / b.c) * 100 : 0))
   const meanRange = avg(ranges)
-  const threshold = meanRange * 0.75
+  const threshold = meanRange * TIGHT_DAYS_PROXY.rangeFactor
   const closesAll = bars.map((b) => b.c)
   let count = 0
   for (let i = 0; i < window.length; i++) {
@@ -164,8 +290,8 @@ export function tightDaysProxy(bars: DailyBar[], lookback = 15): number {
     const sma10 = smaClose(closesAll.slice(0, globalIdx + 1), 10)
     const sma20 = smaClose(closesAll.slice(0, globalIdx + 1), 20)
     const nearMa =
-      (sma10 != null && Math.abs(pctChange(sma10, b.c)) <= 1.5) ||
-      (sma20 != null && Math.abs(pctChange(sma20, b.c)) <= 1.5)
+      (sma10 != null && Math.abs(pctChange(sma10, b.c)) <= TIGHT_DAYS_PROXY.maProximityPct) ||
+      (sma20 != null && Math.abs(pctChange(sma20, b.c)) <= TIGHT_DAYS_PROXY.maProximityPct)
     if (rangePct < threshold || nearMa) count += 1
   }
   return count
@@ -175,13 +301,16 @@ export function tightDaysProxy(bars: DailyBar[], lookback = 15): number {
  * Base-length / Over Days proxy: consecutive trailing days (from most recent)
  * that pass the tight heuristic, looking back up to `maxLookback`.
  */
-export function baseLengthDaysProxy(bars: DailyBar[], maxLookback = 40): number {
-  if (bars.length < 25) return 0
-  const n = Math.min(maxLookback, bars.length - 20)
+export function baseLengthDaysProxy(
+  bars: DailyBar[],
+  maxLookback = BASE_LENGTH_PROXY.maxLookback,
+): number {
+  if (bars.length < BASE_LENGTH_PROXY.minBars) return 0
+  const n = Math.min(maxLookback, bars.length - BASE_LENGTH_PROXY.historyReserve)
   const window = bars.slice(-n)
   const ranges = window.map((b) => (b.c > 0 ? ((b.h - b.l) / b.c) * 100 : 0))
   const meanRange = avg(ranges)
-  const threshold = meanRange * 0.75
+  const threshold = meanRange * BASE_LENGTH_PROXY.rangeFactor
   let streak = 0
   for (let i = window.length - 1; i >= 0; i--) {
     if (ranges[i]! < threshold) streak += 1
@@ -212,13 +341,13 @@ export function isAPlusHeuristic(m: {
 }): boolean {
   if (m.earningsStatus === 'avoid') return false
   if (!m.aboveSma200 || !m.aboveSma50) return false
-  if (m.adrPct < 2.5) return false
-  const nearHigh = m.pctFrom52wHigh >= -5
-  const nearHighSoft = m.pctFrom52wHigh >= -10
-  const volumeOrRun = m.rvol >= 1.5 || m.priorRunPct >= 30
+  if (m.adrPct < APLUS_CONFIG.adrMin) return false
+  const nearHigh = m.pctFrom52wHigh >= -APLUS_CONFIG.nearHighPct
+  const nearHighSoft = m.pctFrom52wHigh >= -APLUS_CONFIG.nearHighSoftPct
+  const volumeOrRun = m.rvol >= APLUS_CONFIG.rvolOrRunRvol || m.priorRunPct >= APLUS_CONFIG.rvolOrRunPrior
   const surfer = m.aboveSma10 || m.aboveSma20
   if (nearHigh && volumeOrRun) return true
-  if (nearHighSoft && volumeOrRun && surfer && m.rvol >= 1.2) return true
+  if (nearHighSoft && volumeOrRun && surfer && m.rvol >= APLUS_CONFIG.softPathRvol) return true
   return false
 }
 
@@ -238,20 +367,22 @@ export function kyleScoreHeuristic(m: {
   priorRunPct: number
   isAPlus: boolean
 }): number {
-  if (!m.aboveSma200) return 1 // should be excluded from setups
-  let score = 3
-  if (m.aboveSma50) score += 0.4
-  if (m.aboveSma20) score += 0.3
-  if (m.aboveSma10) score += 0.3
-  if (m.pctFrom52wHigh >= -5) score += 0.5
-  else if (m.pctFrom52wHigh >= -10) score += 0.25
-  if (m.rvol >= 1.5) score += 0.3
-  else if (m.rvol >= 1.2) score += 0.15
-  if (m.priorRunPct >= 40) score += 0.25
-  else if (m.priorRunPct >= 25) score += 0.1
-  if (m.adrPct >= 2.5 && m.adrPct <= 8) score += 0.15
-  if (m.isAPlus) score = Math.max(score, 4.5)
-  return Math.min(5, Math.max(3, round2(score)))
+  const k = KYLE_SCORE_CONFIG
+  if (!m.aboveSma200) return k.below200Score // should be excluded from setups
+  // `base` is a numeric literal under `as const`; the running total is a number.
+  let score: number = k.base
+  if (m.aboveSma50) score += k.aboveSma50
+  if (m.aboveSma20) score += k.aboveSma20
+  if (m.aboveSma10) score += k.aboveSma10
+  if (m.pctFrom52wHigh >= -k.nearHighPct) score += k.nearHighPoints
+  else if (m.pctFrom52wHigh >= -k.nearHighSoftPct) score += k.nearHighSoftPoints
+  if (m.rvol >= k.rvolHigh) score += k.rvolHighPoints
+  else if (m.rvol >= k.rvolMid) score += k.rvolMidPoints
+  if (m.priorRunPct >= k.priorRunHigh) score += k.priorRunHighPoints
+  else if (m.priorRunPct >= k.priorRunMid) score += k.priorRunMidPoints
+  if (m.adrPct >= k.adrMin && m.adrPct <= k.adrMax) score += k.adrPoints
+  if (m.isAPlus) score = Math.max(score, k.aPlusFloor)
+  return Math.min(k.clampMax, Math.max(k.clampMin, round2(score)))
 }
 
 /** Simple setup label heuristic from RVOL / distance-from-highs. */
@@ -260,8 +391,12 @@ export function setupTypeHeuristic(m: {
   pctFrom52wHigh: number
   dayPct: number
 }): SetupType {
-  if (m.rvol >= 2.5 && m.dayPct >= 3) return 'Episodic Pivot'
-  if (m.pctFrom52wHigh >= -8 && m.rvol >= 1.2) return 'Range Breakout'
+  if (m.rvol >= SETUP_TYPE_CONFIG.episodicRvol && m.dayPct >= SETUP_TYPE_CONFIG.episodicDayPct) {
+    return 'Episodic Pivot'
+  }
+  if (m.pctFrom52wHigh >= -SETUP_TYPE_CONFIG.rangeHighPct && m.rvol >= SETUP_TYPE_CONFIG.rangeRvol) {
+    return 'Range Breakout'
+  }
   return 'Continuation'
 }
 
@@ -283,7 +418,7 @@ export function deriveCharacteristics(m: {
   if (m.surfer10) tags.push('10MA Surfer')
   if (m.surfer20) tags.push('20MA Surfer')
   if (m.surfer50) tags.push('50MA Surfer')
-  if (m.pctFrom52wHigh >= -5) tags.push('near ATH')
+  if (m.pctFrom52wHigh >= -NEAR_ATH_PCT) tags.push('near ATH')
   const cat = (m.catalyst ?? '').toLowerCase()
   if (cat && /\bearnings?\b|\beps\b/.test(cat)) tags.push('Earnings')
   if (cat && /\bgap\b|\bgapped?\b/.test(cat)) tags.push('GAP')
@@ -294,23 +429,23 @@ export function deriveCharacteristics(m: {
  * QQQ regime: 10>20 from SMA10 vs SMA20; ST direction from price vs SMA50 + SMA50 slope.
  */
 export function computeMarketRegime(bars: DailyBar[]): MarketRegime | null {
-  if (bars.length < 55) return null
+  if (bars.length < REGIME_CONFIG.minBars) return null
   const sorted = [...bars].sort((a, b) => a.t - b.t)
   const closes = sorted.map((b) => b.c)
   const price = closes[closes.length - 1]!
-  const sma10 = smaClose(closes, 10)
-  const sma20 = smaClose(closes, 20)
-  const sma50 = smaClose(closes, 50)
+  const sma10 = smaClose(closes, SMA_PERIODS.sma10)
+  const sma20 = smaClose(closes, SMA_PERIODS.sma20)
+  const sma50 = smaClose(closes, SMA_PERIODS.sma50)
   if (sma10 == null || sma20 == null || sma50 == null) return null
 
   const qqq10gt20 = sma10 > sma20
-  const sma50Prev = smaClose(closes.slice(0, -5), 50) // ~1 week ago SMA50
+  const sma50Prev = smaClose(closes.slice(0, -REGIME_CONFIG.slopeLookbackSessions), 50)
   const slopePct = sma50Prev != null ? pctChange(sma50Prev, sma50) : 0
   const vs50 = pctChange(sma50, price)
 
   let stDirection: StDirection
-  if (price > sma50 && slopePct >= 0.15) stDirection = 'Uptrend'
-  else if (price < sma50 && slopePct <= -0.15) stDirection = 'Downtrend'
+  if (price > sma50 && slopePct >= REGIME_CONFIG.upSlopeMinPct) stDirection = 'Uptrend'
+  else if (price < sma50 && slopePct <= REGIME_CONFIG.downSlopeMaxPct) stDirection = 'Downtrend'
   else stDirection = 'Sideways'
 
   return {
@@ -352,23 +487,24 @@ export function computeIdeaMetrics(
     }) ?? prev.c
   const dayPct = pctChange(prevClose, price)
 
-  const lookback20 = bars.slice(-21, -1)
-  const avgVol20 = avg(lookback20.map((b) => b.v))
+  const lookbackVol = bars.slice(-(BAR_WINDOWS.rvolSessions + 1), -1)
+  const avgVol20 = avg(lookbackVol.map((b) => b.v))
   const rvol = avgVol20 > 0 ? last.v / avgVol20 : 0
 
+  const lookbackAdr = bars.slice(-(BAR_WINDOWS.adrSessions + 1), -1)
   const adrPct = avg(
-    lookback20.map((b) => (b.c > 0 ? ((b.h - b.l) / b.c) * 100 : 0)),
+    lookbackAdr.map((b) => (b.c > 0 ? ((b.h - b.l) / b.c) * 100 : 0)),
   )
 
-  const yearBars = bars.slice(-252)
+  const yearBars = bars.slice(-BAR_WINDOWS.high52Sessions)
   const high52 = Math.max(...yearBars.map((b) => b.h))
   const pctFrom52wHigh = high52 > 0 ? ((price / high52) - 1) * 100 : 0
 
   const closes = bars.map((b) => b.c)
-  const sma200 = smaClose(closes, 200)
-  const sma50 = smaClose(closes, 50)
-  const sma20 = smaClose(closes, 20)
-  const sma10 = smaClose(closes, 10)
+  const sma200 = smaClose(closes, SMA_PERIODS.sma200)
+  const sma50 = smaClose(closes, SMA_PERIODS.sma50)
+  const sma20 = smaClose(closes, SMA_PERIODS.sma20)
+  const sma10 = smaClose(closes, SMA_PERIODS.sma10)
   if (sma200 == null || sma50 == null || sma20 == null || sma10 == null) return null
 
   const aboveSma200 = price > sma200
@@ -382,11 +518,12 @@ export function computeIdeaMetrics(
     const idx = bars.length - 1 - offset
     return bars[Math.max(0, idx)]!.c
   }
-  const perf1M = pctChange(closeAt(21), price)
-  const perf3M = pctChange(closeAt(63), price)
-  const perf6M = pctChange(closeAt(126), price)
+  const perf1M = pctChange(closeAt(BAR_WINDOWS.perf1mSessions), price)
+  const perf3M = pctChange(closeAt(BAR_WINDOWS.perf3mSessions), price)
+  const perf6M = pctChange(closeAt(BAR_WINDOWS.perf6mSessions), price)
 
-  const avgDollarVol = avg(lookback20.map((b) => b.c * b.v))
+  const lookbackDol = bars.slice(-(BAR_WINDOWS.dolVolSessions + 1), -1)
+  const avgDollarVol = avg(lookbackDol.map((b) => b.c * b.v))
   const priorRunPct = priorRunPctProxy(bars)
   const tightDays = tightDaysProxy(bars)
   const baseLengthDays = baseLengthDaysProxy(bars)
@@ -399,7 +536,7 @@ export function computeIdeaMetrics(
   const tightConsolidation = tightEval.ok
   const tightDetail = compactTightDetail(tightEval)
 
-  const sparkSrc = bars.slice(-40)
+  const sparkSrc = bars.slice(-BAR_WINDOWS.sparkSessions)
   const sparkline: SparkPoint[] = sparkSrc.map((b) => ({
     d: barDate(b.t),
     c: Math.round(b.c * 100) / 100,

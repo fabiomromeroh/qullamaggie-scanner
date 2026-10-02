@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { formatRelativeTime } from '../utils/format'
+import { MetricTip } from './MetricTip'
 
 interface NewsItem {
   headline: string
@@ -57,9 +58,9 @@ export function TickerNews({ symbol }: { symbol: string }) {
           Latest news
         </h3>
         {source ? (
-          <span className="text-[9px] uppercase tracking-wide text-terminal-dim">
+          <MetricTip id="newsSource" className="text-[9px] uppercase tracking-wide text-terminal-dim">
             {source === 'finnhub' ? 'Finnhub' : 'Yahoo'}
-          </span>
+          </MetricTip>
         ) : null}
       </div>
       {loading ? (

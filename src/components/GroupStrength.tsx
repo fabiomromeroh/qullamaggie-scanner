@@ -12,6 +12,8 @@ import {
   isGroupSlug,
   rankGroups,
 } from '../lib/groupPeriod'
+import { metricTipAttrs } from '../lib/metricDefinitions'
+import { MetricTip } from './MetricTip'
 import { ResizeHandle } from './ResizeHandle'
 
 const GROUPS_EXPAND_KEY = 'qm-groups-expanded'
@@ -240,26 +242,33 @@ function GroupsMetaLine({ meta }: { meta: GroupsMeta }) {
   return (
     <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[10px] font-normal normal-case tracking-normal text-terminal-dim">
       {meta.source === 'fallback' ? (
-        <span className="font-medium text-terminal-amber">Fallback: internal ranking</span>
+        <MetricTip id="groupSourceFallback" className="font-medium text-terminal-amber">
+          Fallback: internal ranking
+        </MetricTip>
       ) : (
-        <span>Finviz</span>
+        <MetricTip id="groupSourceFinviz">Finviz</MetricTip>
       )}
       {meta.stale ? (
-        <span className="rounded bg-terminal-amber-dim px-1 py-px font-medium uppercase tracking-wide text-terminal-amber">
+        <MetricTip
+          id="groupPayloadStale"
+          className="rounded bg-terminal-amber-dim px-1 py-px font-medium uppercase tracking-wide text-terminal-amber"
+        >
           stale
-        </span>
+        </MetricTip>
       ) : null}
       {updated ? <span>updated {updated}</span> : null}
       {meta.source === 'finviz' && membershipDay ? (
-        <span className="text-terminal-muted">Membership: snapshot {membershipDay}</span>
+        <MetricTip id="groupMembershipSnapshot" className="text-terminal-muted">
+          Membership: snapshot {membershipDay}
+        </MetricTip>
       ) : null}
       {meta.source === 'finviz' && meta.membership?.stale ? (
-        <span
+        <MetricTip
+          id="groupMembershipStale"
           className="rounded bg-terminal-amber-dim px-1 py-px font-medium uppercase tracking-wide text-terminal-amber"
-          title="Membership snapshot is older than 14 days"
         >
           stale
-        </span>
+        </MetricTip>
       ) : null}
     </p>
   )
@@ -277,6 +286,8 @@ function PeriodControl({
       className="flex shrink-0 rounded border border-terminal-border p-px"
       role="group"
       aria-label="Group performance period"
+      tabIndex={0}
+      {...metricTipAttrs('groupPeriodControl')}
     >
       {GROUP_PERIOD_IDS.map((id) => {
         const active = id === period
@@ -286,7 +297,18 @@ function PeriodControl({
             type="button"
             aria-pressed={active}
             onClick={() => onChange(id)}
-            className={`min-h-8 px-1.5 text-[10px] ${
+            {...metricTipAttrs(
+              id === '1d'
+                ? 'groupPerf1d'
+                : id === '1w'
+                  ? 'groupPerf1w'
+                  : id === '1m'
+                    ? 'groupPerf1m'
+                    : id === '3m'
+                      ? 'groupPerf3m'
+                      : 'groupPerf6m',
+            )}
+            className={`min-h-8 cursor-help px-1.5 text-[10px] ${
               active
                 ? 'rounded-sm bg-terminal-blue/20 font-semibold text-terminal-fg'
                 : 'text-terminal-dim hover:text-terminal-fg'
@@ -305,7 +327,8 @@ function ResetButton({ onReset, className = '' }: { onReset: () => void; classNa
     <button
       type="button"
       onClick={onReset}
-      className={`min-h-8 shrink-0 px-2 text-[10px] font-medium text-terminal-fg hover:text-terminal-blue ${className}`}
+      {...metricTipAttrs('groupReset')}
+      className={`min-h-8 shrink-0 cursor-help px-2 text-[10px] font-medium text-terminal-fg hover:text-terminal-blue ${className}`}
     >
       Reset
     </button>
@@ -317,7 +340,7 @@ function Th({
   width,
   onResize,
   className = '',
-  title,
+  metric,
   children,
   align = 'left',
   sortKey,
@@ -329,7 +352,7 @@ function Th({
   width: number
   onResize: (key: string, dx: number) => void
   className?: string
-  title?: string
+  metric: 'groupRank' | 'groupName' | 'groupLeaders' | 'groupPerf1d' | 'groupPerf1m' | 'groupPerf3m' | 'groupPerf6m'
   children: ReactNode
   align?: 'left' | 'right'
   sortKey: GroupSortKey
@@ -346,12 +369,12 @@ function Th({
         emphasize ? 'bg-terminal-blue/10 font-semibold text-terminal-fg' : ''
       } ${className}`}
       style={{ width, minWidth: width, maxWidth: width }}
-      title={title}
       aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
     >
       <button
         type="button"
-        className={`inline-flex w-full items-center gap-0.5 ${align === 'right' ? 'justify-end' : 'justify-start'}`}
+        {...metricTipAttrs(metric)}
+        className={`inline-flex w-full cursor-help items-center gap-0.5 ${align === 'right' ? 'justify-end' : 'justify-start'}`}
         onPointerDown={(event) => {
           moved.current = false
           startX.current = event.clientX
@@ -491,34 +514,60 @@ export function GroupStrength({
                   const slug = slugOf(g)
                   const entry = slug ? entries[slug] : undefined
                   return (
-                    <button
+                    <div
                       key={g.id}
-                      type="button"
+                      role="button"
+                      tabIndex={0}
                       onClick={() => onSelectGroup(active ? null : g.id)}
-                      title={`${groupTitle(g)}${entry ? `\n${leaderTooltip(entry, periodLabel)}` : ''}`}
-                      className={`snap-start shrink-0 min-w-[9.75rem] max-w-[11rem] rounded-md border px-2 py-1 text-left transition-colors ${
+                      onKeyDown={(event) => {
+                        if (event.target !== event.currentTarget) return
+                        if (event.key !== 'Enter' && event.key !== ' ') return
+                        event.preventDefault()
+                        onSelectGroup(active ? null : g.id)
+                      }}
+                      className={`snap-start shrink-0 min-w-[9.75rem] max-w-[11rem] rounded-md border px-2 py-1 text-left transition-colors focus-visible:outline focus-visible:outline-1 focus-visible:outline-terminal-blue ${
                         active
                           ? 'border-terminal-blue/50 bg-terminal-blue/10'
                           : 'border-terminal-border bg-terminal-bg hover:bg-terminal-elevated'
                       }`}
                     >
                       <div className="flex items-center gap-1">
-                        <span className="font-mono text-[9px] text-terminal-dim">#{g.rsRank}</span>
-                        <span className="truncate text-[10px] font-medium leading-tight text-terminal-fg">
+                        <MetricTip id="groupRank" className="font-mono text-[9px] text-terminal-dim">
+                          #{g.rsRank}
+                        </MetricTip>
+                        <MetricTip
+                          id="groupName"
+                          extra={`${groupTitle(g)}${entry ? `\n${leaderTooltip(entry, periodLabel)}` : ''}`}
+                          className="truncate text-[10px] font-medium leading-tight text-terminal-fg"
+                        >
                           {g.name}
-                        </span>
+                        </MetricTip>
                       </div>
                       <div className="mt-0.5 flex flex-nowrap items-center gap-1.5 overflow-visible font-mono text-[9px] leading-tight whitespace-nowrap">
                         {stripPeriods.map((id) => {
                           const value = g[GROUP_PERIODS[id].field]
                           return (
-                            <span key={id} className={cellClass(value)}>
+                            <MetricTip
+                              key={id}
+                              id={
+                                id === '1d'
+                                  ? 'groupPerf1d'
+                                  : id === '1w'
+                                    ? 'groupPerf1w'
+                                    : id === '1m'
+                                      ? 'groupPerf1m'
+                                      : id === '3m'
+                                        ? 'groupPerf3m'
+                                        : 'groupPerf6m'
+                              }
+                              className={cellClass(value)}
+                            >
                               {GROUP_PERIODS[id].label} {fmtCell(value, id === '1d' ? 1 : 0)}
-                            </span>
+                            </MetricTip>
                           )
                         })}
                       </div>
-                    </button>
+                    </div>
                   )
                 })}
               </div>
@@ -559,10 +608,10 @@ export function GroupStrength({
           </colgroup>
           <thead className="sticky top-0 bg-terminal-elevated text-[10px] uppercase tracking-wide text-terminal-dim">
             <tr>
-              <Th colKey="rank" width={widthOf('rank')} onResize={resizeColumn} sortKey="rank" sort={sort} onSort={onSort}>
+              <Th colKey="rank" width={widthOf('rank')} onResize={resizeColumn} sortKey="rank" sort={sort} onSort={onSort} metric="groupRank">
                 #
               </Th>
-              <Th colKey="name" width={widthOf('name')} onResize={resizeColumn} sortKey="name" sort={sort} onSort={onSort}>
+              <Th colKey="name" width={widthOf('name')} onResize={resizeColumn} sortKey="name" sort={sort} onSort={onSort} metric="groupName">
                 Group
               </Th>
               <Th
@@ -573,7 +622,7 @@ export function GroupStrength({
                 sortKey="leaders"
                 sort={sort}
                 onSort={onSort}
-                title={finviz ? LEADER_HELP : 'Members within 10% of 52-week high'}
+                metric="groupLeaders"
               >
                 Leaders
               </Th>
@@ -586,7 +635,7 @@ export function GroupStrength({
                 sort={sort}
                 onSort={onSort}
                 emphasize={emph('d1')}
-                title={finviz ? 'Finviz today change %' : undefined}
+                metric="groupPerf1d"
               >
                 1D
               </Th>
@@ -599,7 +648,7 @@ export function GroupStrength({
                 sort={sort}
                 onSort={onSort}
                 emphasize={emph('m1')}
-                title={finviz ? 'Finviz 1-month performance' : 'Avg member ~21 trading-day return'}
+                metric="groupPerf1m"
               >
                 1M
               </Th>
@@ -612,7 +661,7 @@ export function GroupStrength({
                 sort={sort}
                 onSort={onSort}
                 emphasize={emph('m3')}
-                title={finviz ? 'Finviz 13-week performance' : 'Avg member ~63 trading-day return'}
+                metric="groupPerf3m"
               >
                 3M
               </Th>
@@ -625,7 +674,7 @@ export function GroupStrength({
                 sort={sort}
                 onSort={onSort}
                 emphasize={emph('m6')}
-                title={finviz ? 'Finviz 6-month performance' : 'Avg member ~126 trading-day return'}
+                metric="groupPerf6m"
               >
                 6M
               </Th>
@@ -655,15 +704,18 @@ export function GroupStrength({
                   <tr
                     key={g.id}
                     onClick={() => onSelectGroup(active ? null : g.id)}
-                    title={groupTitle(g)}
                     className={`cursor-pointer border-t border-terminal-border/60 transition-colors hover:bg-terminal-elevated ${
                       active ? 'bg-terminal-blue/10' : ''
                     }`}
                   >
-                    <td className="overflow-hidden px-2 py-1.5 font-mono text-terminal-dim">{g.rsRank}</td>
+                    <td className="overflow-hidden px-2 py-1.5 font-mono text-terminal-dim">
+                      <MetricTip id="groupRank">{g.rsRank}</MetricTip>
+                    </td>
                     <td className="overflow-hidden px-2 py-1.5">
                       <div className="flex items-center gap-1">
-                        <div className="min-w-0 flex-1 truncate font-medium text-terminal-fg">{g.name}</div>
+                        <MetricTip id="groupName" extra={groupTitle(g)} className="min-w-0 flex-1 truncate font-medium text-terminal-fg">
+                          {g.name}
+                        </MetricTip>
                         {peek.length ? (
                           <span className="shrink-0 font-mono text-[9px] font-normal normal-case tracking-normal text-terminal-dim">
                             {peek.join(' ')}
@@ -690,23 +742,22 @@ export function GroupStrength({
                         />
                       </div>
                     </td>
-                    <td
-                      className="overflow-hidden px-2 py-1.5 text-right font-mono text-terminal-fg"
-                      title={leaders.title}
-                    >
-                      {leaders.text}
+                    <td className="overflow-hidden px-2 py-1.5 text-right font-mono text-terminal-fg">
+                      <MetricTip id="groupLeaders" extra={leaders.title}>
+                        {leaders.text}
+                      </MetricTip>
                     </td>
                     <td className={`overflow-hidden px-2 py-1.5 text-right font-mono ${cellClass(g.dayPct)} ${emph('d1') ? 'bg-terminal-blue/10 font-semibold' : ''}`}>
-                      {fmtCell(g.dayPct)}
+                      <MetricTip id="groupPerf1d">{fmtCell(g.dayPct)}</MetricTip>
                     </td>
                     <td className={`overflow-hidden px-2 py-1.5 text-right font-mono ${cellClass(g.perf1m)} ${emph('m1') ? 'bg-terminal-blue/10 font-semibold' : ''}`}>
-                      {fmtCell(g.perf1m, 0)}
+                      <MetricTip id="groupPerf1m">{fmtCell(g.perf1m, 0)}</MetricTip>
                     </td>
                     <td className={`overflow-hidden px-2 py-1.5 text-right font-mono ${cellClass(g.perf3m)} ${emph('m3') ? 'bg-terminal-blue/10 font-semibold' : ''}`}>
-                      {fmtCell(g.perf3m, 0)}
+                      <MetricTip id="groupPerf3m">{fmtCell(g.perf3m, 0)}</MetricTip>
                     </td>
                     <td className={`overflow-hidden px-2 py-1.5 text-right font-mono ${cellClass(g.perf6m)} ${emph('m6') ? 'bg-terminal-blue/10 font-semibold' : ''}`}>
-                      {fmtCell(g.perf6m, 0)}
+                      <MetricTip id="groupPerf6m">{fmtCell(g.perf6m, 0)}</MetricTip>
                     </td>
                   </tr>
                 )

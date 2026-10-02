@@ -1,5 +1,6 @@
 import { Activity, RefreshCw } from 'lucide-react'
 import type { MarketRegime } from '../types'
+import { MetricTip } from './MetricTip'
 
 interface HeaderProps {
   asOf: string
@@ -68,17 +69,18 @@ export function Header({
           <div className="hidden sm:flex items-center gap-3 font-mono text-terminal-muted">
             {marketRegime ? (
               <>
-                <span
-                  className={
-                    marketRegime.qqq10gt20 ? 'text-terminal-green' : 'text-terminal-amber'
-                  }
-                  title={marketRegime.detail ?? 'QQQ SMA10 vs SMA20'}
+                <MetricTip
+                  id="marketRegime10gt20"
+                  extra={marketRegime.detail}
+                  className={marketRegime.qqq10gt20 ? 'text-terminal-green' : 'text-terminal-amber'}
                 >
                   QQQ 10&gt;20{' '}
                   <span className="text-terminal-fg">{marketRegime.qqq10gt20 ? 'ON' : 'OFF'}</span>
-                </span>
+                </MetricTip>
                 <span className="text-terminal-border-bright">|</span>
-                <span
+                <MetricTip
+                  id="marketRegimeSt"
+                  extra={marketRegime.detail}
                   className={
                     marketRegime.stDirection === 'Uptrend'
                       ? 'text-terminal-green'
@@ -86,88 +88,87 @@ export function Header({
                         ? 'text-terminal-red'
                         : 'text-terminal-amber'
                   }
-                  title="Heuristic ST direction from QQQ vs SMA50 / slope"
                 >
                   ST <span className="text-terminal-fg">{marketRegime.stDirection}</span>
-                </span>
+                </MetricTip>
                 {downtrend ? (
-                  <span
+                  <MetricTip
+                    id="marketRegimeWarn"
                     className="rounded border border-terminal-amber/40 bg-terminal-amber-dim px-1.5 py-0.5 text-[10px] text-terminal-amber"
-                    title="Soft warn: deprioritize new breakouts in Downtrend regime"
                   >
                     Soft warn · breakouts deprioritized
-                  </span>
+                  </MetricTip>
                 ) : null}
                 <span className="text-terminal-border-bright">|</span>
               </>
             ) : null}
             {typeof scanUniverseSize === 'number' ? (
               <>
-                <span title="Scan universe size">
+                <MetricTip id="scanUniverse">
                   Scan <span className="text-terminal-fg">{scanUniverseSize}</span>
-                </span>
+                </MetricTip>
                 <span className="text-terminal-border-bright">|</span>
               </>
             ) : null}
             {typeof stage1Count === 'number' ? (
               <>
                 <span className="text-terminal-border-bright">|</span>
-                <span title="Stage-1 Yahoo liquid universe size">
+                <MetricTip id="stage1Universe">
                   Univ <span className="text-terminal-fg">{stage1Count}</span>
-                </span>
+                </MetricTip>
               </>
             ) : null}
             {typeof stage15Count === 'number' ? (
               <>
                 <span className="text-terminal-border-bright">|</span>
-                <span title="Stage 1.5 SMA prefilter survivors (above 200 AND above 50)">
+                <MetricTip id="stage15Sma">
                   SMA <span className="text-terminal-fg">{stage15Count}</span>
-                </span>
+                </MetricTip>
               </>
             ) : null}
             {typeof shortlistCount === 'number' ? (
               <>
                 <span className="text-terminal-border-bright">|</span>
-                <span title="Stage-2 deep-scan shortlist size">
+                <MetricTip id="stage2Deep">
                   Deep <span className="text-terminal-fg">{shortlistCount}</span>
-                </span>
+                </MetricTip>
               </>
             ) : null}
             {emergencyFallback ? (
               <>
                 <span className="text-terminal-border-bright">|</span>
-                <span className="text-terminal-amber" title="Yahoo Stage-1 failed; using emergency fixed SCAN_UNIVERSE">
+                <MetricTip id="emergencyUniverse" className="text-terminal-amber">
                   Emergency universe
-                </span>
+                </MetricTip>
               </>
             ) : null}
-            <span>
+            <MetricTip id="shownCount">
               Shown <span className="text-terminal-fg">{ideaCount}</span>
-            </span>
+            </MetricTip>
             {typeof coiledCount === 'number' ? (
               <>
                 <span className="text-terminal-border-bright">|</span>
-                <span className="text-terminal-purple" title="Coiled in filtered set">
+                <MetricTip id="stageCoiled" className="text-terminal-purple">
                   Coil {coiledCount}
-                </span>
+                </MetricTip>
               </>
             ) : null}
             {typeof triggeringCount === 'number' ? (
               <>
                 <span className="text-terminal-border-bright">|</span>
-                <span className="text-terminal-amber" title="Triggering in filtered set">
+                <MetricTip id="stageTriggering" className="text-terminal-amber">
                   Trig {triggeringCount}
-                </span>
+                </MetricTip>
               </>
             ) : null}
             <span className="text-terminal-border-bright">|</span>
-            <span>
+            <MetricTip id="aPlus">
               A+ <span className="text-terminal-a-plus">{aPlusCount}</span>
-            </span>
+            </MetricTip>
             <span className="text-terminal-border-bright">|</span>
-            <span title={source === 'live' ? 'Live as-of (Europe/Dublin)' : 'As-of (Europe/Dublin)'}>
+            <MetricTip id="asOf" extra={source === 'live' ? 'Live' : source}>
               As of {asOfLabel} IST
-            </span>
+            </MetricTip>
           </div>
           <button
             type="button"
@@ -183,29 +184,35 @@ export function Header({
 
       {/* Compact mobile stats strip */}
       <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 font-mono text-[10px] text-terminal-muted sm:hidden">
-        <span>
+        <MetricTip id="shownCount">
           Shown <span className="text-terminal-fg">{ideaCount}</span>
-        </span>
+        </MetricTip>
         <span className="text-terminal-border-bright">·</span>
-        <span>
+        <MetricTip id="aPlus">
           A+ <span className="text-terminal-a-plus">{aPlusCount}</span>
-        </span>
+        </MetricTip>
         {typeof coiledCount === 'number' ? (
           <>
             <span className="text-terminal-border-bright">·</span>
-            <span className="text-terminal-purple">Coil {coiledCount}</span>
+            <MetricTip id="stageCoiled" className="text-terminal-purple">
+              Coil {coiledCount}
+            </MetricTip>
           </>
         ) : null}
         {typeof triggeringCount === 'number' ? (
           <>
             <span className="text-terminal-border-bright">·</span>
-            <span className="text-terminal-amber">Trig {triggeringCount}</span>
+            <MetricTip id="stageTriggering" className="text-terminal-amber">
+              Trig {triggeringCount}
+            </MetricTip>
           </>
         ) : null}
         {marketRegime ? (
           <>
             <span className="text-terminal-border-bright">·</span>
-            <span
+            <MetricTip
+              id="marketRegimeSt"
+              extra={marketRegime.detail}
               className={
                 marketRegime.stDirection === 'Uptrend'
                   ? 'text-terminal-green'
@@ -215,7 +222,7 @@ export function Header({
               }
             >
               ST {marketRegime.stDirection}
-            </span>
+            </MetricTip>
           </>
         ) : null}
       </div>

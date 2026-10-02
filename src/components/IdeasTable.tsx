@@ -1,8 +1,10 @@
-import type { CSSProperties, ReactNode } from 'react'
+import type { CSSProperties, KeyboardEvent, ReactNode } from 'react'
 import { Pin, PinOff } from 'lucide-react'
 import type { CharacteristicTag, EarningsStatus, SetupStage, TradingIdea } from '../types'
 import { SHOW_ALL_GROUP_LABEL } from '../lib/ideaFilters'
 import { groupViewFilterNote } from '../lib/groupView'
+import { KYLE_SCORE_CONFIG, NEAR_ATH_PCT } from '../lib/metrics'
+import { metricTipAttrs } from '../lib/metricDefinitions'
 import { stageLabel } from '../lib/setupStage'
 import { surferBadgeTitle } from '../lib/surfer'
 import { tightBadgeTitle } from '../lib/tightConsolidation'
@@ -10,6 +12,7 @@ import { fmtDollarVol, fmtPct, fmtPrice, fmtRvol, pctClass } from '../utils/form
 import { useResizableColumns } from '../hooks/useResizableColumns'
 import { ResizeHandle } from './ResizeHandle'
 import { CopyForTradingView } from './CopyForTradingView'
+import { MetricTip } from './MetricTip'
 
 const IDEAS_COL_KEY = 'qm-ideas-col-widths'
 
@@ -83,9 +86,18 @@ function SetupBadge({ type }: { type: TradingIdea['setupType'] }) {
     Continuation: 'bg-terminal-green/15 text-terminal-green border-terminal-green/30',
   }
   return (
-    <span className={`inline-block whitespace-nowrap rounded border px-1.5 py-0.5 text-[10px] ${styles[type]}`}>
+    <MetricTip
+      id={
+        type === 'Range Breakout'
+          ? 'setupRangeBreakout'
+          : type === 'Episodic Pivot'
+            ? 'setupEpisodicPivot'
+            : 'setupContinuation'
+      }
+      className={`inline-block whitespace-nowrap rounded border px-1.5 py-0.5 text-[10px] ${styles[type]}`}
+    >
       {type}
-    </span>
+    </MetricTip>
   )
 }
 
@@ -93,27 +105,30 @@ function TrendBadges({ idea }: { idea: TradingIdea }) {
   return (
     <div className="flex flex-wrap items-center gap-1">
       {idea.aboveSma200 ? (
-        <span
+        <MetricTip
+          id="aboveSma200"
+          extra={`Price ${fmtPct(idea.pctAboveSma200)} vs 200 SMA (${fmtPrice(idea.sma200)})`}
           className="inline-block whitespace-nowrap rounded border border-terminal-green/30 bg-terminal-green/15 px-1.5 py-0.5 text-[10px] text-terminal-green"
-          title={`Price ${fmtPct(idea.pctAboveSma200)} vs 200 SMA (${fmtPrice(idea.sma200)})`}
         >
           &gt;200
-        </span>
+        </MetricTip>
       ) : (
-        <span
+        <MetricTip
+          id="belowSma200"
+          extra={`Price ${fmtPct(idea.pctAboveSma200)} vs 200 SMA (${fmtPrice(idea.sma200)})`}
           className="inline-block whitespace-nowrap rounded border border-terminal-red/40 bg-terminal-red-dim px-1.5 py-0.5 text-[10px] text-terminal-red"
-          title="Below 200MA — price is below the 200-day SMA. Not a valid setup."
         >
           &lt;200
-        </span>
+        </MetricTip>
       )}
       {idea.aboveSma50 ? (
-        <span
+        <MetricTip
+          id="aboveSma50"
+          extra={`above 50 SMA · ${fmtPct(idea.pctAboveSma50)} vs 50 (${fmtPrice(idea.sma50)})`}
           className="inline-block whitespace-nowrap rounded border border-terminal-blue/30 bg-terminal-blue/15 px-1.5 py-0.5 text-[10px] text-terminal-blue"
-          title={`above 50 SMA · ${fmtPct(idea.pctAboveSma50)} vs 50 (${fmtPrice(idea.sma50)})`}
         >
           &gt;50
-        </span>
+        </MetricTip>
       ) : null}
     </div>
   )
@@ -128,25 +143,35 @@ function SurferBadges({ idea }: { idea: TradingIdea }) {
   return (
     <div className="flex flex-wrap gap-0.5">
       {tags.map((t) => (
-        <span
+        <MetricTip
           key={t}
-          className="inline-block whitespace-nowrap rounded border border-terminal-purple/30 bg-terminal-purple/10 px-1 py-0.5 text-[9px] text-terminal-purple"
-          title={
+          id={
+            t === '10MA Surfer'
+              ? 'surfer10'
+              : t === '20MA Surfer'
+                ? 'surfer20'
+                : t === '50MA Surfer'
+                  ? 'surfer50'
+                  : 'nearAth'
+          }
+          extra={
             t === '10MA Surfer' || t === '20MA Surfer' || t === '50MA Surfer'
               ? surferBadgeTitle(t, idea.surferDetail)
               : t
           }
+          className="inline-block whitespace-nowrap rounded border border-terminal-purple/30 bg-terminal-purple/10 px-1 py-0.5 text-[9px] text-terminal-purple"
         >
           {t === '10MA Surfer' ? '10S' : t === '20MA Surfer' ? '20S' : t === '50MA Surfer' ? '50S' : 'ATH'}
-        </span>
+        </MetricTip>
       ))}
       {tightOn ? (
-        <span
+        <MetricTip
+          id="tightConsolidation"
+          extra={tightBadgeTitle(idea.tightDetail)}
           className="inline-block whitespace-nowrap rounded border border-terminal-green/30 bg-terminal-green/15 px-1 py-0.5 text-[9px] text-terminal-green"
-          title={tightBadgeTitle(idea.tightDetail)}
         >
           Tight
-        </span>
+        </MetricTip>
       ) : null}
     </div>
   )
@@ -155,25 +180,26 @@ function SurferBadges({ idea }: { idea: TradingIdea }) {
 function KyleStars({ score }: { score: number }) {
   const filled = Math.round(score)
   return (
-    <span
+    <MetricTip
+      id="kyleScore"
+      extra={`kyleScore ${score}`}
       className="font-mono text-[10px] text-terminal-amber"
-      title={`kyleScore ${score} (heuristic 3–5, not Kyle official Rating)`}
     >
       {'★'.repeat(Math.min(5, filled))}
       <span className="text-terminal-dim">{'·'.repeat(Math.max(0, 5 - filled))}</span>
-    </span>
+    </MetricTip>
   )
 }
 
 function StageBadge({ stage, aboveSma200 = true }: { stage: SetupStage; aboveSma200?: boolean }) {
   if (!aboveSma200) {
     return (
-      <span
+      <MetricTip
+        id="belowSma200"
         className="inline-block whitespace-nowrap rounded border border-terminal-red/40 bg-terminal-red-dim px-1.5 py-0.5 text-[10px] text-terminal-red"
-        title="Below 200MA — price is below the 200-day SMA. Not a valid setup."
       >
         Below 200
-      </span>
+      </MetricTip>
     )
   }
   const styles: Record<SetupStage, string> = {
@@ -182,18 +208,12 @@ function StageBadge({ stage, aboveSma200 = true }: { stage: SetupStage; aboveSma
     watching: 'bg-terminal-elevated text-terminal-muted border-terminal-border-bright',
   }
   return (
-    <span
+    <MetricTip
+      id={stage === 'triggering' ? 'stageTriggering' : stage === 'coiled' ? 'stageCoiled' : 'stageWatching'}
       className={`inline-block whitespace-nowrap rounded border px-1.5 py-0.5 text-[10px] ${styles[stage]}`}
-      title={
-        stage === 'triggering'
-          ? 'Elevated RVOL / breakout-day heuristic'
-          : stage === 'coiled'
-            ? 'Tight days + near highs + MA surfer'
-            : 'Above 200 SMA, building base'
-      }
     >
       {stageLabel(stage)}
-    </span>
+    </MetricTip>
   )
 }
 
@@ -219,12 +239,13 @@ function EarningsBadge({ idea }: { idea: TradingIdea }) {
       ? `Next earnings ${idea.earningsDate} · ${idea.daysToEarnings ?? '?'} trading days · ${status}`
       : 'No upcoming earnings in calendar window'
   return (
-    <span
+    <MetricTip
+      id={status === 'avoid' ? 'earningsAvoid' : status === 'alert' ? 'earningsAlert' : 'earningsClear'}
+      extra={title}
       className={`inline-block whitespace-nowrap rounded border px-1.5 py-0.5 text-[10px] ${styles[status]}`}
-      title={title}
     >
       {label}
-    </span>
+    </MetricTip>
   )
 }
 
@@ -232,19 +253,29 @@ function APlusCell({ idea }: { idea: TradingIdea }) {
   const avoid = idea.earningsStatus === 'avoid'
   if (avoid) {
     return (
-      <span className="inline-flex rounded border border-terminal-red/50 bg-terminal-red-dim px-1.5 py-0.5 text-[10px] font-bold text-terminal-red">
+      <MetricTip
+        id="earningsAvoid"
+        className="inline-flex rounded border border-terminal-red/50 bg-terminal-red-dim px-1.5 py-0.5 text-[10px] font-bold text-terminal-red"
+      >
         AVOID
-      </span>
+      </MetricTip>
     )
   }
   if (idea.isAPlus) {
     return (
-      <span className="inline-flex rounded bg-terminal-a-plus px-1.5 py-0.5 text-[10px] font-bold text-terminal-bg">
+      <MetricTip
+        id="aPlus"
+        className="inline-flex rounded bg-terminal-a-plus px-1.5 py-0.5 text-[10px] font-bold text-terminal-bg"
+      >
         A+
-      </span>
+      </MetricTip>
     )
   }
-  return <span className="text-terminal-dim">·</span>
+  return (
+    <MetricTip id="aPlus" className="text-terminal-dim">
+      ·
+    </MetricTip>
+  )
 }
 
 function rowHighlight(idea: TradingIdea) {
@@ -324,33 +355,49 @@ function IdeaCard({
   rowTitle?: string
 }) {
   const avoid = idea.earningsStatus === 'avoid'
+  const onKey = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.target !== event.currentTarget) return
+    if (event.key !== 'Enter' && event.key !== ' ') return
+    event.preventDefault()
+    onSelect(idea.ticker)
+  }
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       data-idea-ticker={idea.ticker}
       aria-selected={selected}
       onClick={() => onSelect(idea.ticker)}
-      title={rowTitle}
-      className={`w-full scroll-mt-8 rounded-lg border border-terminal-border/80 px-3 py-2.5 text-left transition-colors active:bg-terminal-elevated ${rowHighlight(idea)} ${
+      onKeyDown={onKey}
+      className={`w-full scroll-mt-8 rounded-lg border border-terminal-border/80 px-3 py-2.5 text-left transition-colors focus-visible:outline focus-visible:outline-1 focus-visible:outline-terminal-blue active:bg-terminal-elevated ${rowHighlight(idea)} ${
         selected ? 'ring-1 ring-terminal-blue/60' : ''
       } ${avoid ? 'opacity-90' : ''}`}
     >
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="font-mono text-sm font-bold text-terminal-fg">{idea.ticker}</span>
+            <MetricTip id="ticker" extra={rowTitle} className="font-mono text-sm font-bold text-terminal-fg">
+              {idea.ticker}
+            </MetricTip>
             <APlusCell idea={idea} />
             <StageBadge stage={idea.setupStage} aboveSma200={idea.aboveSma200} />
             <EarningsBadge idea={idea} />
           </div>
           <p className="mt-0.5 truncate text-[11px] text-terminal-muted">
-            {idea.name}
-            <span className="text-terminal-dim"> · {idea.groupName}</span>
+            <MetricTip id="name">{idea.name}</MetricTip>
+            <span className="text-terminal-dim">
+              {' '}
+              · <MetricTip id="ideaGroup">{idea.groupName}</MetricTip>
+            </span>
           </p>
         </div>
         <div className="shrink-0 text-right">
-          <div className="font-mono text-sm text-terminal-fg">{fmtPrice(idea.price)}</div>
-          <div className={`font-mono text-xs ${pctClass(idea.dayPct)}`}>{fmtPct(idea.dayPct)}</div>
+          <div className="font-mono text-sm text-terminal-fg">
+            <MetricTip id="price">{fmtPrice(idea.price)}</MetricTip>
+          </div>
+          <div className={`font-mono text-xs ${pctClass(idea.dayPct)}`}>
+            <MetricTip id="dayPct">{fmtPct(idea.dayPct)}</MetricTip>
+          </div>
         </div>
         <PinButton
           ticker={idea.ticker}
@@ -363,20 +410,26 @@ function IdeaCard({
         <SetupBadge type={idea.setupType} />
         <TrendBadges idea={idea} />
         <SurferBadges idea={idea} />
-        <span className={`font-mono ${idea.rvol >= 1.5 ? 'text-terminal-amber' : 'text-terminal-muted'}`}>
+        <MetricTip
+          id="rvol"
+          className={`font-mono ${idea.rvol >= KYLE_SCORE_CONFIG.rvolHigh ? 'text-terminal-amber' : 'text-terminal-muted'}`}
+        >
           RVOL {fmtRvol(idea.rvol)}
-        </span>
-        <span className="font-mono text-terminal-muted">ADR {idea.adrPct.toFixed(1)}%</span>
-        <span
+        </MetricTip>
+        <MetricTip id="adrPct" className="font-mono text-terminal-muted">
+          ADR {idea.adrPct.toFixed(1)}%
+        </MetricTip>
+        <MetricTip
+          id="pctFrom52wHigh"
           className={`font-mono ${
-            Math.abs(idea.pctFrom52wHigh) <= 5 ? 'text-terminal-green' : 'text-terminal-muted'
+            Math.abs(idea.pctFrom52wHigh) <= NEAR_ATH_PCT ? 'text-terminal-green' : 'text-terminal-muted'
           }`}
         >
           {fmtPct(idea.pctFrom52wHigh)} Hi
-        </span>
+        </MetricTip>
         <KyleStars score={idea.kyleScore} />
       </div>
-    </button>
+    </div>
   )
 }
 
@@ -386,7 +439,6 @@ function ResizableTh({
   width,
   onResize,
   className = '',
-  title,
   children,
   style,
 }: {
@@ -394,7 +446,6 @@ function ResizableTh({
   width: number
   onResize: (key: string, dx: number) => void
   className?: string
-  title?: string
   children: ReactNode
   style?: CSSProperties
 }) {
@@ -402,7 +453,6 @@ function ResizableTh({
     <th
       className={`qm-th-resizable px-2 py-2 font-medium ${className}`}
       style={{ width, minWidth: width, ...style }}
-      title={title}
     >
       {children}
       <ResizeHandle
@@ -433,34 +483,43 @@ function GroupBannerBar({ banner }: { banner: GroupViewBanner }) {
       <span className="min-w-0 font-medium text-terminal-fg">
         Group: {banner.label}
         <span className="font-normal text-terminal-muted">
-          {membershipDay
-            ? ` · top ${denom} by ${banner.periodLabel} perf · membership snapshot ${membershipDay}`
-            : ` · top ${denom} by ${banner.periodLabel} perf (Finviz)`}
+          {' · '}
+          <MetricTip id="memberPeriodPerf">
+            top {denom} by {banner.periodLabel} perf
+            {membershipDay ? '' : ' (Finviz)'}
+          </MetricTip>
+          {membershipDay ? (
+            <>
+              {' · '}
+              <MetricTip id="groupMembershipSnapshot">membership snapshot {membershipDay}</MetricTip>
+            </>
+          ) : null}
         </span>
         {banner.membershipStale ? (
-          <span
+          <MetricTip
+            id="groupMembershipStale"
             className="ml-1.5 rounded bg-terminal-amber-dim px-1 py-px text-[10px] font-medium uppercase tracking-wide text-terminal-amber"
-            title="Membership snapshot is older than 14 days"
           >
             stale
-          </span>
+          </MetricTip>
         ) : banner.stale ? (
-          <span className="ml-1.5 text-terminal-amber" title="Last good score cache">
+          <MetricTip id="groupScoreStale" className="ml-1.5 text-terminal-amber">
             stale
-          </span>
+          </MetricTip>
         ) : null}
       </span>
       <button
         type="button"
         onClick={banner.onReset}
-        className="min-h-8 shrink-0 rounded border border-terminal-border-bright bg-terminal-panel px-2 text-[10px] font-medium text-terminal-fg hover:text-terminal-blue"
+        {...metricTipAttrs('groupReset')}
+        className="min-h-8 shrink-0 cursor-help rounded border border-terminal-border-bright bg-terminal-panel px-2 text-[10px] font-medium text-terminal-fg hover:text-terminal-blue"
       >
         Reset
       </button>
       {banner.failed.length > 0 && !banner.loading && !banner.error ? (
-        <span className="text-terminal-amber" title={reasons}>
+        <MetricTip id="groupFailedTickers" extra={reasons} className="text-terminal-amber">
           {banner.failed.length} of {denom} tickers had no data
-        </span>
+        </MetricTip>
       ) : null}
       {filterNote ? (
         <span className="inline-flex flex-wrap items-center gap-x-2 gap-y-1 text-terminal-amber">
@@ -469,7 +528,8 @@ function GroupBannerBar({ banner }: { banner: GroupViewBanner }) {
             <button
               type="button"
               onClick={banner.onShowAll}
-              className="min-h-8 shrink-0 rounded border border-terminal-border-bright bg-terminal-panel px-2 text-[10px] font-medium text-terminal-fg hover:text-terminal-blue"
+              {...metricTipAttrs('filterShowAll')}
+              className="min-h-8 shrink-0 cursor-help rounded border border-terminal-border-bright bg-terminal-panel px-2 text-[10px] font-medium text-terminal-fg hover:text-terminal-blue"
             >
               {SHOW_ALL_GROUP_LABEL}
             </button>
@@ -511,11 +571,13 @@ export function IdeasTable({
             Scan results
           </h2>
           <span className="font-mono text-[10px] text-terminal-dim">
-            {groupBanner?.loading
-              ? 'loading'
-              : groupBanner && (groupBanner.hiddenCount ?? 0) > 0
-                ? `${ideas.length} of ${groupBanner.total ?? ideas.length} shown`
-                : `${ideas.length} shown`}
+            <MetricTip id="shownCount">
+              {groupBanner?.loading
+                ? 'loading'
+                : groupBanner && (groupBanner.hiddenCount ?? 0) > 0
+                  ? `${ideas.length} of ${groupBanner.total ?? ideas.length} shown`
+                  : `${ideas.length} shown`}
+            </MetricTip>
             {' · '}
             {source === 'demo' ? 'DEMO' : 'LIVE'}
           </span>
@@ -573,9 +635,8 @@ export function IdeasTable({
                 onResize={resizeColumn}
                 className="sticky left-0 z-20 bg-terminal-elevated"
                 style={{ left: 0 }}
-                title="Pin to dynamic watchlist"
               >
-                ★
+                <MetricTip id="watchlistPin">★</MetricTip>
               </ResizableTh>
               <ResizableTh
                 colKey="ticker"
@@ -584,7 +645,7 @@ export function IdeasTable({
                 className="sticky z-20 bg-terminal-elevated"
                 style={{ left: pinW }}
               >
-                Ticker
+                <MetricTip id="ticker">Ticker</MetricTip>
               </ResizableTh>
               <ResizableTh
                 colKey="name"
@@ -592,7 +653,7 @@ export function IdeasTable({
                 onResize={resizeColumn}
                 className="hidden xl:table-cell"
               >
-                Name
+                <MetricTip id="name">Name</MetricTip>
               </ResizableTh>
               <ResizableTh
                 colKey="group"
@@ -600,7 +661,7 @@ export function IdeasTable({
                 onResize={resizeColumn}
                 className="hidden lg:table-cell"
               >
-                Group
+                <MetricTip id="ideaGroup">Group</MetricTip>
               </ResizableTh>
               <ResizableTh
                 colKey="price"
@@ -608,7 +669,7 @@ export function IdeasTable({
                 onResize={resizeColumn}
                 className="text-right"
               >
-                Price
+                <MetricTip id="price">Price</MetricTip>
               </ResizableTh>
               <ResizableTh
                 colKey="dayPct"
@@ -616,7 +677,7 @@ export function IdeasTable({
                 onResize={resizeColumn}
                 className="text-right"
               >
-                Day%
+                <MetricTip id="dayPct">Day%</MetricTip>
               </ResizableTh>
               <ResizableTh
                 colKey="rvol"
@@ -624,7 +685,7 @@ export function IdeasTable({
                 onResize={resizeColumn}
                 className="text-right"
               >
-                RVOL
+                <MetricTip id="rvol">RVOL</MetricTip>
               </ResizableTh>
               <ResizableTh
                 colKey="adr"
@@ -632,7 +693,7 @@ export function IdeasTable({
                 onResize={resizeColumn}
                 className="hidden text-right lg:table-cell"
               >
-                ADR%
+                <MetricTip id="adrPct">ADR%</MetricTip>
               </ResizableTh>
               <ResizableTh
                 colKey="hi52"
@@ -640,7 +701,7 @@ export function IdeasTable({
                 onResize={resizeColumn}
                 className="hidden text-right lg:table-cell"
               >
-                % 52w Hi
+                <MetricTip id="pctFrom52wHigh">% 52w Hi</MetricTip>
               </ResizableTh>
               <ResizableTh
                 colKey="trend"
@@ -648,7 +709,7 @@ export function IdeasTable({
                 onResize={resizeColumn}
                 className="hidden xl:table-cell"
               >
-                Trend
+                <MetricTip id="trendGate">Trend</MetricTip>
               </ResizableTh>
               <ResizableTh
                 colKey="surfer"
@@ -656,25 +717,23 @@ export function IdeasTable({
                 onResize={resizeColumn}
                 className="hidden xl:table-cell"
               >
-                Surfer
+                <MetricTip id="surferColumn">Surfer</MetricTip>
               </ResizableTh>
               <ResizableTh
                 colKey="priorRun"
                 width={widthOf('priorRun')}
                 onResize={resizeColumn}
                 className="hidden text-right xl:table-cell"
-                title="Inc% BBO proxy: % from ~63d prior low into recent base high"
               >
-                Prior run%
+                <MetricTip id="priorRunPct">Prior run%</MetricTip>
               </ResizableTh>
               <ResizableTh
                 colKey="tight"
                 width={widthOf('tight')}
                 onResize={resizeColumn}
                 className="hidden text-right xl:table-cell"
-                title="Tight-days proxy (last 15)"
               >
-                Tight
+                <MetricTip id="tightDays">Tight</MetricTip>
               </ResizableTh>
               <ResizableTh
                 colKey="m1"
@@ -682,7 +741,7 @@ export function IdeasTable({
                 onResize={resizeColumn}
                 className="hidden text-right xl:table-cell"
               >
-                1M
+                <MetricTip id="perf1m">1M</MetricTip>
               </ResizableTh>
               <ResizableTh
                 colKey="m3"
@@ -690,23 +749,22 @@ export function IdeasTable({
                 onResize={resizeColumn}
                 className="hidden text-right xl:table-cell"
               >
-                3M
+                <MetricTip id="perf3m">3M</MetricTip>
               </ResizableTh>
               <ResizableTh
                 colKey="dolVol"
                 width={widthOf('dolVol')}
                 onResize={resizeColumn}
                 className="hidden text-right xl:table-cell"
-                title="Avg $ volume (DolVol)"
               >
-                DolVol
+                <MetricTip id="dolVol">DolVol</MetricTip>
               </ResizableTh>
               <ResizableTh
                 colKey="stage"
                 width={widthOf('stage')}
                 onResize={resizeColumn}
               >
-                Stage
+                <MetricTip id="setupStage">Stage</MetricTip>
               </ResizableTh>
               <ResizableTh
                 colKey="setup"
@@ -714,16 +772,15 @@ export function IdeasTable({
                 onResize={resizeColumn}
                 className="hidden lg:table-cell"
               >
-                Setup
+                <MetricTip id="setupType">Setup</MetricTip>
               </ResizableTh>
               <ResizableTh
                 colKey="score"
                 width={widthOf('score')}
                 onResize={resizeColumn}
                 className="text-center"
-                title="Heuristic kyleScore 3–5"
               >
-                Score
+                <MetricTip id="kyleScore">Score</MetricTip>
               </ResizableTh>
               <ResizableTh
                 colKey="earn"
@@ -731,9 +788,8 @@ export function IdeasTable({
                 onResize={resizeColumn}
                 className="sticky z-20 bg-terminal-elevated"
                 style={{ right: aPlusW }}
-                title="Earnings proximity: AVOID = same/next trading day"
               >
-                Earn
+                <MetricTip id="earningsStatus">Earn</MetricTip>
               </ResizableTh>
               <ResizableTh
                 colKey="catalyst"
@@ -741,7 +797,7 @@ export function IdeasTable({
                 onResize={resizeColumn}
                 className="hidden xl:table-cell"
               >
-                Catalyst
+                <MetricTip id="catalyst">Catalyst</MetricTip>
               </ResizableTh>
               <ResizableTh
                 colKey="aPlus"
@@ -750,7 +806,7 @@ export function IdeasTable({
                 className="sticky right-0 z-20 bg-terminal-elevated text-center"
                 style={{ right: 0 }}
               >
-                A+
+                <MetricTip id="aPlus">A+</MetricTip>
               </ResizableTh>
             </tr>
           </thead>
@@ -767,7 +823,6 @@ export function IdeasTable({
                   aria-selected={selected}
                   tabIndex={-1}
                   onClick={() => onSelect(idea.ticker)}
-                  title={rowTitle}
                   className={`scroll-mt-8 cursor-pointer border-t border-terminal-border/50 transition-colors hover:bg-terminal-elevated/80 ${highlight} ${
                     selected ? 'ring-1 ring-inset ring-terminal-blue/50' : ''
                   } ${avoid ? 'opacity-90' : ''}`}
@@ -786,40 +841,41 @@ export function IdeasTable({
                   <td
                     className={`sticky z-[5] overflow-hidden px-2 py-1.5 font-mono font-semibold text-terminal-fg ${highlight || 'bg-terminal-panel'}`}
                     style={{ left: pinW, width: tickerW, minWidth: tickerW }}
-                    title={rowTitle}
                   >
-                    {idea.ticker}
+                    <MetricTip id="ticker" extra={rowTitle}>
+                      {idea.ticker}
+                    </MetricTip>
                   </td>
                   <td className="hidden truncate px-2 py-1.5 text-terminal-muted xl:table-cell">
-                    {idea.name}
+                    <MetricTip id="name">{idea.name}</MetricTip>
                   </td>
                   <td className="hidden truncate px-2 py-1.5 text-terminal-muted lg:table-cell">
-                    {idea.groupName}
+                    <MetricTip id="ideaGroup">{idea.groupName}</MetricTip>
                   </td>
                   <td className="overflow-hidden px-2 py-1.5 text-right font-mono text-terminal-fg">
-                    {fmtPrice(idea.price)}
+                    <MetricTip id="price">{fmtPrice(idea.price)}</MetricTip>
                   </td>
                   <td className={`overflow-hidden px-2 py-1.5 text-right font-mono ${pctClass(idea.dayPct)}`}>
-                    {fmtPct(idea.dayPct)}
+                    <MetricTip id="dayPct">{fmtPct(idea.dayPct)}</MetricTip>
                   </td>
                   <td
                     className={`overflow-hidden px-2 py-1.5 text-right font-mono ${
-                      idea.rvol >= 1.5 ? 'text-terminal-amber' : 'text-terminal-fg'
+                      idea.rvol >= KYLE_SCORE_CONFIG.rvolHigh ? 'text-terminal-amber' : 'text-terminal-fg'
                     }`}
                   >
-                    {fmtRvol(idea.rvol)}
+                    <MetricTip id="rvol">{fmtRvol(idea.rvol)}</MetricTip>
                   </td>
                   <td className="hidden overflow-hidden px-2 py-1.5 text-right font-mono text-terminal-fg lg:table-cell">
-                    {idea.adrPct.toFixed(1)}%
+                    <MetricTip id="adrPct">{idea.adrPct.toFixed(1)}%</MetricTip>
                   </td>
                   <td
                     className={`hidden overflow-hidden px-2 py-1.5 text-right font-mono lg:table-cell ${
-                      Math.abs(idea.pctFrom52wHigh) <= 5
+                      Math.abs(idea.pctFrom52wHigh) <= NEAR_ATH_PCT
                         ? 'text-terminal-green'
                         : 'text-terminal-muted'
                     }`}
                   >
-                    {fmtPct(idea.pctFrom52wHigh)}
+                    <MetricTip id="pctFrom52wHigh">{fmtPct(idea.pctFrom52wHigh)}</MetricTip>
                   </td>
                   <td className="hidden overflow-hidden px-2 py-1.5 xl:table-cell">
                     <TrendBadges idea={idea} />
@@ -828,23 +884,26 @@ export function IdeasTable({
                     <SurferBadges idea={idea} />
                   </td>
                   <td className={`hidden overflow-hidden px-2 py-1.5 text-right font-mono xl:table-cell ${pctClass(idea.priorRunPct)}`}>
-                    {fmtPct(idea.priorRunPct, 0)}
-                  </td>
-                  <td
-                    className="hidden overflow-hidden px-2 py-1.5 text-right font-mono text-terminal-muted xl:table-cell"
-                    title={`tightDays=${idea.tightDays} · baseLengthDays=${idea.baseLengthDays}`}
-                  >
-                    {idea.tightDays}
-                    <span className="text-terminal-dim">/{idea.baseLengthDays}</span>
-                  </td>
-                  <td className={`hidden overflow-hidden px-2 py-1.5 text-right font-mono xl:table-cell ${pctClass(idea.perf1M)}`}>
-                    {fmtPct(idea.perf1M, 0)}
-                  </td>
-                  <td className={`hidden overflow-hidden px-2 py-1.5 text-right font-mono xl:table-cell ${pctClass(idea.perf3M)}`}>
-                    {fmtPct(idea.perf3M, 0)}
+                    <MetricTip id="priorRunPct">{fmtPct(idea.priorRunPct, 0)}</MetricTip>
                   </td>
                   <td className="hidden overflow-hidden px-2 py-1.5 text-right font-mono text-terminal-muted xl:table-cell">
-                    {fmtDollarVol(idea.dollarVolume || idea.avgDollarVol)}
+                    <MetricTip
+                      id="tightDays"
+                      extra={`tightDays=${idea.tightDays} · baseLengthDays=${idea.baseLengthDays}`}
+                    >
+                      {idea.tightDays}
+                    </MetricTip>
+                    <span className="text-terminal-dim">/</span>
+                    <MetricTip id="baseLengthDays">{idea.baseLengthDays}</MetricTip>
+                  </td>
+                  <td className={`hidden overflow-hidden px-2 py-1.5 text-right font-mono xl:table-cell ${pctClass(idea.perf1M)}`}>
+                    <MetricTip id="perf1m">{fmtPct(idea.perf1M, 0)}</MetricTip>
+                  </td>
+                  <td className={`hidden overflow-hidden px-2 py-1.5 text-right font-mono xl:table-cell ${pctClass(idea.perf3M)}`}>
+                    <MetricTip id="perf3m">{fmtPct(idea.perf3M, 0)}</MetricTip>
+                  </td>
+                  <td className="hidden overflow-hidden px-2 py-1.5 text-right font-mono text-terminal-muted xl:table-cell">
+                    <MetricTip id="dolVol">{fmtDollarVol(idea.dollarVolume || idea.avgDollarVol)}</MetricTip>
                   </td>
                   <td className="overflow-hidden px-2 py-1.5">
                     <StageBadge stage={idea.setupStage} aboveSma200={idea.aboveSma200} />
@@ -863,11 +922,13 @@ export function IdeasTable({
                   </td>
                   <td className="hidden truncate px-2 py-1.5 xl:table-cell">
                     {idea.catalyst ? (
-                      <span className="text-terminal-green" title={idea.catalyst}>
+                      <MetricTip id="catalyst" extra={idea.catalyst} className="text-terminal-green">
                         {idea.catalyst}
-                      </span>
+                      </MetricTip>
                     ) : (
-                      <span className="text-terminal-dim">—</span>
+                      <MetricTip id="catalyst" className="text-terminal-dim">
+                        —
+                      </MetricTip>
                     )}
                   </td>
                   <td
