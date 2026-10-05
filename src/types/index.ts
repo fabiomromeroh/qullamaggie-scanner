@@ -419,6 +419,11 @@ export interface DashboardData {
 }
 
 
+/** Near-highs presets (percent under the 52-week high). `null` on the filter is Any. */
+export const NEAR_HIGHS_PRESETS = [5, 8, 10, 15, 20] as const
+
+export type NearHighsPreset = (typeof NEAR_HIGHS_PRESETS)[number]
+
 /** Max ADR extension from 50 SMA presets. `null` on the filter is Any (no filter). */
 export const MAX_EXTENSION_ADR50_PRESETS = [5, 4, 3, 2, 1] as const
 
@@ -426,7 +431,12 @@ export type MaxExtensionAdr50Preset = (typeof MAX_EXTENSION_ADR50_PRESETS)[numbe
 
 export interface IdeaFilters {
   minRvol: number
-  maxPctFromHigh: number
+  /**
+   * Hide names whose distance under the 52-week high is above this percent.
+   * Distance is abs(min(0, pctFrom52wHigh)); a print above the high counts as 0.
+   * `null` is Any (no filter). Presets: 5, 8, 10, 15, 20.
+   */
+  maxPctFromHigh: number | null
   /**
    * Hide names whose ADR extension from the 50 SMA is above this threshold.
    * `null` is Any (no filter). When T is set, rows with extensionAdr50 != null
@@ -474,7 +484,7 @@ export const ALL_EARNINGS_STATUSES: EarningsStatus[] = ['clear', 'alert', 'avoid
 
 export const DEFAULT_FILTERS: IdeaFilters = {
   minRvol: 0,
-  maxPctFromHigh: 100,
+  maxPctFromHigh: null,
   maxExtensionAdr50: null,
   setupTypes: [...ALL_SETUP_TYPES],
   aPlusOnly: false,

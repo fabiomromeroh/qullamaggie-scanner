@@ -4,6 +4,7 @@ import {
   ALL_SETUP_TYPES,
   DEFAULT_FILTERS,
   GROUP_VIEW_DEFAULT_FILTERS,
+  NEAR_HIGHS_PRESETS,
   type EarningsStatus,
   type IdeaFilters,
   type IndustryGroup,
@@ -85,7 +86,7 @@ export function requireAbove200On(filters: { requireAbove200?: boolean } | null 
 export function cloneIdeaFilters(filters: IdeaFilters): IdeaFilters {
   return {
     minRvol: filters.minRvol,
-    maxPctFromHigh: filters.maxPctFromHigh,
+    maxPctFromHigh: filters.maxPctFromHigh ?? null,
     maxExtensionAdr50: filters.maxExtensionAdr50 ?? null,
     setupTypes: [...(filters.setupTypes ?? [])],
     aPlusOnly: filters.aPlusOnly,
@@ -121,7 +122,7 @@ export function showAllGroupFilters(): IdeaFilters {
     requireSurfer50: false,
     requireTight: false,
     minRvol: 0,
-    maxPctFromHigh: 100,
+    maxPctFromHigh: null,
     maxExtensionAdr50: null,
     aPlusOnly: false,
     hasCatalyst: false,
@@ -155,7 +156,7 @@ export function countActiveFilters(
   let n = 0
   if ((filters.search ?? '').trim() !== (baseline.search ?? '').trim()) n += 1
   if (filters.minRvol !== baseline.minRvol) n += 1
-  if (filters.maxPctFromHigh !== baseline.maxPctFromHigh) n += 1
+  if ((filters.maxPctFromHigh ?? null) !== (baseline.maxPctFromHigh ?? null)) n += 1
   if ((filters.maxExtensionAdr50 ?? null) !== (baseline.maxExtensionAdr50 ?? null)) n += 1
   if ((filters.groupId ?? null) !== (baseline.groupId ?? null)) n += 1
   if (!sameMembers(filters.setupTypes, baseline.setupTypes)) n += 1
@@ -211,6 +212,29 @@ function pickNumOrNull(value: unknown, fallback: number | null): number | null {
 }
 
 /**
+ * Stored near-highs threshold → preset or Any.
+ * 100 and any value >= 100 become null (the old free-number default hid nothing).
+ * Exact presets 5, 8, 10, 15, and 20 are kept. Any other finite number snaps to
+ * the nearest preset; an equal distance keeps the lower preset. Missing or
+ * non-numeric values are Any.
+ */
+function migrateMaxPctFromHigh(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null
+  if (value >= 100) return null
+  let best: number = NEAR_HIGHS_PRESETS[0]
+  let bestDist = Math.abs(value - best)
+  for (const preset of NEAR_HIGHS_PRESETS) {
+    if (value === preset) return preset
+    const dist = Math.abs(value - preset)
+    if (dist < bestDist) {
+      best = preset
+      bestDist = dist
+    }
+  }
+  return best
+}
+
+/**
  * Filters are not stored in localStorage. This still accepts an older object
  * (for example one read from storage later) that has no `requireAbove200` and
  * fills that field with true. Explicit `false` is kept. Invalid shapes fall
@@ -222,7 +246,7 @@ export function migrateStoredFilters(raw: unknown): IdeaFilters {
   const src = raw as Record<string, unknown>
   return {
     minRvol: pickNum(src.minRvol, base.minRvol),
-    maxPctFromHigh: pickNum(src.maxPctFromHigh, base.maxPctFromHigh),
+    maxPctFromHigh: migrateMaxPctFromHigh(src.maxPctFromHigh),
     maxExtensionAdr50: pickNumOrNull(src.maxExtensionAdr50, base.maxExtensionAdr50),
     setupTypes: pickList(src.setupTypes, ALL_SETUP_TYPES, base.setupTypes),
     aPlusOnly: pickBool(src.aPlusOnly, base.aPlusOnly),
@@ -299,7 +323,14 @@ export function passesFilters(
   if (typeof f.minRvol === 'number' && idea.rvol < f.minRvol) return false
   const pct = typeof idea.pctFrom52wHigh === 'number' ? idea.pctFrom52wHigh : 0
   const distance = Math.abs(Math.min(0, pct))
-  if (typeof f.maxPctFromHigh === 'number' && distance > f.maxPctFromHigh) return false
+  // Near highs: null is Any (no filter). A print above the high has distance 0.
+  if (
+    typeof f.maxPctFromHigh === 'number' &&
+    Number.isFinite(f.maxPctFromHigh) &&
+    distance > f.maxPctFromHigh
+  ) {
+    return false
+  }
   // Max ADR extension from 50 SMA: exclude known values strictly above T.
   // Unknown (null/missing/non-finite) is kept. Negative (below the 50 SMA) always passes.
   if (typeof f.maxExtensionAdr50 === 'number' && Number.isFinite(f.maxExtensionAdr50)) {

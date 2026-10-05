@@ -25,6 +25,7 @@ import {
   ALL_SETUP_TYPES,
   DEFAULT_FILTERS,
   GROUP_VIEW_DEFAULT_FILTERS,
+  NEAR_HIGHS_PRESETS,
   type IdeaFilters,
   type TradingIdea,
 } from '../src/types/index.ts'
@@ -204,21 +205,39 @@ test('passesFilters truth table for each normal-scan control', () => {
       pass: true,
     },
     {
-      name: 'maxPctFromHigh hides',
+      name: 'near highs 5 hides a name 10% under',
       row: idea({ pctFrom52wHigh: -10 }),
       f: filters({ maxPctFromHigh: 5 }),
       pass: false,
     },
     {
-      name: 'maxPctFromHigh allows a near high',
-      row: idea({ pctFrom52wHigh: -1 }),
+      name: 'near highs 5 allows a name 5% under',
+      row: idea({ pctFrom52wHigh: -5 }),
       f: filters({ maxPctFromHigh: 5 }),
       pass: true,
     },
     {
-      name: 'maxPctFromHigh 100 allows a deep name',
+      name: 'near highs 5 allows a print above the high',
+      row: idea({ pctFrom52wHigh: 1.2 }),
+      f: filters({ maxPctFromHigh: 5 }),
+      pass: true,
+    },
+    {
+      name: 'near highs 10 hides a name 15% under',
+      row: idea({ pctFrom52wHigh: -15 }),
+      f: filters({ maxPctFromHigh: 10 }),
+      pass: false,
+    },
+    {
+      name: 'near highs 10 allows a name 10% under',
+      row: idea({ pctFrom52wHigh: -10 }),
+      f: filters({ maxPctFromHigh: 10 }),
+      pass: true,
+    },
+    {
+      name: 'near highs Any (null) allows a deep name',
       row: idea({ pctFrom52wHigh: -80 }),
-      f: filters({ maxPctFromHigh: 100 }),
+      f: filters({ maxPctFromHigh: null }),
       pass: true,
     },
     {
@@ -517,6 +536,20 @@ test('migrateStoredFilters fills requireAbove200 and rejects bad shapes', () => 
   assert.equal(migrateStoredFilters({ maxExtensionAdr50: 3 }).maxExtensionAdr50, 3)
   assert.equal(migrateStoredFilters({ maxExtensionAdr50: null }).maxExtensionAdr50, null)
   assert.equal(migrateStoredFilters({ maxExtensionAdr50: '2' }).maxExtensionAdr50, null)
+  assert.equal(migrateStoredFilters({}).maxPctFromHigh, null)
+  assert.equal(migrateStoredFilters({ maxPctFromHigh: 100 }).maxPctFromHigh, null)
+  assert.equal(migrateStoredFilters({ maxPctFromHigh: 150 }).maxPctFromHigh, null)
+  assert.equal(migrateStoredFilters({ maxPctFromHigh: 10 }).maxPctFromHigh, 10)
+  assert.equal(migrateStoredFilters({ maxPctFromHigh: 5 }).maxPctFromHigh, 5)
+  assert.equal(migrateStoredFilters({ maxPctFromHigh: 8 }).maxPctFromHigh, 8)
+  assert.equal(migrateStoredFilters({ maxPctFromHigh: 15 }).maxPctFromHigh, 15)
+  assert.equal(migrateStoredFilters({ maxPctFromHigh: 20 }).maxPctFromHigh, 20)
+  assert.equal(migrateStoredFilters({ maxPctFromHigh: null }).maxPctFromHigh, null)
+  assert.equal(migrateStoredFilters({ maxPctFromHigh: 7 }).maxPctFromHigh, 8)
+  assert.equal(migrateStoredFilters({ maxPctFromHigh: 9 }).maxPctFromHigh, 8)
+  assert.equal(migrateStoredFilters({ maxPctFromHigh: 12 }).maxPctFromHigh, 10)
+  assert.equal(migrateStoredFilters({ maxPctFromHigh: 99 }).maxPctFromHigh, 20)
+  assert.equal(migrateStoredFilters({ maxPctFromHigh: '10' }).maxPctFromHigh, null)
 
   const explicit = migrateStoredFilters({
     ...DEFAULT_FILTERS,
@@ -544,6 +577,10 @@ test('active-filter counter and reset include Above 200 DMA', () => {
   assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, requireTight: true }), 1)
   assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, maxExtensionAdr50: 3 }), 1)
   assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, maxExtensionAdr50: null }), 0)
+  assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, maxPctFromHigh: 10 }), 1)
+  assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, maxPctFromHigh: null }), 0)
+  assert.equal(DEFAULT_FILTERS.maxPctFromHigh, null)
+  assert.equal(GROUP_VIEW_DEFAULT_FILTERS.maxPctFromHigh, null)
   assert.equal(
     countActiveFilters(
       { ...GROUP_VIEW_DEFAULT_FILTERS, maxExtensionAdr50: 2 },
@@ -599,7 +636,7 @@ test('active-filter counter and reset include Above 200 DMA', () => {
   assert.equal(showAll.requireSurfer50, false)
   assert.equal(showAll.requireTight, false)
   assert.equal(showAll.minRvol, 0)
-  assert.equal(showAll.maxPctFromHigh, 100)
+  assert.equal(showAll.maxPctFromHigh, null)
   assert.equal(showAll.maxExtensionAdr50, null)
   assert.equal(DEFAULT_FILTERS.maxExtensionAdr50, null)
   assert.equal(GROUP_VIEW_DEFAULT_FILTERS.maxExtensionAdr50, null)
@@ -687,8 +724,16 @@ test('UI copy and README use the single Above 200 DMA label', () => {
   assert.match(bar, /50MA Surfer/)
   assert.doesNotMatch(bar, /Surfer \(strict\)/)
   assert.match(bar, /Tight consolidation/)
-  assert.match(bar, /Max % from high/)
+  assert.deepEqual([...NEAR_HIGHS_PRESETS], [5, 8, 10, 15, 20])
+  assert.match(bar, /Near highs ≤/)
+  assert.match(bar, /aria-label="Near highs ≤"/)
+  assert.match(bar, /NEAR_HIGHS_PRESETS/)
+  assert.match(bar, /\{t\}%/)
+  assert.doesNotMatch(bar, /Max % from high/)
   assert.match(bar, /Max ADR extension from 50 SMA/)
+  assert.match(readme, /Near highs ≤/)
+  assert.match(readme, /Any \| 5% \| 8% \| 10% \| 15% \| 20%/)
+  assert.doesNotMatch(readme, /Max % from high/)
   assert.match(bar, /filterMaxExtensionAdr50/)
   assert.match(bar, /return 'Clear'/)
   assert.match(bar, /return 'Alert'/)
