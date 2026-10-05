@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import type { CatalystMeta, EarningsStatus, IdeaFilters, IndustryGroup, SetupStage, SetupType } from '../types'
-import { ALL_EARNINGS_STATUSES, ALL_SETUP_TYPES, DEFAULT_FILTERS, MAX_EXTENSION_ADR50_PRESETS } from '../types'
+import { ALL_EARNINGS_STATUSES, ALL_SETUP_TYPES, DEFAULT_FILTERS, MAX_EXTENSION_ADR50_PRESETS, NEAR_HIGHS_PRESETS } from '../types'
 import {
   ABOVE_200_DMA_LABEL,
   ABOVE_200_DMA_TOOLTIP,
@@ -235,17 +235,25 @@ export function FiltersBar({
           {...metricTipAttrs('filterMaxPctFromHigh')}
           className="flex cursor-help flex-col gap-0.5 text-[10px] text-terminal-dim"
         >
-          Max % from high
-          <input
-            type="number"
-            min={0}
-            max={100}
-            step={1}
-            value={filters.maxPctFromHigh}
-            aria-label="Max % from high"
-            onChange={(e) => onChange({ ...filters, maxPctFromHigh: Number(e.target.value) || 0 })}
-            className="w-20 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1 font-mono text-xs text-terminal-fg outline-none focus:border-terminal-blue sm:w-24"
-          />
+          Near highs ≤
+          <select
+            value={filters.maxPctFromHigh ?? ''}
+            aria-label="Near highs ≤"
+            onChange={(e) =>
+              onChange({
+                ...filters,
+                maxPctFromHigh: e.target.value === '' ? null : Number(e.target.value),
+              })
+            }
+            className="min-h-8 min-w-[88px] rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1 text-[10px] text-terminal-fg outline-none focus:border-terminal-blue"
+          >
+            <option value="">Any</option>
+            {NEAR_HIGHS_PRESETS.map((t) => (
+              <option key={t} value={t}>
+                {t}%
+              </option>
+            ))}
+          </select>
         </label>
         <label
           {...metricTipAttrs('filterMaxExtensionAdr50')}

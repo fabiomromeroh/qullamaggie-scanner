@@ -261,7 +261,7 @@ test('group view: min RVOL, search, and the other controls apply at once', () =>
   assert.ok(!nearHigh.rows.some((idea) => idea.ticker === 'QCOM'))
   const anyDistance = selectGroupViewRows(
     fixture.ideas,
-    { ...GROUP_VIEW_DEFAULT_FILTERS, maxPctFromHigh: 100 },
+    { ...GROUP_VIEW_DEFAULT_FILTERS, maxPctFromHigh: null },
     fixture.finvizPerf,
   )
   assert.ok(anyDistance.rows.some((idea) => idea.ticker === 'QCOM'))

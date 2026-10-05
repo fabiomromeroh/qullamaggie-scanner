@@ -37,7 +37,7 @@ import {
 } from './groupPeriod'
 import { LEADER_POOL_SIZE, PERIOD_SESSIONS } from './memberPerf'
 import { SCAN_MIN_AVG_VOL_DEFAULT, SCAN_MIN_PRICE_DEFAULT, SCAN_STAGE1_CAP_DEFAULT, SCAN_STAGE1_PAGE_SIZE } from './scanDefaults'
-import { DEFAULT_FILTERS, MAX_EXTENSION_ADR50_PRESETS } from '../types'
+import { DEFAULT_FILTERS, MAX_EXTENSION_ADR50_PRESETS, NEAR_HIGHS_PRESETS } from '../types'
 import {
   EXTENSION_ADR50_FORMULA,
   EXTENSION_ADR50_FORMULA_EQUIV,
@@ -137,6 +137,17 @@ function extensionAdr50PresetNote(): string {
 function highHow(): string {
   const n = BAR_WINDOWS.high52Sessions
   return `(price / maximum high of the last ${n} sessions − 1) × 100. Negative means below that high. A non-positive high yields 0.`
+}
+
+function nearHighsFilterHow(): string {
+  return `${highHow()} The filter distance is the absolute value of min(0, pctFrom52wHigh), so a print above the high counts as 0. When maxPctFromHigh is a number, rows with distance > maxPctFromHigh are hidden. null is Any and hides nothing on distance.`
+}
+
+function nearHighsPresetNote(): string {
+  const presets = NEAR_HIGHS_PRESETS.map((t) => `${t}%`).join(' | ')
+  const def = DEFAULT_FILTERS.maxPctFromHigh
+  const defaultText = def == null ? 'Any (no filter)' : `≤ ${def}%`
+  return `Presets: Any (no filter) | ${presets}. Default: ${defaultText}. Select only. A stored 100 or any value >= 100 migrates to Any; exact presets are kept; any other finite number snaps to the nearest preset (the lower preset when two are equally close).`
 }
 
 function dayHow(): string {
@@ -535,10 +546,10 @@ export const METRIC_DEFS = {
     `A blank or non-numeric input is stored as ${DEFAULT_FILTERS.minRvol}, which hides nothing. Finviz uses about a 3-month average, so this RVOL will not match Finviz.`,
   ),
   filterMaxPctFromHigh: d(
-    'Max % from highs',
-    'Hide names too far under the high.',
-    `${highHow()} The filter distance is the absolute value of min(0, pctFrom52wHigh), so a print above the high counts as 0. Rows with distance > maxPctFromHigh are hidden.`,
-    `The box default is ${DEFAULT_FILTERS.maxPctFromHigh}.`,
+    'Near highs ≤',
+    'Hide names farther than T percent under the 52-week high.',
+    nearHighsFilterHow(),
+    nearHighsPresetNote(),
   ),
   filterMaxExtensionAdr50: d(
     'Max ADR extension from 50 SMA',
@@ -559,12 +570,12 @@ export const METRIC_DEFS = {
   filterShowAll: d(
     'Show all group members',
     'Drop the group-view gates, including below the 200-day SMA.',
-    'applyShowAllGroup replaces group filters with every stage, every setup type, every earnings status, Above 200 DMA off, SMA and surfer and tight requirements off, min RVOL 0, max percent from high 100, max ADR extension from 50 SMA Any, A+ only off, catalyst off, and search cleared. Scan filters are left as they are.',
+    'applyShowAllGroup replaces group filters with every stage, every setup type, every earnings status, Above 200 DMA off, SMA and surfer and tight requirements off, min RVOL 0, Near highs ≤ Any, max ADR extension from 50 SMA Any, A+ only off, catalyst off, and search cleared. Scan filters are left as they are.',
   ),
   filterActiveCount: d(
     'Active filters',
     'How many controls differ from the baseline.',
-    'countActiveFilters increments once per field that differs from the baseline: search, min RVOL, max % from high, max ADR extension from 50 SMA, group, setup types, stages, each SMA / surfer / tight / Above 200 DMA flag, earnings statuses, A+ only, and catalyst. The baseline is the normal defaults, or the group-view baseline while a group is open. Above 200 DMA counts when it is off against a baseline that has it on.',
+    'countActiveFilters increments once per field that differs from the baseline: search, min RVOL, near highs, max ADR extension from 50 SMA, group, setup types, stages, each SMA / surfer / tight / Above 200 DMA flag, earnings statuses, A+ only, and catalyst. The baseline is the normal defaults, or the group-view baseline while a group is open. Above 200 DMA counts when it is off against a baseline that has it on.',
   ),
   watchlistPin: d(
     'Pin',
