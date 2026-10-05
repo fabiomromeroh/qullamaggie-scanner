@@ -222,6 +222,48 @@ test('passesFilters truth table for each normal-scan control', () => {
       pass: true,
     },
     {
+      name: 'maxExtensionAdr50 Any keeps a large extension',
+      row: idea({ extensionAdr50: 6.2 }),
+      f: filters({ maxExtensionAdr50: null }),
+      pass: true,
+    },
+    {
+      name: 'maxExtensionAdr50 hides above T',
+      row: idea({ extensionAdr50: 3.1 }),
+      f: filters({ maxExtensionAdr50: 3 }),
+      pass: false,
+    },
+    {
+      name: 'maxExtensionAdr50 keeps equal to T',
+      row: idea({ extensionAdr50: 3 }),
+      f: filters({ maxExtensionAdr50: 3 }),
+      pass: true,
+    },
+    {
+      name: 'maxExtensionAdr50 keeps below T',
+      row: idea({ extensionAdr50: 1.2 }),
+      f: filters({ maxExtensionAdr50: 3 }),
+      pass: true,
+    },
+    {
+      name: 'maxExtensionAdr50 keeps null unknown',
+      row: idea({ extensionAdr50: null }),
+      f: filters({ maxExtensionAdr50: 2 }),
+      pass: true,
+    },
+    {
+      name: 'maxExtensionAdr50 keeps missing unknown',
+      row: idea({ extensionAdr50: undefined }),
+      f: filters({ maxExtensionAdr50: 2 }),
+      pass: true,
+    },
+    {
+      name: 'maxExtensionAdr50 keeps negative (below 50 SMA)',
+      row: idea({ extensionAdr50: -1.4, aboveSma50: false }),
+      f: filters({ maxExtensionAdr50: 1, requireSma50: false }),
+      pass: true,
+    },
+    {
       name: 'setup type mismatch',
       row: idea({ setupType: 'Continuation' }),
       f: filters({ setupTypes: ['Range Breakout'] }),
@@ -409,6 +451,22 @@ test('passesFilters truth table for each normal-scan control', () => {
   )
 })
 
+test('maxExtensionAdr50 Any keeps all; threshold excludes only known values above T', () => {
+  const any = filters({ maxExtensionAdr50: null })
+  for (const ext of [null, -2, 0, 1.5, 4.9, 12]) {
+    assert.equal(
+      passesFilters(idea({ extensionAdr50: ext, aboveSma50: true }), any),
+      true,
+      `Any should keep extensionAdr50=${String(ext)}`,
+    )
+  }
+  const cap = filters({ maxExtensionAdr50: 2, requireSma50: false })
+  assert.equal(passesFilters(idea({ extensionAdr50: 2.01 }), cap), false)
+  assert.equal(passesFilters(idea({ extensionAdr50: 2 }), cap), true)
+  assert.equal(passesFilters(idea({ extensionAdr50: null }), cap), true)
+  assert.equal(passesFilters(idea({ extensionAdr50: -0.5, aboveSma50: false }), cap), true)
+})
+
 test('requireAbove200 and aboveSma200 missing fields do not throw', () => {
   const below = idea()
   delete (below as { aboveSma200?: boolean }).aboveSma200
@@ -455,6 +513,10 @@ test('migrateStoredFilters fills requireAbove200 and rejects bad shapes', () => 
   assert.equal(migrateStoredFilters({ groupId: '' }).groupId, null)
   assert.equal(migrateStoredFilters({ groupId: 4 }).groupId, null)
   assert.equal(migrateStoredFilters({ minRvol: Number.NaN }).minRvol, 0)
+  assert.equal(migrateStoredFilters({}).maxExtensionAdr50, null)
+  assert.equal(migrateStoredFilters({ maxExtensionAdr50: 3 }).maxExtensionAdr50, 3)
+  assert.equal(migrateStoredFilters({ maxExtensionAdr50: null }).maxExtensionAdr50, null)
+  assert.equal(migrateStoredFilters({ maxExtensionAdr50: '2' }).maxExtensionAdr50, null)
 
   const explicit = migrateStoredFilters({
     ...DEFAULT_FILTERS,
@@ -480,6 +542,15 @@ test('active-filter counter and reset include Above 200 DMA', () => {
   assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, requireSurfer20: true }), 1)
   assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, requireSurfer50: true }), 1)
   assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, requireTight: true }), 1)
+  assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, maxExtensionAdr50: 3 }), 1)
+  assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, maxExtensionAdr50: null }), 0)
+  assert.equal(
+    countActiveFilters(
+      { ...GROUP_VIEW_DEFAULT_FILTERS, maxExtensionAdr50: 2 },
+      GROUP_VIEW_DEFAULT_FILTERS,
+    ),
+    1,
+  )
   assert.equal(
     countActiveFilters(
       { ...DEFAULT_FILTERS, requireSurfer10: true, requireTight: true },
@@ -529,6 +600,9 @@ test('active-filter counter and reset include Above 200 DMA', () => {
   assert.equal(showAll.requireTight, false)
   assert.equal(showAll.minRvol, 0)
   assert.equal(showAll.maxPctFromHigh, 100)
+  assert.equal(showAll.maxExtensionAdr50, null)
+  assert.equal(DEFAULT_FILTERS.maxExtensionAdr50, null)
+  assert.equal(GROUP_VIEW_DEFAULT_FILTERS.maxExtensionAdr50, null)
   assert.equal(showAll.aPlusOnly, false)
   assert.equal(showAll.hasCatalyst, false)
   assert.equal(showAll.search, '')
@@ -614,6 +688,8 @@ test('UI copy and README use the single Above 200 DMA label', () => {
   assert.doesNotMatch(bar, /Surfer \(strict\)/)
   assert.match(bar, /Tight consolidation/)
   assert.match(bar, /Max % from high/)
+  assert.match(bar, /Max ADR extension from 50 SMA/)
+  assert.match(bar, /filterMaxExtensionAdr50/)
   assert.match(bar, /return 'Clear'/)
   assert.match(bar, /return 'Alert'/)
   assert.match(bar, /return 'Avoid'/)

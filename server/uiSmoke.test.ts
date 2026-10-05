@@ -59,4 +59,7 @@ test('badge titles and detail-panel copy for strict surfer + tight', () => {
   assert.match(drawer, /Close spread/)
   assert.match(drawer, /SurferDetailSection/)
   assert.match(drawer, /TightDetailSection/)
+  assert.match(drawer, /Ext\. 50SMA/)
+  assert.match(table, /Ext50/)
+  assert.match(table, /extensionAdr50/)
 })
