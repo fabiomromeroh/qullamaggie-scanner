@@ -7,6 +7,7 @@ import {
 import { metricTipAttrs, type MetricId } from '../lib/metricDefinitions'
 import type { TradingIdea } from '../types'
 import { RANGE_BREAKOUT_CONFIG } from '../lib/metrics'
+import { RANGE_BASE_CONFIG } from '../lib/rangeBase'
 import { stageLabel } from '../lib/setupStage'
 import { formatSurferDistance, SURFER_CONFIG } from '../lib/surfer'
 import { TIGHT_CONFIG } from '../lib/tightConsolidation'
@@ -283,6 +284,45 @@ function RangeBreakoutGatesSection({ idea }: { idea: TradingIdea }) {
   )
 }
 
+function RangeBaseSection({ idea }: { idea: TradingIdea }) {
+  const d = idea.rangeBaseDetail
+  if (!d) return null
+  const c = RANGE_BASE_CONFIG
+  const compressionOk = d.compression != null && d.compression <= c.compressionMax
+  const containmentOk = d.containment >= c.containmentMin
+  const lengthOk = d.lengthSessions >= c.minSessions
+  const aboveOk = d.above50Frac >= c.above50Min
+  return (
+    <section className="border-b border-terminal-border px-4 py-3">
+      <h3 className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-terminal-dim">
+        <MetricTip id="rangeBase" extra={d.failedReasons.length ? d.failedReasons.join(', ') : 'core gates passed'}>
+          Range base
+        </MetricTip>
+      </h3>
+      <p className="mb-2 text-[11px] text-terminal-dim">
+        {d.ok ? 'Passes' : 'Does not pass'} · score {d.score.toFixed(2)} · {d.lengthSessions} sessions
+      </p>
+      <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+        <MetricTip id="rangeBase" extra={`≤ ${c.compressionMax} over ${c.recentSessions} sessions`} className={gateCardClass(compressionOk)}>
+          {gateBody('Compression', d.compression == null ? '—' : d.compression.toFixed(2), compressionOk)}
+        </MetricTip>
+        <MetricTip id="rangeBase" extra={`≥ ${c.containmentMin} of the newer half`} className={gateCardClass(containmentOk)}>
+          {gateBody('Containment', d.containment.toFixed(2), containmentOk)}
+        </MetricTip>
+        <MetricTip id="rangeBase" extra={`≥ ${c.minSessions} sessions · length score ${d.lengthScore.toFixed(2)}`} className={gateCardClass(lengthOk)}>
+          {gateBody('Length', String(d.lengthSessions), lengthOk)}
+        </MetricTip>
+        <MetricTip id="rangeBase" extra={`≥ ${c.above50Min} of closes above SMA${c.smaPeriod}`} className={gateCardClass(aboveOk)}>
+          {gateBody('Above 50', d.above50Frac.toFixed(2), aboveOk)}
+        </MetricTip>
+        <MetricTip id="rangeBase" extra={c.higherLowsHardFail ? 'required' : `bonus ${c.higherLowsBonus}`} className={gateCardClass(d.higherLows || !c.higherLowsHardFail)}>
+          {gateBody('Higher lows', d.higherLows ? 'yes' : 'no', d.higherLows || !c.higherLowsHardFail)}
+        </MetricTip>
+      </div>
+    </section>
+  )
+}
+
 export function DetailDrawer({ idea, source = 'live', isPinned, onTogglePin }: Props) {
   return (
     <div className="flex flex-col bg-terminal-panel">
@@ -306,6 +346,13 @@ export function DetailDrawer({ idea, source = 'live', isPinned, onTogglePin }: P
                 className="rounded bg-terminal-a-plus px-1.5 py-0.5 text-[10px] font-bold text-terminal-bg"
               >
                 A+
+              </MetricTip>
+            ) : idea.isA ? (
+              <MetricTip
+                id="qualityA"
+                className="rounded border border-terminal-a-plus/40 bg-terminal-a-plus/15 px-1.5 py-0.5 text-[10px] font-bold text-terminal-a-plus"
+              >
+                A
               </MetricTip>
             ) : null}
             <MetricTip
@@ -499,6 +546,7 @@ export function DetailDrawer({ idea, source = 'live', isPinned, onTogglePin }: P
         <SurferDetailSection idea={idea} />
         <TightDetailSection idea={idea} />
         <RangeBreakoutGatesSection idea={idea} />
+        <RangeBaseSection idea={idea} />
 
         <section>
           <h3 className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-terminal-dim">

@@ -19,13 +19,14 @@ const STAGE_CHIP_ORDER: SetupStage[] = ['watching', 'coiled', 'triggering']
 const CHIP =
   'flex min-h-8 cursor-help items-center gap-1.5 rounded border px-2.5 py-1.5 text-[10px]'
 
-function chipClass(on: boolean, tone: 'green' | 'blue' | 'amber' | 'purple' | 'red' | 'gold' = 'green'): string {
+function chipClass(on: boolean, tone: 'green' | 'blue' | 'amber' | 'purple' | 'red' | 'gold' | 'goldLite' = 'green'): string {
   if (!on) return `${CHIP} border-terminal-border bg-terminal-bg text-terminal-dim`
   if (tone === 'blue') return `${CHIP} border-terminal-blue/40 bg-terminal-blue/20 text-terminal-blue`
   if (tone === 'amber') return `${CHIP} border-terminal-amber/40 bg-terminal-amber/20 text-terminal-amber`
   if (tone === 'purple') return `${CHIP} border-terminal-purple/40 bg-terminal-purple/20 text-terminal-purple`
   if (tone === 'red') return `${CHIP} border-terminal-red/40 bg-terminal-red-dim text-terminal-red`
   if (tone === 'gold') return `${CHIP} border-terminal-a-plus/40 bg-terminal-a-plus/15 text-terminal-a-plus`
+  if (tone === 'goldLite') return `${CHIP} border-terminal-a-plus/30 bg-terminal-a-plus/10 text-terminal-a-plus/80`
   return `${CHIP} border-terminal-green/40 bg-terminal-green/15 text-terminal-green`
 }
 
@@ -55,7 +56,7 @@ function CheckChip({
   label: string
   checked: boolean
   onChange: (checked: boolean) => void
-  tone?: 'green' | 'gold'
+  tone?: 'green' | 'gold' | 'goldLite'
 }) {
   return (
     <label {...metricTipAttrs(id)} className={chipClass(checked, tone)}>
@@ -384,7 +385,20 @@ export function FiltersBar({
       </FilterGroup>
 
       <FilterGroup label="Other">
-        <CheckChip id="aPlus" label="A+ only" tone="gold" checked={filters.aPlusOnly} onChange={(checked) => onChange({ ...filters, aPlusOnly: checked })} />
+        <CheckChip
+          id="qualityA"
+          label="A"
+          tone="goldLite"
+          checked={filters.requireA}
+          onChange={(checked) => onChange({ ...filters, requireA: checked })}
+        />
+        <CheckChip
+          id="aPlus"
+          label="A+"
+          tone="gold"
+          checked={filters.requireAPlus}
+          onChange={(checked) => onChange({ ...filters, requireAPlus: checked })}
+        />
         <label {...metricTipAttrs('hasCatalyst')} className={chipClass(filters.hasCatalyst, 'green')}>
           <input
             type="checkbox"

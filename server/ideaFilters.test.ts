@@ -328,15 +328,39 @@ test('passesFilters truth table for each normal-scan control', () => {
       pass: true,
     },
     {
-      name: 'A+ only hides',
-      row: idea({ isAPlus: false }),
-      f: filters({ aPlusOnly: true }),
+      name: 'A chip hides a name that is not A',
+      row: idea({ isA: false, isAPlus: false }),
+      f: filters({ requireA: true }),
       pass: false,
     },
     {
-      name: 'A+ only allows',
-      row: idea({ isAPlus: true }),
-      f: filters({ aPlusOnly: true }),
+      name: 'A chip keeps isA, including when it is not A+',
+      row: idea({ isA: true, isAPlus: false }),
+      f: filters({ requireA: true }),
+      pass: true,
+    },
+    {
+      name: 'A+ chip hides a plain A',
+      row: idea({ isA: true, isAPlus: false }),
+      f: filters({ requireAPlus: true }),
+      pass: false,
+    },
+    {
+      name: 'A+ chip keeps isAPlus',
+      row: idea({ isA: true, isAPlus: true }),
+      f: filters({ requireAPlus: true }),
+      pass: true,
+    },
+    {
+      name: 'both quality chips off does not filter on the flags',
+      row: idea({ isA: false, isAPlus: false }),
+      f: filters({ requireA: false, requireAPlus: false }),
+      pass: true,
+    },
+    {
+      name: 'both quality chips keep A+ and also plain A',
+      row: idea({ isA: true, isAPlus: false }),
+      f: filters({ requireA: true, requireAPlus: true }),
       pass: true,
     },
     {
@@ -575,10 +599,15 @@ test('migrateStoredFilters fills requireAbove200 and rejects bad shapes', () => 
   assert.equal(migrateStoredFilters({ minAvgDollarVol: -5 }).minAvgDollarVol, 0)
   assert.equal(showAllGroupFilters().minAvgDollarVol, 0)
   assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, minAvgDollarVol: 0 }), 1)
-  assert.equal(migrateStoredFilters({}).maxExtensionAdr50, null)
+  assert.equal(migrateStoredFilters({}).maxExtensionAdr50, 5)
   assert.equal(migrateStoredFilters({ maxExtensionAdr50: 3 }).maxExtensionAdr50, 3)
   assert.equal(migrateStoredFilters({ maxExtensionAdr50: null }).maxExtensionAdr50, null)
-  assert.equal(migrateStoredFilters({ maxExtensionAdr50: '2' }).maxExtensionAdr50, null)
+  assert.equal(migrateStoredFilters({ maxExtensionAdr50: '2' }).maxExtensionAdr50, 5)
+  assert.equal(migrateStoredFilters({ aPlusOnly: true }).requireAPlus, true)
+  assert.equal(migrateStoredFilters({ aPlusOnly: true }).requireA, false)
+  assert.equal(migrateStoredFilters({ aPlusOnly: false }).requireAPlus, false)
+  assert.equal(migrateStoredFilters({ aPlusOnly: true, requireAPlus: false }).requireAPlus, false)
+  assert.equal(migrateStoredFilters({ requireA: true }).requireA, true)
   assert.equal(migrateStoredFilters({}).maxPctFromHigh, null)
   assert.equal(migrateStoredFilters({ maxPctFromHigh: 100 }).maxPctFromHigh, null)
   assert.equal(migrateStoredFilters({ maxPctFromHigh: 150 }).maxPctFromHigh, null)
@@ -619,7 +648,10 @@ test('active-filter counter and reset include Above 200 DMA', () => {
   assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, requireSurfer50: true }), 1)
   assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, requireTight: true }), 1)
   assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, maxExtensionAdr50: 3 }), 1)
-  assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, maxExtensionAdr50: null }), 0)
+  assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, maxExtensionAdr50: null }), 1)
+  assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, maxExtensionAdr50: 5 }), 0)
+  assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, requireA: true }), 1)
+  assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, requireAPlus: true }), 1)
   assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, maxPctFromHigh: 10 }), 1)
   assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, maxPctFromHigh: null }), 0)
   assert.equal(DEFAULT_FILTERS.maxPctFromHigh, null)
@@ -681,9 +713,12 @@ test('active-filter counter and reset include Above 200 DMA', () => {
   assert.equal(showAll.minRvol, 0)
   assert.equal(showAll.maxPctFromHigh, null)
   assert.equal(showAll.maxExtensionAdr50, null)
-  assert.equal(DEFAULT_FILTERS.maxExtensionAdr50, null)
+  assert.equal(DEFAULT_FILTERS.maxExtensionAdr50, 5)
   assert.equal(GROUP_VIEW_DEFAULT_FILTERS.maxExtensionAdr50, null)
-  assert.equal(showAll.aPlusOnly, false)
+  assert.equal(showAll.requireA, false)
+  assert.equal(showAll.requireAPlus, false)
+  assert.equal(DEFAULT_FILTERS.requireA, false)
+  assert.equal(DEFAULT_FILTERS.requireAPlus, false)
   assert.equal(showAll.hasCatalyst, false)
   assert.equal(showAll.search, '')
   assert.equal(showAll.setupTypes.length, ALL_SETUP_TYPES.length)

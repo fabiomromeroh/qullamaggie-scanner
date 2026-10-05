@@ -10,6 +10,7 @@ import type {
 } from '../types'
 import { extensionAdrFrom50, roundExtensionAdr50 } from './extensionAdr'
 import { resolvePrevClose } from './prevClose'
+import { evaluateRangeBase } from './rangeBase'
 import { setupStageHeuristic } from './setupStage'
 import { compactSurferDetail, evaluateSurfer } from './surfer'
 import { compactTightDetail, evaluateTightConsolidation } from './tightConsolidation'
@@ -116,22 +117,51 @@ export const EARNINGS_PROXIMITY = {
 } as const
 
 /**
- * isAPlusHeuristic gates. "Surfer" in the soft path is loose aboveSma10 || aboveSma20.
+ * isA gates. The previous A+ hard gate required price above the 200-day SMA
+ * and above the 50-day SMA. Those booleans stay on isA (they were not numeric
+ * fields). A price equal to the SMA is not above. Catalyst is not required.
+ *
+ * Constructive path (any one): setupStage coiled or triggering, OR
+ * tightConsolidation, OR rangeBase.ok. Episodic Pivot by itself is not a path.
+ * Earnings `avoid` fails A, and therefore fails A+.
+ */
+export const A_CONFIG = {
+  /** ADR% floor. Equality passes. */
+  adrMin: 2.5,
+  /**
+   * Known extensionAdr50 strictly above this fails isA.
+   * Null passes. Equality passes. Same comparison as the Max Ext50 filter
+   * (`extensionAdr50 > T` is excluded). The normal-scan default T is this 5.
+   */
+  ext50MaxAdr: 5,
+} as const
+
+/**
+ * isAPlus gates on top of isA. Near-ATH uses {@link NEAR_ATH_MAX_PCT}.
+ *
+ * baseQuality = clamp(log1p(days / monthSessions), 0, baseQualityCap).
+ * days = max(baseLengthDays, range-base lengthSessions). lengthSessions is 0
+ * when no structural range base was found, so a failed detection does not
+ * grant a year of credit. A month (21 sessions) scores log1p(1) ≈ 0.69, which
+ * is under baseQualityMin. About 37 sessions clears 1. A quarter (63) scores
+ * about 1.39. A year (252) scores log1p(12) ≈ 2.56 and is capped at 2.
+ * Month-scale bases score lower than multi-month and year bases.
+ *
+ * The range-base score is an alternate path: rangeBaseScore >= rangeBaseScoreMin.
  */
 export const APLUS_CONFIG = {
-  adrMin: 2.5,
-  nearHighPct: 5,
-  nearHighSoftPct: 10,
-  rvolOrRunRvol: 1.5,
-  rvolOrRunPrior: 30,
-  softPathRvol: 1.2,
+  monthSessions: 21,
+  baseQualityCap: 2,
+  baseQualityMin: 1,
+  rangeBaseScoreMin: 0.85,
 } as const
 
 /**
  * kyleScoreHeuristic points. Below the 200 SMA returns `below200Score` and skips
  * the 3–5 clamp. Otherwise the score starts at `base` and is clamped to
  * [clampMin, clampMax] after rounding to 2 decimals. isAPlus lifts the score
- * to at least `aPlusFloor` before the clamp.
+ * to at least `aPlusFloor` before the clamp. isA adds `aBump` and does not
+ * receive that floor.
  */
 export const KYLE_SCORE_CONFIG = {
   below200Score: 1,
@@ -155,6 +185,12 @@ export const KYLE_SCORE_CONFIG = {
   adrMax: 8,
   adrPoints: 0.15,
   aPlusFloor: 4.5,
+  /**
+   * Added when isA is true and isAPlus is false. Applied before the clamp.
+   * If the raw score is still under aPlusFloor, the bump cannot cross that
+   * floor (it stops 0.01 below). A raw score already at the floor can still rise.
+   */
+  aBump: 0.15,
   clampMin: 3,
   clampMax: 5,
 } as const
@@ -168,7 +204,8 @@ export const SETUP_TYPE_CONFIG = {
 /**
  * Range Breakout gates. All five are required. Episodic Pivot still wins when
  * its own gate hits, even if these pass. priorLegMinPct reads idea.priorRunPct
- * (priorRunPctProxy). Kyle score, A+, and coiled keep using that same number.
+ * (priorRunPctProxy). Kyle score and the coiled stage keep using that same number.
+ * The A and A+ flags do not.
  */
 export interface RangeBreakoutConfig {
   /** ADR% must be at least this. Compared on the rounded idea.adrPct. */
@@ -214,6 +251,12 @@ export const RANGE_BREAKOUT_CONFIG: RangeBreakoutConfig = {
 
 /** deriveCharacteristics "near ATH" band: pctFrom52wHigh >= -this. */
 export const NEAR_ATH_PCT = 5
+
+/**
+ * A+ near-high gate, and the same band as the "near ATH" tag.
+ * pctFrom52wHigh >= -NEAR_ATH_MAX_PCT. Alias of {@link NEAR_ATH_PCT}.
+ */
+export const NEAR_ATH_MAX_PCT = NEAR_ATH_PCT
 
 /** computeMarketRegime thresholds on QQQ daily bars. */
 export const REGIME_CONFIG = {
@@ -379,36 +422,111 @@ export function baseLengthDaysProxy(
   return streak
 }
 
-/**
- * A+ heuristic (tightened Kyle-style): above 200+50 SMA, near highs (≤5% or ≤10% with surfer),
- * decent ADR, elevated RVOL or prior run, preferably MA surfer.
- * Heuristic only — not a trading signal / not Kyle's official Rating.
- *
- * "Surfer" here is the loose price-above-SMA10/20 flags (`aboveSma10` / `aboveSma20`),
- * not the strict ride-the-MA booleans (`surfer10` / `surfer20`).
- */
-export function isAPlusHeuristic(m: {
-  pctFrom52wHigh: number
-  rvol: number
-  adrPct: number
+export interface SetupQualityInput {
   aboveSma200: boolean
   aboveSma50: boolean
-  aboveSma10: boolean
-  aboveSma20: boolean
-  priorRunPct: number
-  /** Hard fail: earnings same day / next trading day cannot be tradeable A+. */
+  adrPct: number
+  extensionAdr50?: number | null
+  setupStage: 'watching' | 'coiled' | 'triggering'
+  tightConsolidation: boolean
+  /** True only when evaluateRangeBase returned ok. */
+  rangeBaseOk: boolean
   earningsStatus?: EarningsStatus
-}): boolean {
+  pctFrom52wHigh: number
+  hasCatalyst?: boolean
+  catalystStatus?: 'checked' | 'pending' | 'unchecked' | 'error'
+  baseLengthDays: number
+  /**
+   * Sessions of a structural range base. 0 when none was found.
+   * Counted toward base quality even when recent compression failed `ok`.
+   */
+  rangeBaseLengthSessions: number
+  rangeBaseScore: number | null
+}
+
+/** Null and non-finite extensions pass. A known value fails only when it is above the cap. */
+export function extensionPassesAGate(extensionAdr50: number | null | undefined): boolean {
+  if (typeof extensionAdr50 !== 'number' || !Number.isFinite(extensionAdr50)) return true
+  return extensionAdr50 <= A_CONFIG.ext50MaxAdr
+}
+
+/** Coiled, triggering, strict tight consolidation, or a passing range base. No catalyst. */
+export function constructiveSetup(
+  m: Pick<SetupQualityInput, 'setupStage' | 'tightConsolidation' | 'rangeBaseOk'>,
+): boolean {
+  return (
+    m.setupStage === 'coiled' ||
+    m.setupStage === 'triggering' ||
+    m.tightConsolidation === true ||
+    m.rangeBaseOk === true
+  )
+}
+
+/**
+ * log1p(days / monthSessions), capped. Month-scale scores lower than a
+ * quarter or a year. See {@link APLUS_CONFIG}.
+ */
+export function baseQualityScore(
+  days: number,
+  config: typeof APLUS_CONFIG = APLUS_CONFIG,
+): number {
+  if (!(days > 0) || !(config.monthSessions > 0)) return 0
+  const raw = Math.log1p(days / config.monthSessions)
+  if (!Number.isFinite(raw) || raw <= 0) return 0
+  return Math.min(config.baseQualityCap, raw)
+}
+
+/** Days that feed base quality: the tight-streak proxy, or a structural range-base length. */
+export function baseQualityDays(
+  m: Pick<SetupQualityInput, 'baseLengthDays' | 'rangeBaseLengthSessions'>,
+): number {
+  const streak = typeof m.baseLengthDays === 'number' && Number.isFinite(m.baseLengthDays) ? m.baseLengthDays : 0
+  const range =
+    typeof m.rangeBaseLengthSessions === 'number' && Number.isFinite(m.rangeBaseLengthSessions)
+      ? m.rangeBaseLengthSessions
+      : 0
+  return Math.max(0, streak, range)
+}
+
+/**
+ * Constructive A. Above the 200-day and 50-day SMAs, ADR at the floor,
+ * extension within the cap (or unknown), and one constructive path.
+ * Earnings avoid fails. Catalyst is not read.
+ */
+export function isAHeuristic(m: SetupQualityInput): boolean {
   if (m.earningsStatus === 'avoid') return false
   if (!m.aboveSma200 || !m.aboveSma50) return false
-  if (m.adrPct < APLUS_CONFIG.adrMin) return false
-  const nearHigh = m.pctFrom52wHigh >= -APLUS_CONFIG.nearHighPct
-  const nearHighSoft = m.pctFrom52wHigh >= -APLUS_CONFIG.nearHighSoftPct
-  const volumeOrRun = m.rvol >= APLUS_CONFIG.rvolOrRunRvol || m.priorRunPct >= APLUS_CONFIG.rvolOrRunPrior
-  const surfer = m.aboveSma10 || m.aboveSma20
-  if (nearHigh && volumeOrRun) return true
-  if (nearHighSoft && volumeOrRun && surfer && m.rvol >= APLUS_CONFIG.softPathRvol) return true
-  return false
+  if (!(m.adrPct >= A_CONFIG.adrMin)) return false
+  if (!extensionPassesAGate(m.extensionAdr50)) return false
+  if (!constructiveSetup(m)) return false
+  return true
+}
+
+/**
+ * Checked catalyst only. Pending and unchecked are false even if the boolean
+ * was left true. A missing boolean is false. The display string is not used.
+ */
+export function catalystCountsForAPlus(
+  m: Pick<SetupQualityInput, 'hasCatalyst' | 'catalystStatus'>,
+): boolean {
+  if (m.catalystStatus === 'pending' || m.catalystStatus === 'unchecked') return false
+  return m.hasCatalyst === true
+}
+
+/**
+ * A+ is A, plus a checked catalyst, the near-ATH band, and base quality.
+ * baseQuality >= baseQualityMin, or rangeBaseScore >= rangeBaseScoreMin.
+ * Heuristic only — not a signal and not Kyle's official Rating.
+ */
+export function isAPlusHeuristic(m: SetupQualityInput): boolean {
+  if (!isAHeuristic(m)) return false
+  if (!catalystCountsForAPlus(m)) return false
+  if (!(m.pctFrom52wHigh >= -NEAR_ATH_MAX_PCT)) return false
+  const quality = baseQualityScore(baseQualityDays(m))
+  const rangeScore = m.rangeBaseScore
+  const rangeScoreOk =
+    typeof rangeScore === 'number' && Number.isFinite(rangeScore) && rangeScore >= APLUS_CONFIG.rangeBaseScoreMin
+  return quality >= APLUS_CONFIG.baseQualityMin || rangeScoreOk
 }
 
 /**
@@ -425,6 +543,8 @@ export function kyleScoreHeuristic(m: {
   rvol: number
   adrPct: number
   priorRunPct: number
+  /** Small bump. Does not grant the A+ floor. */
+  isA?: boolean
   isAPlus: boolean
 }): number {
   const k = KYLE_SCORE_CONFIG
@@ -441,8 +561,15 @@ export function kyleScoreHeuristic(m: {
   if (m.priorRunPct >= k.priorRunHigh) score += k.priorRunHighPoints
   else if (m.priorRunPct >= k.priorRunMid) score += k.priorRunMidPoints
   if (m.adrPct >= k.adrMin && m.adrPct <= k.adrMax) score += k.adrPoints
-  if (m.isAPlus) score = Math.max(score, k.aPlusFloor)
-  return Math.min(k.clampMax, Math.max(k.clampMin, round2(score)))
+  score = round2(score)
+  if (m.isAPlus) {
+    score = Math.max(score, k.aPlusFloor)
+  } else if (m.isA) {
+    const bumped = round2(score + k.aBump)
+    const underFloor = round2(k.aPlusFloor - 0.01)
+    score = score >= k.aPlusFloor ? bumped : Math.min(bumped, underFloor)
+  }
+  return Math.min(k.clampMax, Math.max(k.clampMin, score))
 }
 
 /**
@@ -621,7 +748,7 @@ export function deriveCharacteristics(m: {
   if (m.surfer10) tags.push('10MA Surfer')
   if (m.surfer20) tags.push('20MA Surfer')
   if (m.surfer50) tags.push('50MA Surfer')
-  if (m.pctFrom52wHigh >= -NEAR_ATH_PCT) tags.push('near ATH')
+  if (m.pctFrom52wHigh >= -NEAR_ATH_MAX_PCT) tags.push('near ATH')
   const cat = (m.catalyst ?? '').toLowerCase()
   if (cat && /\bearnings?\b|\beps\b/.test(cat)) tags.push('Earnings')
   if (cat && /\bgap\b|\bgapped?\b/.test(cat)) tags.push('GAP')
@@ -655,6 +782,73 @@ export function computeMarketRegime(bars: DailyBar[]): MarketRegime | null {
     qqq10gt20,
     stDirection,
     detail: `QQQ vs SMA50 ${round2(vs50)}% · SMA50 slope(5d) ${round2(slopePct)}% · SMA10 ${round2(sma10)} / SMA20 ${round2(sma20)}`,
+  }
+}
+
+const WHY_AVOID =
+  'Earnings same day or next trading day — AVOID entry (hard fail). Not tradeable A or A+ regardless of other metrics.'
+const WHY_APLUS =
+  'Heuristic A+: an A setup with a checked catalyst, inside the near-ATH band, and a longer base. A month-scale base scores lower than a multi-month or year base. Not a signal and not Kyle Rating.'
+const WHY_A =
+  'Heuristic A: above the 200-day and 50-day SMAs, ADR at the A floor, extension from the 50 SMA within the cap or unknown, and a constructive path (coiled, triggering, tight consolidation, or a range base). Catalyst is not required.'
+const WHY_WATCH = 'On watchlist above 200 SMA; does not meet the heuristic A thresholds today.'
+const WHY_BELOW =
+  'Below daily 200 SMA — fails Qullamaggie hard trend gate (not a valid setup). Tag: Below 200MA.'
+
+export function qualityInputFromIdea(idea: TradingIdea): SetupQualityInput {
+  const detail = idea.rangeBaseDetail
+  const storedScore = detail?.score ?? idea.rangeBaseScore
+  return {
+    aboveSma200: idea.aboveSma200 === true,
+    aboveSma50: idea.aboveSma50 === true,
+    adrPct: typeof idea.adrPct === 'number' && Number.isFinite(idea.adrPct) ? idea.adrPct : 0,
+    extensionAdr50: idea.extensionAdr50 ?? null,
+    setupStage: idea.setupStage ?? 'watching',
+    tightConsolidation: idea.tightConsolidation === true,
+    rangeBaseOk: detail?.ok === true,
+    earningsStatus: idea.earningsStatus,
+    pctFrom52wHigh: typeof idea.pctFrom52wHigh === 'number' && Number.isFinite(idea.pctFrom52wHigh) ? idea.pctFrom52wHigh : 0,
+    hasCatalyst: idea.hasCatalyst,
+    catalystStatus: idea.catalystStatus,
+    baseLengthDays:
+      typeof idea.baseLengthDays === 'number' && Number.isFinite(idea.baseLengthDays) ? idea.baseLengthDays : 0,
+    rangeBaseLengthSessions:
+      typeof detail?.lengthSessions === 'number' && Number.isFinite(detail.lengthSessions) ? detail.lengthSessions : 0,
+    rangeBaseScore: typeof storedScore === 'number' && Number.isFinite(storedScore) ? storedScore : null,
+  }
+}
+
+function whyQualifiesFor(idea: TradingIdea, isA: boolean, isAPlus: boolean): string {
+  if (idea.earningsStatus === 'avoid') return WHY_AVOID
+  if (isAPlus) return WHY_APLUS
+  if (isA) return WHY_A
+  if (idea.aboveSma200) return WHY_WATCH
+  return WHY_BELOW
+}
+
+/** Recompute isA, isAPlus, kyleScore, and the qualify sentence from the idea's current fields. */
+export function applyQualityFlags(idea: TradingIdea): TradingIdea {
+  const input = qualityInputFromIdea(idea)
+  const isA = isAHeuristic(input)
+  const isAPlus = isAPlusHeuristic(input)
+  const kyleScore = kyleScoreHeuristic({
+    aboveSma200: idea.aboveSma200 === true,
+    aboveSma50: idea.aboveSma50 === true,
+    aboveSma10: idea.aboveSma10 === true,
+    aboveSma20: idea.aboveSma20 === true,
+    pctFrom52wHigh: input.pctFrom52wHigh,
+    rvol: typeof idea.rvol === 'number' && Number.isFinite(idea.rvol) ? idea.rvol : 0,
+    adrPct: input.adrPct,
+    priorRunPct: typeof idea.priorRunPct === 'number' && Number.isFinite(idea.priorRunPct) ? idea.priorRunPct : 0,
+    isA,
+    isAPlus,
+  })
+  return {
+    ...idea,
+    isA,
+    isAPlus,
+    kyleScore,
+    whyQualifies: whyQualifiesFor(idea, isA, isAPlus),
   }
 }
 
@@ -761,7 +955,6 @@ export function computeIdeaMetrics(
     earningsStatus,
   }
 
-  const isAPlus = isAPlusHeuristic(metricsCore)
   const higherLows = evaluateHigherLows(bars)
   const recentRangeRaw = recentRangePct(bars)
   // Gate on the same 2-decimal ADR and ratio the detail panel shows.
@@ -784,7 +977,7 @@ export function computeIdeaMetrics(
     dayPct: metricsCore.dayPct,
     ...rangeGate,
   })
-  const kyleScore = kyleScoreHeuristic({ ...metricsCore, isAPlus })
+  const rangeBaseDetail = evaluateRangeBase(bars, metricsCore.adrPct, higherLows.hasHigherLows)
   const setupStage = setupStageHeuristic({
     aboveSma200,
     aboveSma10,
@@ -807,7 +1000,7 @@ export function computeIdeaMetrics(
     surfer50,
   })
 
-  return {
+  return applyQualityFlags({
     ticker: entry.ticker,
     name: snap.name?.trim() || entry.name,
     groupId: entry.groupId,
@@ -830,16 +1023,10 @@ export function computeIdeaMetrics(
     extensionAdr50,
     setupType,
     catalyst,
-    isAPlus,
+    isA: false,
+    isAPlus: false,
     notes: `Live metrics via ${snap.provider}. Catalyst is filled after the scan from news inside 48 hours. Kyle-style proxies from bars only.`,
-    whyQualifies:
-      earningsStatus === 'avoid'
-        ? 'Earnings same day or next trading day — AVOID entry (hard fail). Not tradeable A+ regardless of other metrics.'
-        : isAPlus
-          ? 'Heuristic A+: above 200 & 50 SMA, near highs, ADR≥2.5, elevated RVOL or prior run, preferably MA surfer; earnings clear/alert (not a signal / not Kyle Rating).'
-          : aboveSma200
-            ? 'On watchlist above 200 SMA; does not meet heuristic A+ thresholds today.'
-            : 'Below daily 200 SMA — fails Qullamaggie hard trend gate (not a valid setup). Tag: Below 200MA.',
+    whyQualifies: '',
     suggestedEntry: null,
     suggestedStop: null,
     sparkline,
@@ -851,7 +1038,7 @@ export function computeIdeaMetrics(
     tightDays,
     baseLengthDays,
     dollarVolume: Math.round(avgDollarVol),
-    kyleScore,
+    kyleScore: 0,
     characteristics,
     setupStage: stage,
     earningsDate,
@@ -864,7 +1051,9 @@ export function computeIdeaMetrics(
     tightConsolidation,
     tightDetail,
     rangeBreakoutDetail,
-  }
+    rangeBaseScore: rangeBaseDetail.score,
+    rangeBaseDetail,
+  })
 }
 
 /** Re-apply earnings fields and recompute A+ (after async calendar fetch). */
@@ -873,45 +1062,10 @@ export function applyEarningsToIdea(
   earningsDate: string | null,
 ): TradingIdea {
   const { daysToEarnings, earningsStatus } = classifyEarningsProximity(earningsDate)
-  const isAPlus = isAPlusHeuristic({
-    pctFrom52wHigh: idea.pctFrom52wHigh,
-    rvol: idea.rvol,
-    adrPct: idea.adrPct,
-    aboveSma200: idea.aboveSma200,
-    aboveSma50: idea.aboveSma50,
-    aboveSma10: idea.aboveSma10,
-    aboveSma20: idea.aboveSma20,
-    priorRunPct: idea.priorRunPct,
-    earningsStatus,
-  })
-  const kyleScore = kyleScoreHeuristic({
-    aboveSma200: idea.aboveSma200,
-    aboveSma50: idea.aboveSma50,
-    aboveSma10: idea.aboveSma10,
-    aboveSma20: idea.aboveSma20,
-    pctFrom52wHigh: idea.pctFrom52wHigh,
-    rvol: idea.rvol,
-    adrPct: idea.adrPct,
-    priorRunPct: idea.priorRunPct,
-    isAPlus,
-  })
-  let whyQualifies = idea.whyQualifies
-  if (earningsStatus === 'avoid') {
-    whyQualifies =
-      'Earnings same day or next trading day — AVOID entry (hard fail). Not tradeable A+ regardless of other metrics.'
-  } else if (isAPlus && !idea.isAPlus) {
-    whyQualifies =
-      'Heuristic A+: above 200 & 50 SMA, near highs, ADR≥2.5, elevated RVOL or prior run, preferably MA surfer; earnings clear/alert (not a signal / not Kyle Rating).'
-  } else if (!isAPlus && idea.isAPlus) {
-    whyQualifies = 'On watchlist above 200 SMA; does not meet heuristic A+ thresholds today.'
-  }
-  return {
+  return applyQualityFlags({
     ...idea,
     earningsDate,
     daysToEarnings,
     earningsStatus,
-    isAPlus,
-    kyleScore,
-    whyQualifies,
-  }
+  })
 }

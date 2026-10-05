@@ -52,6 +52,7 @@ function idea(partial: Partial<TradingIdea>): TradingIdea {
     extensionAdr50: 0.3,
     setupType: 'Continuation',
     catalyst: null,
+    isA: false,
     isAPlus: false,
     notes: '',
     whyQualifies: '',
@@ -77,8 +78,9 @@ function idea(partial: Partial<TradingIdea>): TradingIdea {
     surfer20: false,
     surfer50: false,
     tightConsolidation: false,
+    rangeBaseScore: 0,
     ...partial,
-  }
+  } as TradingIdea
 }
 
 test('synthetic headlines: each category, noise vetoes, analyst bonus, direction', () => {
@@ -455,6 +457,17 @@ test('candidate priority, cap, cache ttl, stale-on-error, and response merge', (
   ]
   assert.equal(isCatalystCandidate(rows[4]!), false)
   assert.equal(isCatalystCandidate(rows[3]!), true)
+  assert.equal(
+    isCatalystCandidate({
+      ticker: 'STRUCT',
+      setupStage: 'watching',
+      rvol: 0.2,
+      dayPct: 0.1,
+      isA: true,
+      isAPlus: false,
+    }),
+    true,
+  )
   const picked = selectCatalystCandidates(rows, { cap: 3 })
   assert.deepEqual(picked.map((row) => row.ticker), ['TRIG', 'COIL', 'WATCH'])
   const all = selectCatalystCandidates(rows, { includeAll: true, cap: 120 })

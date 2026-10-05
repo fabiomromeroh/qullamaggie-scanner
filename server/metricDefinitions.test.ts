@@ -3,27 +3,33 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { test } from 'node:test'
 import {
+  A_CONFIG,
   APLUS_CONFIG,
   BAR_WINDOWS,
   BASE_LENGTH_PROXY,
   EARNINGS_PROXIMITY,
   KYLE_SCORE_CONFIG,
+  NEAR_ATH_MAX_PCT,
   NEAR_ATH_PCT,
   PRIOR_RUN_PROXY,
   RANGE_BREAKOUT_CONFIG,
   REGIME_CONFIG,
   SETUP_TYPE_CONFIG,
   TIGHT_DAYS_PROXY,
+  isAHeuristic,
   isAPlusHeuristic,
   kyleScoreHeuristic,
 } from '../src/lib/metrics.ts'
+import { RANGE_BASE_CONFIG } from '../src/lib/rangeBase.ts'
 import {
   METRIC_DEFS,
   aPlusRuleText,
+  aRuleText,
   getMetricDef,
   isMetricId,
   kyleScoreRuleText,
   metricTooltipText,
+  rangeBaseRuleText,
   stageRuleText,
   surferRuleText,
   tightRuleText,
@@ -215,13 +221,25 @@ test('tooltip text is built from the live scanner constants', () => {
   includes('stageCoiled', `${STAGE_CONFIG.coiledPriorRunMin}`)
   includes('stageCoiled', `${STAGE_CONFIG.nearHighTightPct}`)
 
+  assert.ok(metricTooltipText('qualityA').includes(aRuleText()))
+  includes('qualityA', `${A_CONFIG.adrMin}`)
+  includes('qualityA', `${A_CONFIG.ext50MaxAdr}`)
+  includes('qualityA', 'coiled')
   assert.ok(metricTooltipText('aPlus').includes(aPlusRuleText()))
-  includes('aPlus', `${APLUS_CONFIG.adrMin}`)
-  includes('aPlus', `${APLUS_CONFIG.nearHighPct}`)
-  includes('aPlus', `${APLUS_CONFIG.nearHighSoftPct}`)
-  includes('aPlus', `${APLUS_CONFIG.rvolOrRunRvol}`)
-  includes('aPlus', `${APLUS_CONFIG.rvolOrRunPrior}`)
-  includes('aPlus', `${APLUS_CONFIG.softPathRvol}`)
+  includes('aPlus', `${NEAR_ATH_MAX_PCT}`)
+  includes('aPlus', `${APLUS_CONFIG.baseQualityMin}`)
+  includes('aPlus', `${APLUS_CONFIG.rangeBaseScoreMin}`)
+  includes('aPlus', `${APLUS_CONFIG.monthSessions}`)
+  includes('aPlus', `${APLUS_CONFIG.baseQualityCap}`)
+  assert.equal(NEAR_ATH_MAX_PCT, NEAR_ATH_PCT)
+  assert.ok(metricTooltipText('rangeBase').includes(rangeBaseRuleText()))
+  includes('rangeBase', `${RANGE_BASE_CONFIG.compressionMax}`)
+  includes('rangeBase', `${RANGE_BASE_CONFIG.containmentMin}`)
+  includes('rangeBase', `${RANGE_BASE_CONFIG.minSessions}`)
+  includes('rangeBase', `${RANGE_BASE_CONFIG.above50Min}`)
+  includes('rangeBase', `${RANGE_BASE_CONFIG.adrSlack}`)
+  includes('rangeBase', `${RANGE_BASE_CONFIG.monthSessions}`)
+  includes('rangeBase', `${RANGE_BASE_CONFIG.yearSessions}`)
 
   assert.ok(metricTooltipText('kyleScore').includes(kyleScoreRuleText()))
   includes('kyleScore', `${KYLE_SCORE_CONFIG.below200Score}`)
@@ -232,6 +250,7 @@ test('tooltip text is built from the live scanner constants', () => {
   includes('kyleScore', `${KYLE_SCORE_CONFIG.adrMin}`)
   includes('kyleScore', `${KYLE_SCORE_CONFIG.adrMax}`)
   includes('kyleScore', `${KYLE_SCORE_CONFIG.aPlusFloor}`)
+  includes('kyleScore', `${KYLE_SCORE_CONFIG.aBump}`)
   includes('kyleScore', `${KYLE_SCORE_CONFIG.clampMin}`)
   includes('kyleScore', `${KYLE_SCORE_CONFIG.clampMax}`)
 
@@ -244,7 +263,7 @@ test('tooltip text is built from the live scanner constants', () => {
   includes('filterMaxExtensionAdr50', `${BAR_WINDOWS.adrSessions}`)
   includes('filterMaxExtensionAdr50', `${MAX_EXTENSION_ADR50_PRESETS[0]}`)
   includes('filterMaxExtensionAdr50', 'Any')
-  assert.equal(DEFAULT_FILTERS.maxExtensionAdr50, null)
+  assert.equal(DEFAULT_FILTERS.maxExtensionAdr50, 5)
   includes('filterMaxPctFromHigh', `${BAR_WINDOWS.high52Sessions}`)
   includes('filterMaxPctFromHigh', 'abs')
   includes('filterMaxPctFromHigh', 'Any')
@@ -406,16 +425,28 @@ test('stage, A+, and kyle score boundaries stay on the exported constants', () =
     rvol: 1.6,
     adrPct: 3,
     priorRunPct: 40,
+    extensionAdr50: 1,
+    setupStage: 'coiled' as const,
+    tightConsolidation: false,
+    rangeBaseOk: false,
     earningsStatus: 'clear' as const,
+    hasCatalyst: true,
+    catalystStatus: 'checked' as const,
+    baseLengthDays: 63,
+    rangeBaseLengthSessions: 0,
+    rangeBaseScore: 0.2,
   }
+  assert.equal(isAHeuristic(sample), true)
   assert.equal(isAPlusHeuristic(sample), true)
-  assert.equal(kyleScoreHeuristic({ ...sample, isAPlus: true }), 5)
+  assert.equal(kyleScoreHeuristic({ ...sample, isA: true, isAPlus: true }), 5)
   assert.equal(
-    kyleScoreHeuristic({ ...sample, aboveSma200: false, isAPlus: false }),
+    kyleScoreHeuristic({ ...sample, aboveSma200: false, isA: false, isAPlus: false }),
     KYLE_SCORE_CONFIG.below200Score,
   )
-  assert.equal(isAPlusHeuristic({ ...sample, adrPct: APLUS_CONFIG.adrMin - 0.1 }), false)
-  assert.equal(isAPlusHeuristic({ ...sample, earningsStatus: 'avoid' }), false)
+  assert.equal(isAHeuristic({ ...sample, adrPct: A_CONFIG.adrMin - 0.1 }), false)
+  assert.equal(isAPlusHeuristic({ ...sample, adrPct: A_CONFIG.adrMin - 0.1 }), false)
+  assert.equal(isAHeuristic({ ...sample, earningsStatus: 'avoid' }), false)
+  assert.equal(isAPlusHeuristic({ ...sample, hasCatalyst: false }), false)
 })
 
 test('MetricTip source keeps one shared portal and a focusable trigger', () => {

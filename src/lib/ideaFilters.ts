@@ -60,6 +60,8 @@ export interface FilterableIdea {
    */
   extensionAdr50?: number | null
   setupType: SetupType
+  /** Missing is treated as false when the A chip is on. */
+  isA?: boolean
   isAPlus: boolean
   earningsStatus: EarningsStatus
   catalyst: string | null
@@ -94,7 +96,8 @@ export function cloneIdeaFilters(filters: IdeaFilters): IdeaFilters {
     maxPctFromHigh: filters.maxPctFromHigh ?? null,
     maxExtensionAdr50: filters.maxExtensionAdr50 ?? null,
     setupTypes: [...(filters.setupTypes ?? [])],
-    aPlusOnly: filters.aPlusOnly,
+    requireA: Boolean(filters.requireA),
+    requireAPlus: Boolean(filters.requireAPlus),
     hasCatalyst: filters.hasCatalyst,
     requireAbove200: requireAbove200On(filters),
     requireSma50: filters.requireSma50,
@@ -130,7 +133,8 @@ export function showAllGroupFilters(): IdeaFilters {
     minAvgDollarVol: 0,
     maxPctFromHigh: null,
     maxExtensionAdr50: null,
-    aPlusOnly: false,
+    requireA: false,
+    requireAPlus: false,
     hasCatalyst: false,
     search: '',
     groupId: null,
@@ -177,7 +181,8 @@ export function countActiveFilters(
   if (Boolean(filters.requireTight) !== Boolean(baseline.requireTight)) n += 1
   if (requireAbove200On(filters) !== requireAbove200On(baseline)) n += 1
   if (!sameMembers(filters.earningsStatuses, baseline.earningsStatuses)) n += 1
-  if (Boolean(filters.aPlusOnly) !== Boolean(baseline.aPlusOnly)) n += 1
+  if (Boolean(filters.requireA) !== Boolean(baseline.requireA)) n += 1
+  if (Boolean(filters.requireAPlus) !== Boolean(baseline.requireAPlus)) n += 1
   if (Boolean(filters.hasCatalyst) !== Boolean(baseline.hasCatalyst)) n += 1
   return n
 }
@@ -257,7 +262,15 @@ export function migrateStoredFilters(raw: unknown): IdeaFilters {
     maxPctFromHigh: migrateMaxPctFromHigh(src.maxPctFromHigh),
     maxExtensionAdr50: pickNumOrNull(src.maxExtensionAdr50, base.maxExtensionAdr50),
     setupTypes: pickList(src.setupTypes, ALL_SETUP_TYPES, base.setupTypes),
-    aPlusOnly: pickBool(src.aPlusOnly, base.aPlusOnly),
+    requireA: pickBool(src.requireA, base.requireA),
+    // A stored aPlusOnly: true (the old single chip) becomes requireAPlus
+    // when the new field is absent. An explicit requireAPlus boolean wins.
+    requireAPlus:
+      typeof src.requireAPlus === 'boolean'
+        ? src.requireAPlus
+        : src.aPlusOnly === true
+          ? true
+          : base.requireAPlus,
     hasCatalyst: pickBool(src.hasCatalyst, base.hasCatalyst),
     requireAbove200: src.requireAbove200 === false ? false : true,
     requireSma50: pickBool(src.requireSma50, base.requireSma50),
@@ -355,7 +368,13 @@ export function passesFilters(
     if (typeof ext === 'number' && Number.isFinite(ext) && ext > f.maxExtensionAdr50) return false
   }
   if (f.setupTypes && !f.setupTypes.includes(idea.setupType)) return false
-  if (f.aPlusOnly && !idea.isAPlus) return false
+  // Quality chips are a union. Both off skips the gate. A+ implies A, so
+  // turning both on keeps every A, including A+.
+  if (f.requireA || f.requireAPlus) {
+    const keepA = f.requireA && idea.isA === true
+    const keepPlus = f.requireAPlus && idea.isAPlus === true
+    if (!keepA && !keepPlus) return false
+  }
   if (f.earningsStatuses?.length && !f.earningsStatuses.includes(idea.earningsStatus)) return false
   if (f.hasCatalyst && !ideaHasCatalyst(idea)) return false
   if (!groupView && f.groupId) {

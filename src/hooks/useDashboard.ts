@@ -378,6 +378,7 @@ export function useDashboard() {
         const sr = stageSortRank(a.setupStage) - stageSortRank(b.setupStage)
         if (sr !== 0) return sr
         if (a.isAPlus !== b.isAPlus) return a.isAPlus ? -1 : 1
+        if (a.isA !== b.isA) return a.isA ? -1 : 1
         if (a.kyleScore !== b.kyleScore) return b.kyleScore - a.kyleScore
         if (a.aboveSma50 !== b.aboveSma50) return a.aboveSma50 ? -1 : 1
         // Soft deprioritize new breakouts in Downtrend: push triggering lower when equal score

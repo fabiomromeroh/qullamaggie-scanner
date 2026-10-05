@@ -266,6 +266,15 @@ export interface TradingIdea {
   catalystCount?: number
   /** checked = looked up; pending = candidate not finished; unchecked = not a candidate; error = lookup failed. */
   catalystStatus?: 'checked' | 'pending' | 'unchecked' | 'error'
+  /**
+   * Constructive setup. No catalyst required. A+ implies A.
+   * See `isAHeuristic` in src/lib/metrics.ts.
+   */
+  isA: boolean
+  /**
+   * A, plus a checked catalyst, the near-ATH band, and a longer base.
+   * Pending or unchecked catalyst status is not a catalyst. See `isAPlusHeuristic`.
+   */
   isAPlus: boolean
   notes: string
   whyQualifies: string
@@ -353,6 +362,36 @@ export interface TradingIdea {
    * first, so `passed` can be true when setupType is Episodic Pivot.
    */
   rangeBreakoutDetail?: RangeBreakoutDetail
+  /**
+   * 0–1 range-base score from src/lib/rangeBase.ts.
+   * 0 when the series cannot be scored. The A+ base gate can read this.
+   */
+  rangeBaseScore: number
+  /**
+   * Range-base gate values. `ok` is the constructive path used by isA.
+   * `lengthSessions` is 0 when no window cleared containment, the 50 SMA
+   * fraction, the band-width cap, and the minimum length.
+   */
+  rangeBaseDetail?: RangeBaseDetail
+}
+
+/**
+ * Range base that tolerates imperfect highs and lows.
+ * `compression` is recentRangePct / adrPct over the recent window (null when ADR% is not positive).
+ * `containment` is the fraction of newer-half bars inside the older-half band plus ADR slack.
+ * `lengthScore` is 0–1 on a log scale from a month of sessions to a year.
+ */
+export interface RangeBaseDetail {
+  ok: boolean
+  /** 0–1. Higher-low bonus included, then clamped. */
+  score: number
+  compression: number | null
+  containment: number
+  lengthSessions: number
+  lengthScore: number
+  above50Frac: number
+  higherLows: boolean
+  failedReasons: string[]
 }
 
 /** Which higher-low check passed. Half-window wins when both pass. */
@@ -480,7 +519,18 @@ export interface IdeaFilters {
    */
   maxExtensionAdr50: number | null
   setupTypes: SetupType[]
-  aPlusOnly: boolean
+  /**
+   * Keep rows with `isA`. Off by default.
+   * Combined with `requireAPlus` as a union: a row stays if it matches any
+   * selected tier. Both off means no quality filter. A+ implies A, so both
+   * chips together match every A (including A+).
+   */
+  requireA: boolean
+  /**
+   * Keep rows with `isAPlus`. Off by default.
+   * A stored `aPlusOnly: true` migrates here.
+   */
+  requireAPlus: boolean
   hasCatalyst: boolean
   /**
    * Above 200 DMA: require price above the 200-day SMA (`aboveSma200`).
@@ -525,9 +575,14 @@ export const DEFAULT_FILTERS: IdeaFilters = {
   /** $30M. Group view overrides this to 0. */
   minAvgDollarVol: DEFAULT_MIN_AVG_DOLLAR_VOL,
   maxPctFromHigh: null,
-  maxExtensionAdr50: null,
+  /**
+   * Hide a known extensionAdr50 above 5. Null extensions stay.
+   * Group view sets this back to null (Any) on purpose.
+   */
+  maxExtensionAdr50: 5,
   setupTypes: [...ALL_SETUP_TYPES],
-  aPlusOnly: false,
+  requireA: false,
+  requireAPlus: false,
   hasCatalyst: false,
   requireAbove200: true,
   requireSma50: true,
@@ -552,6 +607,13 @@ export const GROUP_VIEW_DEFAULT_FILTERS: IdeaFilters = {
   ...DEFAULT_FILTERS,
   /** No dollar-volume floor while a group is open. */
   minAvgDollarVol: 0,
+  /**
+   * Group view stays Any. The normal scan default is 5
+   * (`DEFAULT_FILTERS.maxExtensionAdr50`). Do not inherit that cap here.
+   */
+  maxExtensionAdr50: null,
+  requireA: false,
+  requireAPlus: false,
   requireAbove200: true,
   requireSma50: false,
   requireSma10: false,

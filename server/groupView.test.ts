@@ -282,7 +282,7 @@ test('group view: min RVOL, search, and the other controls apply at once', () =>
 
   const aPlus = selectGroupViewRows(
     fixture.ideas,
-    { ...GROUP_VIEW_DEFAULT_FILTERS, aPlusOnly: true },
+    { ...GROUP_VIEW_DEFAULT_FILTERS, requireAPlus: true },
     fixture.finvizPerf,
   )
   assert.ok(aPlus.rows.some((idea) => idea.ticker === 'QRVO'))
@@ -290,7 +290,7 @@ test('group view: min RVOL, search, and the other controls apply at once', () =>
   assert.ok(aPlus.rows.every((idea) => idea.isAPlus))
   const notAPlus = selectGroupViewRows(
     fixture.ideas,
-    { ...GROUP_VIEW_DEFAULT_FILTERS, aPlusOnly: false },
+    { ...GROUP_VIEW_DEFAULT_FILTERS, requireAPlus: false },
     fixture.finvizPerf,
   )
   assert.ok(notAPlus.rows.some((idea) => idea.ticker === 'SWKS'))
