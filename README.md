@@ -119,7 +119,7 @@ The ideas table has an **Ext50** column, the detail panel a chip **Ext. 50SMA: +
 
 Results are written to `data/scan-cache.json` (gitignored). Default staleness **45 minutes** (`SCAN_CACHE_STALE_MS`).
 
-Payloads are stamped with `SCAN_CACHE_SCHEMA` (`server/scanCache.ts`). Schema 5 discards scans from before `extensionAdr50` (ADR multiples from the 50-day SMA). Schema 4 had discarded scans from before the ADR-relative surfer detail and the tight-consolidation 50/200 SMA fields. Catalyst fields are not stored in this file; they are merged onto the HTTP response from a separate cache. Schema 3 had added the first strict surfer / tight fields. Schema 2 had discarded scans from before the 1D-change fix: Yahoo `chartPreviousClose` on a 1-year chart is the close before that range, not the prior session, so those files stored a wrong `dayPct`. The next start throws an older file out and runs a fresh scan.
+Payloads are stamped with `SCAN_CACHE_SCHEMA` (`server/scanCache.ts`). Schema 6 discards scans from before the Range Breakout gate change. Each idea now stores `rangeBreakoutDetail` (ADR%, above the 50 SMA, prior leg, 5-session range/ADR, higher lows, which higher-low rule fired, and whether all five gates passed). Schema 5 had discarded scans from before `extensionAdr50` (ADR multiples from the 50-day SMA). Schema 4 had discarded scans from before the ADR-relative surfer detail and the tight-consolidation 50/200 SMA fields. Catalyst fields are not stored in this file; they are merged onto the HTTP response from a separate cache. Schema 3 had added the first strict surfer / tight fields. Schema 2 had discarded scans from before the 1D-change fix: Yahoo `chartPreviousClose` on a 1-year chart is the close before that range, not the prior session, so those files stored a wrong `dayPct`. The next start throws an older file out and runs a fresh scan.
 
 ### API
 
@@ -385,7 +385,7 @@ Use only for local UI work. Default when unset: **`live`**.
 | `src/data/watchlist.ts` | `SCAN_UNIVERSE` + industry groups + scan batch defaults |
 | `src/data/demoData.ts` | Seed data — demo mode only |
 | `src/adapters/marketData.ts` | Live scan / demo adapters (no live→demo fallback) |
-| `src/lib/metrics.ts` | RVOL, ADR%, SMAs, Kyle proxies, A+ |
+| `src/lib/metrics.ts` | RVOL, ADR%, SMAs, Kyle proxies, A+, Range Breakout gates |
 | `src/lib/surfer.ts` | Strict MA-surfer (`SURFER_CONFIG`, `evaluateSurfer`) |
 | `src/lib/tightConsolidation.ts` | Tight consolidation (`TIGHT_CONFIG`) |
 | `src/lib/setupStage.ts` | watching / coiled / triggering |
@@ -445,7 +445,8 @@ Use only for local UI work. Default when unset: **`live`**.
 | **SMA200 / SMA50 / SMA20 / SMA10** | Simple moving averages of daily closes |
 | **aboveSma200** | **Above 200 DMA** filter (default on). Price above the daily 200-SMA, or the name is not a valid setup. The normal scan also drops these names in Stage 1.5 before the payload is built |
 | **aboveSma50** | Soft preference; filter **Above 50 SMA** (`requireSma50`) defaults **ON** |
-| **priorRunPct / tightDays / baseLengthDays** | Kyle-style consolidation proxies |
+| **priorRunPct / tightDays / baseLengthDays** | Kyle-style consolidation proxies. `priorRunPct` is also the Range Breakout prior-leg gate |
+| **setupType** | Episodic Pivot first, then Range Breakout when all five gates pass, otherwise Continuation. See **Range Breakout** below |
 | **kyleScore** | Heuristic 3–5 for sorting — **not** Kyle’s official Rating. Surfer points still use loose `aboveSma10` / `aboveSma20`. |
 | **setupStage** | watching / coiled / triggering. The legacy coiled rule uses loose `aboveShortMas` (`aboveSma10 \|\| aboveSma20`), which is not the strict surfer label. |
 | **surfer10 / surfer20 / surfer50** | ADR-relative ride-the-MA flags (see below). Table badges **10S / 20S / 50S** mean these, not merely price above the SMA. |
@@ -468,6 +469,70 @@ All Kyle-style fields are **computed from live daily bars** in `src/lib/metrics.
 | ADR% | `adrPct` | Same as above |
 | Rating (stars) | `kyleScore` | Heuristic 3–5; **not** Kyle’s official Rating |
 | Market 10&gt;20 / ST | `marketRegime` | From live **QQQ** bars |
+
+## Range Breakout
+
+`setupType` is still checked in this order: **Episodic Pivot**, then **Range Breakout**, then **Continuation**. Episodic Pivot is unchanged (`RVOL >= 2.5` and `day% >= 3` from `SETUP_TYPE_CONFIG`). Continuation is still everything that is neither of the other two. The old Range Breakout screen (within 8% of the 52-week high and `RVOL >= 1.2`) is retired and is not part of the label.
+
+All five gates are required. They live on `RANGE_BREAKOUT_CONFIG` in `src/lib/metrics.ts`. `rangeBreakoutDetail.passed` is true when all five pass. Episodic Pivot is applied first, so a name can pass the five gates and still be labeled Episodic Pivot.
+
+| Gate | Rule | Constant |
+|------|------|----------|
+| ADR% | `adrPct >= 3` | `adrMinPct` 3 |
+| Above the 50 SMA | `aboveSma50 === true` (price > SMA50; equal fails) | — |
+| Prior leg | `priorRunPct >= 30` | `priorLegMinPct` 30 |
+| Tight recent range | `rangeOverAdr != null` and `rangeOverAdr <= 3` | `rangeOverAdrMax` 3, `recentRangeSessions` 5 |
+| Higher lows | `hasHigherLows === true` | see below |
+
+`rangeOverAdr` stored on the idea is rounded to 2 decimals, and the gate uses that rounded value. `3.00` passes. `3.01` fails. Null (ADR% not positive, or the 5-session window missing) fails.
+
+**Prior leg.** This is the existing `priorRunPct` field. Range Breakout does not define a second formula. Kyle score, A+, and the coiled stage still read the same number.
+
+```
+priorLegPct = priorRunPctProxy(bars)
+            = pctChange(min(low of runBars), max(high of baseBars))
+```
+
+`baseBars` is the last `PRIOR_RUN_PROXY.baseLookback` sessions (15). `runBars` is the `PRIOR_RUN_PROXY.runLookback` sessions (63) immediately before that base. With fewer than run + base + `minExtraBars` (5) bars, the proxy falls back to the percent from the low `shortHistoryOffset` (63) sessions back to the latest high. A full scan has 200 bars, so the fallback does not run there.
+
+That proxy is the low of the run window into the high of the base, not a close-to-close return. Sources for the 30% / 1–3 month prior move:
+
+1. Kristjan Kullamägi, [3 TIMELESS setups that have made me TENS OF MILLIONS](https://qullamaggie.com/my-3-timeless-setups-that-have-made-me-tens-of-millions/): “A big move higher sometime in the past 1-3 months. This move can be anywhere from 30-100%+ … An orderly pullback and consolidation with higher lows and tightening range.”
+2. [Breakout setup](https://www.kristjankullamagi.com/setups/breakout/): a meaningful prior move, “rough 30-100% or greater advance during the previous one to three months,” then an orderly consolidation with higher lows near rising 10- and 20-day averages.
+3. [TickerGuard Qullamaggie backtest](https://tickerguard.com/articles/qullamaggie-backtest-study): the breakout recipe is a price advance of at least 30% within 63 trading days, then a tight consolidation of 10–42 days. They measure the run-up over the preceding 63 sessions (their variant is close-to-close; this scanner keeps the existing low-to-high proxy).
+4. [Breakouts Happen — How to Trade Like Qullamaggie](https://breakoutshappen.com/stock-news/how-to-trade-like-qullamaggie-setups-strategy-and-screener): a 30–100% advance in the prior 1–3 months, then an orderly pullback with higher lows and a tightening range.
+5. VCP / Minervini literature: a prior Stage-2 advance is often described as 30%+ ([VCP pattern guide](https://bullvelocity.in/blog/vcp-volatility-contraction-pattern-guide)). Contractions are measured from swing high to swing low ([LuxAlgo VCP](https://www.luxalgo.com/library/concept/volatility-contraction-pattern/)). Higher lows are part of a constructive base ([InvestorStack Minervini VCP](https://www.investorstack.in/help/tech-minervini-vcp) compares the low of the last 10 days with the 10 days before).
+
+**Recent range versus ADR.**
+
+```
+recentRangePct = ((max(high) − min(low)) / close) × 100
+```
+
+over the last `recentRangeSessions` (5) bars, using the latest close as the denominator.
+
+```
+rangeOverAdr = recentRangePct / adrPct
+```
+
+Null when `adrPct <= 0`.
+
+**Higher lows.** `hasHigherLows = A || B`. When A passes, `higherLowsRule` is `half` even if B also passes. B is reported only when A fails. Both failing stores `null`.
+
+| Constant | Value | Role |
+|----------|-------|------|
+| `higherLowsBaseSessions` | 15 | Same window as `PRIOR_RUN_PROXY.baseLookback` |
+| `higherLowsMinRisePct` | 0.1 | Float-noise floor. 0 would be strictly higher. The compare is `>` |
+| `pivotRadius` | 2 | Bars on each side of a confirmed swing low |
+| `higherLowsMinPivots` | 2 | How many of the latest pivots must stair-step |
+| `higherLowsPivotPad` | 2 | Extra sessions before the base that may still hold a pivot |
+
+- **A. Half-window floor (primary, always computable).** Take the last `higherLowsBaseSessions` bars. Older half length is `floor(n/2)`. The newer half gets the extra bar when `n` is odd (15 → 7 older, 8 newer). Pass when `min(low of newer) > min(low of older) × (1 + higherLowsMinRisePct/100)`. Non-positive lows fail closed.
+- **B. Swing-low staircase.** A confirmed pivot low is a bar whose low is strictly lower than `pivotRadius` bars on each side, so the last `pivotRadius` bars cannot be a pivot yet (the same N-bar fractal HH/HL structure trackers use; [Quantum Algo’s swing-point note](https://www.quantum-algo.com/glossary/swing-point/) describes a swing low as lower than the candles on both sides). Collect confirmed pivots inside the base window plus `higherLowsPivotPad` sessions before it. Pass when there are at least two and each of the last `higherLowsMinPivots` lows is strictly above the previous. Qullamaggie’s own “higher lows and tightening range” is the reason this gate exists. An ascending-base / ascending-triangle read (successive swing lows rising) is the same staircase.
+
+The detail panel shows the five gates whenever `rangeBreakoutDetail` is present, with pass/fail colour, and names which higher-low rule fired. The ideas-table setup badge is unchanged: it still prints the label.
+
+**Limitations.** Daily bars only. The half-window can pass on one higher floor even when no swing pivot has confirmed. A wide bar inside the last five sessions can push `rangeOverAdr` over 3 and knock a name out of Range Breakout (Episodic Pivot still wins if RVOL and day% qualify on that same bar). The 0.1% floor ignores a smaller rise. The prior leg is not TickerGuard’s close-to-close 63-day return.
 
 ## Strict MA surfer
 

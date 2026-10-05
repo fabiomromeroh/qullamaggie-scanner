@@ -2,6 +2,7 @@ import type {
   CharacteristicTag,
   EarningsStatus,
   MarketRegime,
+  RangeBreakoutDetail,
   SetupType,
   SparkPoint,
   StDirection,
@@ -158,13 +159,58 @@ export const KYLE_SCORE_CONFIG = {
   clampMax: 5,
 } as const
 
-/** setupTypeHeuristic, checked in this order. */
+/** Episodic Pivot gate. setupTypeHeuristic checks this before Range Breakout. */
 export const SETUP_TYPE_CONFIG = {
   episodicRvol: 2.5,
   episodicDayPct: 3,
-  rangeHighPct: 8,
-  rangeRvol: 1.2,
 } as const
+
+/**
+ * Range Breakout gates. All five are required. Episodic Pivot still wins when
+ * its own gate hits, even if these pass. priorLegMinPct reads idea.priorRunPct
+ * (priorRunPctProxy). Kyle score, A+, and coiled keep using that same number.
+ */
+export interface RangeBreakoutConfig {
+  /** ADR% must be at least this. Compared on the rounded idea.adrPct. */
+  adrMinPct: number
+  /** priorRunPct must be at least this. */
+  priorLegMinPct: number
+  /** recentRangePct / adrPct must be <= this. Equality passes. Null fails. */
+  rangeOverAdrMax: number
+  /** Sessions in recentRangePct, including the latest bar. */
+  recentRangeSessions: number
+  /**
+   * Higher-low base. Equal to PRIOR_RUN_PROXY.baseLookback so the prior leg
+   * and the higher-low window share the same 15 sessions.
+   */
+  higherLowsBaseSessions: number
+  /**
+   * Half-window floor rise. 0 would mean strictly higher. 0.1 drops float
+   * noise under 0.1%. The test is strict: newerMin > olderMin × (1 + this/100).
+   */
+  higherLowsMinRisePct: number
+  /** A pivot low is strictly lower than this many bars on each side. */
+  pivotRadius: number
+  /** Last this many confirmed pivots must each be strictly higher. */
+  higherLowsMinPivots: number
+  /**
+   * Sessions before the base that may still hold a confirmed pivot.
+   * Matches pivotRadius so a low on the first base bar can confirm.
+   */
+  higherLowsPivotPad: number
+}
+
+export const RANGE_BREAKOUT_CONFIG: RangeBreakoutConfig = {
+  adrMinPct: 3,
+  priorLegMinPct: 30,
+  rangeOverAdrMax: 3,
+  recentRangeSessions: 5,
+  higherLowsBaseSessions: PRIOR_RUN_PROXY.baseLookback,
+  higherLowsMinRisePct: 0.1,
+  pivotRadius: 2,
+  higherLowsMinPivots: 2,
+  higherLowsPivotPad: 2,
+}
 
 /** deriveCharacteristics "near ATH" band: pctFrom52wHigh >= -this. */
 export const NEAR_ATH_PCT = 5
@@ -399,18 +445,161 @@ export function kyleScoreHeuristic(m: {
   return Math.min(k.clampMax, Math.max(k.clampMin, round2(score)))
 }
 
-/** Simple setup label heuristic from RVOL / distance-from-highs. */
-export function setupTypeHeuristic(m: {
-  rvol: number
-  pctFrom52wHigh: number
-  dayPct: number
-}): SetupType {
+/**
+ * (max high − min low) / latest close × 100 over the last `sessions` bars.
+ * The latest close is the denominator. Null when history or the close is unusable.
+ */
+export function recentRangePct(
+  bars: DailyBar[],
+  sessions: number = RANGE_BREAKOUT_CONFIG.recentRangeSessions,
+): number | null {
+  if (sessions <= 0 || bars.length < sessions) return null
+  const window = bars.slice(-sessions)
+  const close = window[window.length - 1]!.c
+  if (!(close > 0) || !Number.isFinite(close)) return null
+  let maxH = -Infinity
+  let minL = Infinity
+  for (const bar of window) {
+    if (bar.h > maxH) maxH = bar.h
+    if (bar.l < minL) minL = bar.l
+  }
+  if (!Number.isFinite(maxH) || !Number.isFinite(minL)) return null
+  return ((maxH - minL) / close) * 100
+}
+
+/** recentRangePct / adrPct. Null when ADR% is not positive or the range is missing. */
+export function rangeOverAdr(recentRangePctValue: number | null, adrPct: number): number | null {
+  if (recentRangePctValue == null || !Number.isFinite(recentRangePctValue)) return null
+  if (!(adrPct > 0) || !Number.isFinite(adrPct)) return null
+  return recentRangePctValue / adrPct
+}
+
+export interface PivotLow {
+  index: number
+  low: number
+}
+
+/**
+ * Confirmed pivot lows. The bar's low is strictly lower than `radius` bars
+ * on each side, so the last `radius` bars cannot be pivots yet.
+ */
+export function confirmedPivotLows(bars: DailyBar[], radius: number): PivotLow[] {
+  if (radius <= 0 || bars.length < radius * 2 + 1) return []
+  const pivots: PivotLow[] = []
+  for (let i = radius; i < bars.length - radius; i++) {
+    const low = bars[i]!.l
+    let isPivot = true
+    for (let k = 1; k <= radius; k++) {
+      if (!(low < bars[i - k]!.l && low < bars[i + k]!.l)) {
+        isPivot = false
+        break
+      }
+    }
+    if (isPivot) pivots.push({ index: i, low })
+  }
+  return pivots
+}
+
+/**
+ * Half-window floor rise over the base. Older and newer halves are floor(n/2);
+ * an odd bar goes to the newer half. Non-positive lows fail closed.
+ */
+export function halfWindowFloorRise(
+  bars: DailyBar[],
+  config: RangeBreakoutConfig = RANGE_BREAKOUT_CONFIG,
+): boolean {
+  const n = Math.min(config.higherLowsBaseSessions, bars.length)
+  if (n < 2) return false
+  const window = bars.slice(-n)
+  const olderLen = Math.floor(n / 2)
+  const older = window.slice(0, olderLen)
+  const newer = window.slice(olderLen)
+  if (!older.length || !newer.length) return false
+  const olderMin = Math.min(...older.map((bar) => bar.l))
+  const newerMin = Math.min(...newer.map((bar) => bar.l))
+  if (!(olderMin > 0) || !(newerMin > 0)) return false
+  return newerMin > olderMin * (1 + config.higherLowsMinRisePct / 100)
+}
+
+/**
+ * Last `higherLowsMinPivots` confirmed pivots inside the base, plus
+ * `higherLowsPivotPad` sessions before it, each strictly above the previous.
+ * Needs at least two pivots.
+ */
+export function swingLowStaircase(
+  bars: DailyBar[],
+  config: RangeBreakoutConfig = RANGE_BREAKOUT_CONFIG,
+): boolean {
+  const pivots = confirmedPivotLows(bars, config.pivotRadius)
+  const baseStart = Math.max(0, bars.length - config.higherLowsBaseSessions)
+  const padStart = Math.max(0, baseStart - config.higherLowsPivotPad)
+  const inWindow = pivots.filter((pivot) => pivot.index >= padStart)
+  if (inWindow.length < 2) return false
+  const last = inWindow.slice(-config.higherLowsMinPivots)
+  if (last.length < 2) return false
+  for (let i = 1; i < last.length; i++) {
+    if (!(last[i]!.low > last[i - 1]!.low)) return false
+  }
+  return true
+}
+
+export interface HigherLowsResult {
+  hasHigherLows: boolean
+  higherLowsRule: 'half' | 'swing' | null
+}
+
+/** Half-window first. Swing is reported only when the floor did not rise. */
+export function evaluateHigherLows(
+  bars: DailyBar[],
+  config: RangeBreakoutConfig = RANGE_BREAKOUT_CONFIG,
+): HigherLowsResult {
+  if (halfWindowFloorRise(bars, config)) {
+    return { hasHigherLows: true, higherLowsRule: 'half' }
+  }
+  if (swingLowStaircase(bars, config)) {
+    return { hasHigherLows: true, higherLowsRule: 'swing' }
+  }
+  return { hasHigherLows: false, higherLowsRule: null }
+}
+
+export interface RangeBreakoutGateInput {
+  adrPct: number
+  aboveSma50: boolean
+  priorRunPct: number
+  rangeOverAdr: number | null
+  hasHigherLows: boolean
+}
+
+/** All five Range Breakout gates. Does not apply the Episodic Pivot override. */
+export function rangeBreakoutGatesPass(
+  m: RangeBreakoutGateInput,
+  config: RangeBreakoutConfig = RANGE_BREAKOUT_CONFIG,
+): boolean {
+  return (
+    m.adrPct >= config.adrMinPct &&
+    m.aboveSma50 === true &&
+    m.priorRunPct >= config.priorLegMinPct &&
+    m.rangeOverAdr != null &&
+    Number.isFinite(m.rangeOverAdr) &&
+    m.rangeOverAdr <= config.rangeOverAdrMax &&
+    m.hasHigherLows === true
+  )
+}
+
+/**
+ * Setup label. Episodic Pivot first (RVOL and day% only), then Range Breakout
+ * when every gate passes, otherwise Continuation.
+ */
+export function setupTypeHeuristic(
+  m: RangeBreakoutGateInput & {
+    rvol: number
+    dayPct: number
+  },
+): SetupType {
   if (m.rvol >= SETUP_TYPE_CONFIG.episodicRvol && m.dayPct >= SETUP_TYPE_CONFIG.episodicDayPct) {
     return 'Episodic Pivot'
   }
-  if (m.pctFrom52wHigh >= -SETUP_TYPE_CONFIG.rangeHighPct && m.rvol >= SETUP_TYPE_CONFIG.rangeRvol) {
-    return 'Range Breakout'
-  }
+  if (rangeBreakoutGatesPass(m)) return 'Range Breakout'
   return 'Continuation'
 }
 
@@ -573,7 +762,28 @@ export function computeIdeaMetrics(
   }
 
   const isAPlus = isAPlusHeuristic(metricsCore)
-  const setupType = setupTypeHeuristic(metricsCore)
+  const higherLows = evaluateHigherLows(bars)
+  const recentRangeRaw = recentRangePct(bars)
+  // Gate on the same 2-decimal ADR and ratio the detail panel shows.
+  const rangeOverAdrRaw = rangeOverAdr(recentRangeRaw, metricsCore.adrPct)
+  const rangeGate: RangeBreakoutGateInput = {
+    adrPct: metricsCore.adrPct,
+    aboveSma50,
+    priorRunPct,
+    rangeOverAdr: rangeOverAdrRaw == null ? null : round2(rangeOverAdrRaw),
+    hasHigherLows: higherLows.hasHigherLows,
+  }
+  const rangeBreakoutDetail: RangeBreakoutDetail = {
+    ...rangeGate,
+    recentRangePct: recentRangeRaw == null ? null : round2(recentRangeRaw),
+    higherLowsRule: higherLows.higherLowsRule,
+    passed: rangeBreakoutGatesPass(rangeGate),
+  }
+  const setupType = setupTypeHeuristic({
+    rvol: metricsCore.rvol,
+    dayPct: metricsCore.dayPct,
+    ...rangeGate,
+  })
   const kyleScore = kyleScoreHeuristic({ ...metricsCore, isAPlus })
   const setupStage = setupStageHeuristic({
     aboveSma200,
@@ -653,6 +863,7 @@ export function computeIdeaMetrics(
     surferDetail,
     tightConsolidation,
     tightDetail,
+    rangeBreakoutDetail,
   }
 }
 

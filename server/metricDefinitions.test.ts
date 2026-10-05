@@ -10,6 +10,7 @@ import {
   KYLE_SCORE_CONFIG,
   NEAR_ATH_PCT,
   PRIOR_RUN_PROXY,
+  RANGE_BREAKOUT_CONFIG,
   REGIME_CONFIG,
   SETUP_TYPE_CONFIG,
   TIGHT_DAYS_PROXY,
@@ -266,8 +267,21 @@ test('tooltip text is built from the live scanner constants', () => {
   includes('marketRegimeSt', `${REGIME_CONFIG.slopeLookbackSessions}`)
   includes('setupEpisodicPivot', `${SETUP_TYPE_CONFIG.episodicRvol}`)
   includes('setupEpisodicPivot', `${SETUP_TYPE_CONFIG.episodicDayPct}`)
-  includes('setupRangeBreakout', `${SETUP_TYPE_CONFIG.rangeHighPct}`)
-  includes('setupRangeBreakout', `${SETUP_TYPE_CONFIG.rangeRvol}`)
+  includes('setupRangeBreakout', `${RANGE_BREAKOUT_CONFIG.adrMinPct}`)
+  includes('setupRangeBreakout', `${RANGE_BREAKOUT_CONFIG.priorLegMinPct}`)
+  includes('setupRangeBreakout', `${RANGE_BREAKOUT_CONFIG.rangeOverAdrMax}`)
+  includes('setupRangeBreakout', `${RANGE_BREAKOUT_CONFIG.recentRangeSessions}`)
+  includes('setupRangeBreakout', `${RANGE_BREAKOUT_CONFIG.higherLowsBaseSessions}`)
+  includes('setupRangeBreakout', `${RANGE_BREAKOUT_CONFIG.higherLowsMinRisePct}`)
+  includes('setupRangeBreakout', `${RANGE_BREAKOUT_CONFIG.pivotRadius}`)
+  includes('setupRangeBreakout', `${RANGE_BREAKOUT_CONFIG.higherLowsMinPivots}`)
+  includes('setupRangeBreakout', `${PRIOR_RUN_PROXY.runLookback}`)
+  includes('setupRangeBreakout', `${PRIOR_RUN_PROXY.baseLookback}`)
+  assert.equal(metricTooltipText('setupRangeBreakout').includes('8%'), false)
+  assert.equal(metricTooltipText('setupRangeBreakout').includes('RVOL >= 1.2'), false)
+  assert.equal(metricTooltipText('setupRangeBreakout').includes('RVOL ≥ 1.2'), false)
+  assert.equal('rangeHighPct' in SETUP_TYPE_CONFIG, false)
+  assert.equal('rangeRvol' in SETUP_TYPE_CONFIG, false)
   includes('nearAth', `${NEAR_ATH_PCT}`)
   includes('groupPerf1d', `${PERIOD_SESSIONS['1w']}`)
   includes('groupPerf1w', `${PERIOD_SESSIONS['1w']}`)

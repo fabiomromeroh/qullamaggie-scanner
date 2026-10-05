@@ -22,6 +22,7 @@ import {
   KYLE_SCORE_CONFIG,
   NEAR_ATH_PCT,
   PRIOR_RUN_PROXY,
+  RANGE_BREAKOUT_CONFIG,
   REGIME_CONFIG,
   SETUP_TYPE_CONFIG,
   SMA_PERIODS,
@@ -180,9 +181,16 @@ function regimeHow(): string {
   return `Needs at least ${r.minBars} QQQ daily bars. 10>20 is ON when SMA${SMA_PERIODS.sma10} > SMA${SMA_PERIODS.sma20}. ST is Uptrend when price > SMA${SMA_PERIODS.sma50} and the SMA50 slope over ${r.slopeLookbackSessions} sessions is >= ${r.upSlopeMinPct}%, Downtrend when price < SMA${SMA_PERIODS.sma50} and the slope is <= ${r.downSlopeMaxPct}%, otherwise Sideways. Slope is (SMA50 now / SMA50 after dropping the last ${r.slopeLookbackSessions} closes − 1) × 100.`
 }
 
+/** Five Range Breakout gates. Numbers come from {@link RANGE_BREAKOUT_CONFIG}. */
+export function rangeBreakoutRuleText(): string {
+  const c = RANGE_BREAKOUT_CONFIG
+  const p = PRIOR_RUN_PROXY
+  return `ADR% >= ${c.adrMinPct}, price above the ${SMA_PERIODS.sma50}-day SMA, priorRunPct >= ${c.priorLegMinPct}, rangeOverAdr <= ${c.rangeOverAdrMax}, and hasHigherLows. priorRunPct is priorRunPctProxy: the lowest low of the ${p.runLookback} sessions before the recent ${p.baseLookback}-session base, measured to the highest high of that base (short history uses the low ${p.shortHistoryOffset} sessions back). recentRangePct is (max high − min low) / latest close × 100 over the last ${c.recentRangeSessions} sessions. rangeOverAdr is recentRangePct / ADR%, null when ADR% <= 0, and a null fails the gate. The stored ratio is rounded to 2 decimals and that rounded value is what the gate compares, so ${c.rangeOverAdrMax} passes. Higher lows pass on either check. Half-window (reported first): over the last ${c.higherLowsBaseSessions} sessions, split into floor(n/2) and the rest, with the extra bar on the newer half when n is odd; the newer min low must be greater than the older min low × (1 + ${c.higherLowsMinRisePct}/100). Swing staircase: a pivot low is strictly lower than ${c.pivotRadius} bars on each side, so the last ${c.pivotRadius} bars cannot be pivots yet; the last ${c.higherLowsMinPivots} confirmed pivots inside the base plus ${c.higherLowsPivotPad} earlier sessions must each be strictly higher, and at least two pivots are required.`
+}
+
 function setupTypeHow(): string {
   const s = SETUP_TYPE_CONFIG
-  return `Episodic Pivot when RVOL >= ${s.episodicRvol} and day% >= ${s.episodicDayPct}. Otherwise Range Breakout when pctFrom52wHigh >= -${s.rangeHighPct} and RVOL >= ${s.rangeRvol}. Otherwise Continuation.`
+  return `Episodic Pivot when RVOL >= ${s.episodicRvol} and day% >= ${s.episodicDayPct}. Otherwise Range Breakout when all five gates pass: ${rangeBreakoutRuleText()} Otherwise Continuation.`
 }
 
 const FINVIZ_PERF: Record<GroupPeriod, string> = {
@@ -406,9 +414,39 @@ export const METRIC_DEFS = {
     setupTypeHow(),
     'Checked in that order. The chips under Setup type toggle which labels stay visible.',
   ),
-  setupRangeBreakout: d('Range Breakout', 'Near the highs with some volume.', setupTypeHow(), setupChipNote('Range Breakout')),
+  setupRangeBreakout: d(
+    'Range Breakout',
+    'Prior leg, tight range versus ADR, and higher lows.',
+    setupTypeHow(),
+    `${setupChipNote('Range Breakout')} The prior leg reuses idea.priorRunPct, so Kyle score, A+, and coiled still read that same proxy. Research: qullamaggie.com/my-3-timeless-setups-that-have-made-me-tens-of-millions (a 30-100%+ move in the past 1-3 months, then higher lows and a tightening range); kristjankullamagi.com/setups/breakout (about 30-100% over the previous one to three months, orderly higher lows near rising 10/20 MAs); tickerguard.com/articles/qullamaggie-backtest-study (at least 30% inside 63 sessions, then a 10-42 session base); breakoutshappen.com/stock-news/how-to-trade-like-qullamaggie-setups-strategy-and-screener (30-100% then higher lows and a tightening range). VCP write-ups treat a Stage-2 advance as often 30%+ and measure contractions from swing high to swing low (luxalgo.com/library/concept/volatility-contraction-pattern; bullvelocity.in/blog/vcp-volatility-contraction-pattern-guide). The half-window floor is the same idea as a rising base floor (investorstack.in/help/tech-minervini-vcp). Swing lows use a confirmed N-bar pivot (quantum-algo.com/glossary/swing-point).`,
+  ),
   setupEpisodicPivot: d('Episodic Pivot', 'Wide day with heavy relative volume.', setupTypeHow(), setupChipNote('Episodic Pivot')),
   setupContinuation: d('Continuation', 'Everything that is not the other two labels.', setupTypeHow(), setupChipNote('Continuation')),
+  rangeBreakoutAdr: d(
+    'Range Breakout ADR%',
+    'ADR gate on the Range Breakout label.',
+    `Passes when ADR% >= ${RANGE_BREAKOUT_CONFIG.adrMinPct}. ${adrHow()}`,
+  ),
+  rangeBreakoutAbove50: d(
+    'Above 50 SMA',
+    'Range Breakout requires price above the 50-day SMA.',
+    `Passes when aboveSma50 is true, meaning price > the ${SMA_PERIODS.sma50}-day SMA. A price equal to the average fails.`,
+  ),
+  rangeBreakoutPriorLeg: d(
+    'Prior leg%',
+    'Prior run into the base, reused from priorRunPct.',
+    `Passes when priorRunPct >= ${RANGE_BREAKOUT_CONFIG.priorLegMinPct}. ${priorRunHow()} Range Breakout reads this same field. Kyle score, A+, and coiled are unchanged.`,
+  ),
+  rangeBreakoutRangeAdr: d(
+    'Range / ADR',
+    'Last few sessions of range divided by ADR%.',
+    `recentRangePct is (max high − min low) / latest close × 100 over the last ${RANGE_BREAKOUT_CONFIG.recentRangeSessions} sessions. rangeOverAdr is that percent divided by ADR%. Null when ADR% <= 0, and null fails. The gate passes when the 2-decimal value is <= ${RANGE_BREAKOUT_CONFIG.rangeOverAdrMax}.`,
+  ),
+  rangeBreakoutHigherLows: d(
+    'Higher lows',
+    'The base floor is rising, or swing lows are.',
+    `Passes when the half-window floor rises or the swing-low staircase does. Half-window uses the last ${RANGE_BREAKOUT_CONFIG.higherLowsBaseSessions} sessions, split with floor(n/2) on the older side so an odd bar stays on the newer side. The newer min low must exceed the older min low by more than ${RANGE_BREAKOUT_CONFIG.higherLowsMinRisePct}%. Swing pivots use radius ${RANGE_BREAKOUT_CONFIG.pivotRadius} and the last ${RANGE_BREAKOUT_CONFIG.higherLowsMinPivots} confirmed pivots in the base plus ${RANGE_BREAKOUT_CONFIG.higherLowsPivotPad} sessions. The chip names half when that check passes, otherwise swing.`,
+  ),
   setupStage: d(
     'Setup stage',
     'Watching, coiled, or triggering.',
