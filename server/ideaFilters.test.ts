@@ -2,9 +2,13 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { test } from 'node:test'
+import { readJsonFrom, writeJsonTo, type KeyValueStore } from '../src/lib/persist.ts'
 import {
   ABOVE_200_DMA_LABEL,
   ABOVE_200_DMA_TOOLTIP,
+  FILTERS_STORAGE_KEY,
+  FILTERS_STORAGE_V1_KEY,
+  FILTERS_STORAGE_VERSION,
   SHOW_ALL_GROUP_LABEL,
   applyClearGroup,
   applyFilterChange,
@@ -13,10 +17,12 @@ import {
   cloneIdeaFilters,
   countActiveFilters,
   countCatalystUnchecked,
+  loadStoredScanFilters,
   matchesFilters,
   migrateStoredFilters,
   passesFilters,
   resetFilters,
+  saveStoredScanFilters,
   showAllGroupFilters,
   type DashboardFilterState,
 } from '../src/lib/ideaFilters.ts'
@@ -46,7 +52,7 @@ function idea(partial: Partial<TradingIdea> = {}): TradingIdea {
     rvol: 2,
     avgDollarVol: 100_000_000,
     pctFrom52wHigh: -1,
-    setupType: 'Continuation',
+    setupType: 'Range Breakout',
     isAPlus: false,
     earningsStatus: 'clear',
     catalyst: null,
@@ -57,6 +63,20 @@ function idea(partial: Partial<TradingIdea> = {}): TradingIdea {
 
 function filters(partial: Partial<IdeaFilters> = {}): IdeaFilters {
   return { ...cloneIdeaFilters(DEFAULT_FILTERS), ...partial }
+}
+
+function memoryStore(init?: Record<string, string>): KeyValueStore & { data: Map<string, string> } {
+  const data = new Map(Object.entries(init ?? {}))
+  return {
+    data,
+    getItem: (key) => (data.has(key) ? data.get(key)! : null),
+    setItem: (key, value) => {
+      data.set(key, value)
+    },
+    removeItem: (key) => {
+      data.delete(key)
+    },
+  }
 }
 
 test('passesFilters truth table for each normal-scan control', () => {
@@ -328,15 +348,57 @@ test('passesFilters truth table for each normal-scan control', () => {
       pass: true,
     },
     {
-      name: 'A+ only hides',
-      row: idea({ isAPlus: false }),
-      f: filters({ aPlusOnly: true }),
+      name: 'A chip hides a name that is not A',
+      row: idea({ isA: false, isAPlus: false }),
+      f: filters({ requireA: true }),
       pass: false,
     },
     {
-      name: 'A+ only allows',
-      row: idea({ isAPlus: true }),
-      f: filters({ aPlusOnly: true }),
+      name: 'A chip keeps isA, including when it is not A+',
+      row: idea({ isA: true, isAPlus: false }),
+      f: filters({ requireA: true }),
+      pass: true,
+    },
+    {
+      name: 'A+ chip hides a plain A',
+      row: idea({ isA: true, isAPlus: false }),
+      f: filters({ requireAPlus: true }),
+      pass: false,
+    },
+    {
+      name: 'A+ chip keeps isAPlus',
+      row: idea({ isA: true, isAPlus: true, isAPlusPlus: true }),
+      f: filters({ requireAPlus: true }),
+      pass: true,
+    },
+    {
+      name: 'A++ chip hides a plain A+',
+      row: idea({ isA: true, isAPlus: true, isAPlusPlus: false }),
+      f: filters({ requireAPlusPlus: true }),
+      pass: false,
+    },
+    {
+      name: 'A++ chip keeps isAPlusPlus',
+      row: idea({ isA: true, isAPlus: true, isAPlusPlus: true }),
+      f: filters({ requireAPlusPlus: true }),
+      pass: true,
+    },
+    {
+      name: 'A++ chip treats a missing flag as false',
+      row: idea({ isA: true, isAPlus: true }),
+      f: filters({ requireAPlusPlus: true }),
+      pass: false,
+    },
+    {
+      name: 'both quality chips off does not filter on the flags',
+      row: idea({ isA: false, isAPlus: false }),
+      f: filters({ requireA: false, requireAPlus: false }),
+      pass: true,
+    },
+    {
+      name: 'both quality chips keep A+ and also plain A',
+      row: idea({ isA: true, isAPlus: false }),
+      f: filters({ requireA: true, requireAPlus: true }),
       pass: true,
     },
     {
@@ -575,10 +637,15 @@ test('migrateStoredFilters fills requireAbove200 and rejects bad shapes', () => 
   assert.equal(migrateStoredFilters({ minAvgDollarVol: -5 }).minAvgDollarVol, 0)
   assert.equal(showAllGroupFilters().minAvgDollarVol, 0)
   assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, minAvgDollarVol: 0 }), 1)
-  assert.equal(migrateStoredFilters({}).maxExtensionAdr50, null)
+  assert.equal(migrateStoredFilters({}).maxExtensionAdr50, 5)
   assert.equal(migrateStoredFilters({ maxExtensionAdr50: 3 }).maxExtensionAdr50, 3)
   assert.equal(migrateStoredFilters({ maxExtensionAdr50: null }).maxExtensionAdr50, null)
-  assert.equal(migrateStoredFilters({ maxExtensionAdr50: '2' }).maxExtensionAdr50, null)
+  assert.equal(migrateStoredFilters({ maxExtensionAdr50: '2' }).maxExtensionAdr50, 5)
+  assert.equal(migrateStoredFilters({ aPlusOnly: true }).requireAPlus, true)
+  assert.equal(migrateStoredFilters({ aPlusOnly: true }).requireA, false)
+  assert.equal(migrateStoredFilters({ aPlusOnly: false }).requireAPlus, false)
+  assert.equal(migrateStoredFilters({ aPlusOnly: true, requireAPlus: false }).requireAPlus, false)
+  assert.equal(migrateStoredFilters({ requireA: true }).requireA, true)
   assert.equal(migrateStoredFilters({}).maxPctFromHigh, null)
   assert.equal(migrateStoredFilters({ maxPctFromHigh: 100 }).maxPctFromHigh, null)
   assert.equal(migrateStoredFilters({ maxPctFromHigh: 150 }).maxPctFromHigh, null)
@@ -606,8 +673,8 @@ test('migrateStoredFilters fills requireAbove200 and rejects bad shapes', () => 
   assert.deepEqual(migrateStoredFilters(explicit), explicit)
 })
 
-test('active-filter counter and reset include Above 200 DMA', () => {
-  assert.equal(ABOVE_200_DMA_LABEL, 'Above 200 DMA')
+test('active-filter counter and reset include > 200 SMA', () => {
+  assert.equal(ABOVE_200_DMA_LABEL, '> 200 SMA')
   assert.equal(countActiveFilters(DEFAULT_FILTERS), 0)
   assert.equal(countActiveFilters(GROUP_VIEW_DEFAULT_FILTERS, GROUP_VIEW_DEFAULT_FILTERS), 0)
 
@@ -619,7 +686,15 @@ test('active-filter counter and reset include Above 200 DMA', () => {
   assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, requireSurfer50: true }), 1)
   assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, requireTight: true }), 1)
   assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, maxExtensionAdr50: 3 }), 1)
-  assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, maxExtensionAdr50: null }), 0)
+  assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, maxExtensionAdr50: null }), 1)
+  assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, maxExtensionAdr50: 5 }), 0)
+  assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, requireA: true }), 1)
+  assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, requireAPlus: true }), 1)
+  assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, requireAPlusPlus: true }), 1)
+  assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, setupTypes: [...ALL_SETUP_TYPES] }), 1)
+  assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, setupTypes: ['Range Breakout'] }), 0)
+  assert.deepEqual(DEFAULT_FILTERS.setupTypes, ['Range Breakout'])
+  assert.deepEqual(GROUP_VIEW_DEFAULT_FILTERS.setupTypes, [...ALL_SETUP_TYPES])
   assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, maxPctFromHigh: 10 }), 1)
   assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, maxPctFromHigh: null }), 0)
   assert.equal(DEFAULT_FILTERS.maxPctFromHigh, null)
@@ -681,9 +756,15 @@ test('active-filter counter and reset include Above 200 DMA', () => {
   assert.equal(showAll.minRvol, 0)
   assert.equal(showAll.maxPctFromHigh, null)
   assert.equal(showAll.maxExtensionAdr50, null)
-  assert.equal(DEFAULT_FILTERS.maxExtensionAdr50, null)
+  assert.equal(DEFAULT_FILTERS.maxExtensionAdr50, 5)
   assert.equal(GROUP_VIEW_DEFAULT_FILTERS.maxExtensionAdr50, null)
-  assert.equal(showAll.aPlusOnly, false)
+  assert.equal(showAll.requireA, false)
+  assert.equal(showAll.requireAPlus, false)
+  assert.equal(showAll.requireAPlusPlus, false)
+  assert.equal(DEFAULT_FILTERS.requireAPlusPlus, false)
+  assert.equal(GROUP_VIEW_DEFAULT_FILTERS.requireAPlusPlus, false)
+  assert.equal(DEFAULT_FILTERS.requireA, false)
+  assert.equal(DEFAULT_FILTERS.requireAPlus, false)
   assert.equal(showAll.hasCatalyst, false)
   assert.equal(showAll.search, '')
   assert.equal(showAll.setupTypes.length, ALL_SETUP_TYPES.length)
@@ -744,12 +825,12 @@ test('group edits do not clobber scan filters; reset and show-all are separate',
   assert.equal(state.group.requireSma50, false)
 })
 
-test('UI copy and README use the single Above 200 DMA label', () => {
+test('UI copy and README use the single > 200 SMA filter label', () => {
   const root = process.cwd()
   const bar = readFileSync(resolve(root, 'src/components/FiltersBar.tsx'), 'utf8')
   const table = readFileSync(resolve(root, 'src/components/IdeasTable.tsx'), 'utf8')
   const readme = readFileSync(resolve(root, 'README.md'), 'utf8')
-  assert.equal(ABOVE_200_DMA_LABEL, 'Above 200 DMA')
+  assert.equal(ABOVE_200_DMA_LABEL, '> 200 SMA')
   assert.match(ABOVE_200_DMA_TOOLTIP, /Price above the 200-day SMA — below-200 names are not valid setups/)
   assert.match(
     ABOVE_200_DMA_TOOLTIP,
@@ -759,9 +840,9 @@ test('UI copy and README use the single Above 200 DMA label', () => {
   assert.match(bar, /ABOVE_200_DMA_TOOLTIP/)
   assert.equal(SHOW_ALL_GROUP_LABEL, 'Show all (incl. below 200 DMA)')
   assert.match(table, /SHOW_ALL_GROUP_LABEL/)
-  assert.match(bar, /Above 10 SMA/)
-  assert.match(bar, /Above 20 SMA/)
-  assert.match(bar, /Above 50 SMA/)
+  assert.match(bar, /> 10 SMA/)
+  assert.match(bar, /> 20 SMA/)
+  assert.match(bar, /> 50 SMA/)
   assert.match(bar, /10MA Surfer/)
   assert.match(bar, /20MA Surfer/)
   assert.match(bar, /50MA Surfer/)
@@ -793,7 +874,7 @@ test('UI copy and README use the single Above 200 DMA label', () => {
     'Search',
     'Group',
     'Numeric',
-    'Above',
+    'SMA',
     'Surfer (ADR-based)',
     'Tight consolidation',
     'Stage',
@@ -832,4 +913,51 @@ test('has-catalyst filter excludes pending and unchecked in both views', () => {
   const migrated = migrateStoredFilters({ hasCatalyst: true, requireSurfer10: true })
   assert.equal(migrated.hasCatalyst, true)
   assert.equal(migrated.requireSurfer10, true)
+})
+
+test('stored scan filters collapse the old all-three setup list once', () => {
+  const legacyAll = {
+    ...DEFAULT_FILTERS,
+    setupTypes: [...ALL_SETUP_TYPES],
+    minRvol: 1.5,
+  }
+  const collapsed = migrateStoredFilters(legacyAll)
+  assert.deepEqual(collapsed.setupTypes, ['Range Breakout'])
+  assert.equal(collapsed.minRvol, 1.5)
+
+  const keptSubset = migrateStoredFilters({
+    ...legacyAll,
+    setupTypes: ['Episodic Pivot'],
+    filtersVersion: 1,
+  })
+  assert.deepEqual(keptSubset.setupTypes, ['Episodic Pivot'])
+
+  const explicit = migrateStoredFilters({
+    ...legacyAll,
+    filtersVersion: FILTERS_STORAGE_VERSION,
+  })
+  assert.deepEqual(explicit.setupTypes, [...ALL_SETUP_TYPES])
+
+  const store = memoryStore()
+  writeJsonTo(store, FILTERS_STORAGE_V1_KEY, legacyAll)
+  const loaded = loadStoredScanFilters(store)
+  assert.deepEqual(loaded.setupTypes, ['Range Breakout'])
+  assert.equal(loaded.minRvol, 1.5)
+  assert.equal(store.getItem(FILTERS_STORAGE_V1_KEY), null)
+  const saved = readJsonFrom(store, FILTERS_STORAGE_KEY) as { filtersVersion: number; setupTypes: string[] }
+  assert.equal(saved.filtersVersion, FILTERS_STORAGE_VERSION)
+  assert.deepEqual(saved.setupTypes, ['Range Breakout'])
+
+  saveStoredScanFilters({ ...loaded, setupTypes: [...ALL_SETUP_TYPES] }, store)
+  assert.deepEqual(loadStoredScanFilters(store).setupTypes, [...ALL_SETUP_TYPES])
+
+  const corrupt = memoryStore({
+    [FILTERS_STORAGE_KEY]: '{not json',
+    [FILTERS_STORAGE_V1_KEY]: JSON.stringify({ ...legacyAll, setupTypes: ['Episodic Pivot'], minRvol: 4 }),
+  })
+  assert.doesNotThrow(() => loadStoredScanFilters(corrupt))
+  assert.deepEqual(loadStoredScanFilters(corrupt).setupTypes, ['Range Breakout'])
+  assert.equal(loadStoredScanFilters(corrupt).minRvol, DEFAULT_FILTERS.minRvol)
+  assert.ok(corrupt.getItem(FILTERS_STORAGE_V1_KEY))
+  assert.equal(loadStoredScanFilters(null).requireAPlusPlus, false)
 })

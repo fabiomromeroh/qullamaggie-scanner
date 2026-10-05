@@ -19,7 +19,7 @@ import {
   type CatalystNewsInput,
   type NewsFeed,
 } from '../src/lib/catalyst.ts'
-import { deriveCharacteristics } from '../src/lib/metrics.ts'
+import { applyQualityFlags, deriveCharacteristics } from '../src/lib/metrics.ts'
 import { createJobQueue, maxInAnyWindow, TokenBucket } from './requestBudget.ts'
 import {
   fetchFinnhubCompanyNews,
@@ -70,6 +70,7 @@ export interface CatalystIdeaRef {
   setupStage?: string
   rvol?: number
   dayPct?: number
+  isA?: boolean
   isAPlus?: boolean
   earningsDate?: string | null
 }
@@ -113,6 +114,8 @@ export function isCatalystCandidate(idea: CatalystIdeaRef): boolean {
   if (idea.setupStage === 'coiled' || idea.setupStage === 'triggering') return true
   if ((idea.rvol ?? 0) >= CATALYST_FETCH.rvolMin) return true
   if (Math.abs(idea.dayPct ?? 0) >= CATALYST_FETCH.absDayPctMin) return true
+  // Constructive A names need a lookup or they can never become A+.
+  if (idea.isA) return true
   return Boolean(idea.isAPlus)
 }
 
@@ -250,6 +253,10 @@ function applyEvaluation(idea: TradingIdea, evaluation: CatalystEvaluation): Tra
   }
 }
 
+function withQuality(idea: TradingIdea): TradingIdea {
+  return applyQualityFlags(idea)
+}
+
 export function mergeCatalystIntoIdeas(
   ideas: TradingIdea[],
   now: number = nowMs(),
@@ -263,18 +270,18 @@ export function mergeCatalystIntoIdeas(
     const entry = freshEntry(idea.ticker, now)
     if (entry?.status === 'checked' && entry.evaluation) {
       checked += 1
-      return applyEvaluation(idea, entry.evaluation)
+      return withQuality(applyEvaluation(idea, entry.evaluation))
     }
     if (entry?.status === 'error') {
       failed += 1
-      return blankCatalyst(idea, 'error')
+      return withQuality(blankCatalyst(idea, 'error'))
     }
     if (isCatalystCandidate(idea)) {
       pending += 1
-      return blankCatalyst(idea, 'pending')
+      return withQuality(blankCatalyst(idea, 'pending'))
     }
     unchecked += 1
-    return blankCatalyst(idea, 'unchecked')
+    return withQuality(blankCatalyst(idea, 'unchecked'))
   })
   return {
     ideas: next,

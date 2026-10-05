@@ -3,9 +3,10 @@
  * Loaded ONLY when VITE_MARKET_DATA_MODE=demo (local UI work).
  * Never used as a silent fallback for live failures.
  */
-import type { CharacteristicTag, DashboardData, IndustryGroup, TradingIdea, SparkPoint } from '../types'
+import type { CharacteristicTag, DashboardData, IndustryGroup, RangeBaseDetail, TradingIdea, SparkPoint } from '../types'
 import { extensionAdrFrom50, roundExtensionAdr50 } from '../lib/extensionAdr'
-import { deriveCharacteristics, kyleScoreHeuristic } from '../lib/metrics'
+import { deriveCharacteristics, isAHeuristic, isAPlusHeuristic, isAPlusPlusHeuristic, kyleScoreHeuristic } from '../lib/metrics'
+import { rangeBaseLengthScore } from '../lib/rangeBase'
 import { setupStageHeuristic } from '../lib/setupStage'
 
 function spark(
@@ -140,6 +141,7 @@ type DemoIdeaSeed = Omit<
   | 'perf6M' | 'earningsDate' | 'daysToEarnings' | 'earningsStatus'
   | 'surfer10' | 'surfer20' | 'surfer50' | 'surferDetail'
   | 'tightConsolidation' | 'tightDetail' | 'extensionAdr50'
+  | 'isA' | 'isAPlusPlus' | 'rangeBaseScore' | 'rangeBaseDetail'
 >
 
 function enrichKyleDemo(idea: DemoIdeaSeed): TradingIdea {
@@ -148,18 +150,6 @@ function enrichKyleDemo(idea: DemoIdeaSeed): TradingIdea {
   const priorRunPct = Math.max(idea.perf3M, idea.perf1M * 1.5)
   const tightDays = idea.adrPct <= 4 ? 9 : idea.adrPct <= 5.5 ? 6 : 3
   const baseLengthDays = idea.setupType === 'Range Breakout' ? Math.max(8, tightDays) : Math.max(3, tightDays - 2)
-  const isAPlus = idea.isAPlus
-  const kyleScore = kyleScoreHeuristic({
-    aboveSma200: idea.aboveSma200,
-    aboveSma50: idea.aboveSma50,
-    aboveSma10,
-    aboveSma20,
-    pctFrom52wHigh: idea.pctFrom52wHigh,
-    rvol: idea.rvol,
-    adrPct: idea.adrPct,
-    priorRunPct,
-    isAPlus,
-  })
   const surfer10 = aboveSma10 && tightDays >= 6
   const surfer20 = aboveSma20 && tightDays >= 5
   const surfer50 = idea.aboveSma50 && idea.pctFrom52wHigh >= -8
@@ -204,11 +194,62 @@ function enrichKyleDemo(idea: DemoIdeaSeed): TradingIdea {
     daysToEarnings = 25
     earningsStatus = 'clear'
   }
-  const isAPlusFinal = earningsStatus === 'avoid' ? false : isAPlus
+  const extensionAdr50 = roundExtensionAdr50(extensionAdrFrom50(idea.price, idea.sma50, idea.adrPct))
+  const hasCatalyst = Boolean(idea.catalyst)
+  const catalystStatus = hasCatalyst ? 'checked' as const : 'unchecked' as const
+  // Demo has no bars. Range Breakout seeds get a quarter-length structural base
+  // so the live A / A+ rules can still light the badge. Live scans use evaluateRangeBase.
+  const rangeOk = idea.setupType === 'Range Breakout' && idea.aboveSma50 && idea.aboveSma200
+  const lengthSessions = rangeOk ? 63 : 0
+  const rangeBaseDetail: RangeBaseDetail = {
+    ok: rangeOk,
+    score: rangeOk ? 0.9 : 0.2,
+    compression: rangeOk ? 2.2 : 8,
+    containment: rangeOk ? 0.92 : 0.3,
+    lengthSessions,
+    lengthScore: rangeBaseLengthScore(lengthSessions),
+    above50Frac: idea.aboveSma50 ? 0.9 : 0.2,
+    higherLows: rangeOk,
+    failedReasons: rangeOk ? [] : ['containment'],
+  }
+  const quality = {
+    aboveSma200: idea.aboveSma200,
+    aboveSma50: idea.aboveSma50,
+    adrPct: idea.adrPct,
+    extensionAdr50,
+    setupStage,
+    tightConsolidation,
+    rangeBaseOk: rangeBaseDetail.ok,
+    earningsStatus,
+    pctFrom52wHigh: idea.pctFrom52wHigh,
+    hasCatalyst,
+    catalystStatus,
+    baseLengthDays,
+    rangeBaseLengthSessions: lengthSessions,
+    rangeBaseScore: rangeBaseDetail.score,
+    setupType: idea.setupType,
+  }
+  const isA = isAHeuristic(quality)
+  const isAPlus = isAPlusHeuristic(quality)
+  const isAPlusPlus = isAPlusPlusHeuristic(quality)
+  const kyleScore = kyleScoreHeuristic({
+    aboveSma200: idea.aboveSma200,
+    aboveSma50: idea.aboveSma50,
+    aboveSma10,
+    aboveSma20,
+    pctFrom52wHigh: idea.pctFrom52wHigh,
+    rvol: idea.rvol,
+    adrPct: idea.adrPct,
+    priorRunPct: priorRounded,
+    isA,
+    isAPlus,
+  })
   return {
     ...idea,
-    isAPlus: isAPlusFinal,
-    extensionAdr50: roundExtensionAdr50(extensionAdrFrom50(idea.price, idea.sma50, idea.adrPct)),
+    isA,
+    isAPlus,
+    isAPlusPlus,
+    extensionAdr50,
     sma10: Math.round(idea.price * 0.98 * 100) / 100,
     sma20: Math.round(idea.price * 0.96 * 100) / 100,
     aboveSma10,
@@ -242,11 +283,13 @@ function enrichKyleDemo(idea: DemoIdeaSeed): TradingIdea {
       aboveSma50: idea.aboveSma50,
       aboveSma200: idea.aboveSma200,
     },
-    hasCatalyst: Boolean(idea.catalyst),
+    hasCatalyst,
     catalystCategories: [],
     catalystDirection: idea.catalyst ? 'positive' : undefined,
     catalystHeadline: idea.catalyst ?? undefined,
-    catalystStatus: idea.catalyst ? 'checked' : 'unchecked',
+    catalystStatus,
+    rangeBaseScore: rangeBaseDetail.score,
+    rangeBaseDetail,
   }
 }
 

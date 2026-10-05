@@ -15,11 +15,14 @@ import { SURFER_CONFIG, type MaKey } from './surfer'
 import { TIGHT_CONFIG } from './tightConsolidation'
 import { catalystDefinitionText } from './catalyst'
 import {
+  A_CONFIG,
   APLUS_CONFIG,
   BAR_WINDOWS,
   BASE_LENGTH_PROXY,
   EARNINGS_PROXIMITY,
   KYLE_SCORE_CONFIG,
+  LONG_BASE_MIN_SESSIONS,
+  NEAR_ATH_MAX_PCT,
   NEAR_ATH_PCT,
   PRIOR_RUN_PROXY,
   RANGE_BREAKOUT_CONFIG,
@@ -28,6 +31,7 @@ import {
   SMA_PERIODS,
   TIGHT_DAYS_PROXY,
 } from './metrics'
+import { RANGE_BASE_CONFIG } from './rangeBase'
 import {
   DEFAULT_GROUP_PERIOD,
   FALLBACK_LEADER_NEAR_HIGH_PCT,
@@ -38,7 +42,7 @@ import {
 } from './groupPeriod'
 import { LEADER_POOL_SIZE, PERIOD_SESSIONS } from './memberPerf'
 import { SCAN_MIN_AVG_VOL_DEFAULT, SCAN_MIN_PRICE_DEFAULT, SCAN_STAGE1_CAP_DEFAULT, SCAN_STAGE1_PAGE_SIZE } from './scanDefaults'
-import { DEFAULT_FILTERS, DEFAULT_MIN_AVG_DOLLAR_VOL, MAX_EXTENSION_ADR50_PRESETS, NEAR_HIGHS_PRESETS } from '../types'
+import { DEFAULT_FILTERS, DEFAULT_MIN_AVG_DOLLAR_VOL, GROUP_VIEW_DEFAULT_FILTERS, MAX_EXTENSION_ADR50_PRESETS, NEAR_HIGHS_PRESETS } from '../types'
 import {
   EXTENSION_ADR50_FORMULA,
   EXTENSION_ADR50_FORMULA_EQUIV,
@@ -46,7 +50,7 @@ import {
   EXTENSION_ADR50_STRETCHED,
 } from './extensionAdr'
 import { CHART_RIGHT_OFFSET_BARS, VOLUME_SMA_PERIOD } from './chartData'
-import { CHART_SMA_COLORS_KEY, DEFAULT_SMA_COLORS } from './chartSmaColors'
+import { CHART_SMA_COLORS_KEY, CHART_SMA_PREFS_KEY, DEFAULT_SMA_COLORS } from './chartSmaColors'
 import type { GroupPeriod } from '../types'
 
 export interface MetricDef {
@@ -97,16 +101,33 @@ export function stageRuleText(stage: 'watching' | 'coiled' | 'triggering'): stri
   return `Watching when price is above the 200-day SMA and the name is neither triggering nor coiled. setupStageHeuristic returns null when price is not above that SMA, so the badge then reads Below 200 instead of a stage.`
 }
 
-/** A+ gate. Numbers come from {@link APLUS_CONFIG}. */
+/** A gate. Numbers come from {@link A_CONFIG}. Catalyst is not part of this flag. */
+export function aRuleText(): string {
+  const a = A_CONFIG
+  return `isA fails when earningsStatus is avoid, when price is not above both the ${SMA_PERIODS.sma200}- and ${SMA_PERIODS.sma50}-day SMAs (the previous A+ hard gate; a price equal to the SMA is not above), when ADR% < ${a.adrMin}, or when extensionAdr50 is a finite number above ${a.ext50MaxAdr}. Null extension passes, and equality at ${a.ext50MaxAdr} passes, matching the Max Ext50 filter (exclude only when extensionAdr50 > T). It also needs a constructive path: setupStage coiled or triggering, or tightConsolidation, or rangeBase.ok. On top of that path, setupType must be Range Breakout and tightConsolidation must be true, even when coiled, triggering, or a range base already supplies the path. Episodic Pivot alone is not a path. Continuation is not A. hasCatalyst is not required. Not a signal.`
+}
+
+/** A+ gate. Requires isA, then the near-ATH band, a checked catalyst, and base quality. */
 export function aPlusRuleText(): string {
-  const a = APLUS_CONFIG
-  return `isAPlusHeuristic fails when earningsStatus is avoid, when price is not above both the ${SMA_PERIODS.sma200}- and ${SMA_PERIODS.sma50}-day SMAs, or when ADR% < ${a.adrMin}. It passes when pctFrom52wHigh >= -${a.nearHighPct} and (RVOL >= ${a.rvolOrRunRvol} or priorRunPct >= ${a.rvolOrRunPrior}), or when pctFrom52wHigh >= -${a.nearHighSoftPct}, that same volume-or-run test, price is above SMA${SMA_PERIODS.sma10} or SMA${SMA_PERIODS.sma20}, and RVOL >= ${a.softPathRvol}. The surfer test here is the loose above-SMA flags, not the strict ride. Not a signal and not Kyle's official Rating.`
+  const q = APLUS_CONFIG
+  return `isAPlus requires isA, plus hasCatalyst === true. Because isAPlus requires isA, setupType Range Breakout and tightConsolidation === true are required as well. catalystStatus pending or unchecked is false even if the boolean was left true. A missing boolean is false. The headline string is not used. pctFrom52wHigh must be >= -${NEAR_ATH_MAX_PCT} (NEAR_ATH_MAX_PCT, the same number as NEAR_ATH_PCT). Base quality is clamp(log1p(days / ${q.monthSessions}), 0, ${q.baseQualityCap}), where days is the max of baseLengthDays and range-base lengthSessions (0 when no structural range base was found). A month of ${q.monthSessions} sessions scores about 0.69, under baseQualityMin ${q.baseQualityMin}. About 37 sessions clears ${q.baseQualityMin}. A quarter scores higher, and a year is capped at ${q.baseQualityCap}. Month-scale bases score lower than multi-month and year bases. The alternate path is rangeBaseScore >= ${q.rangeBaseScoreMin}. Not a signal and not Kyle's official Rating.`
+}
+
+/** A++ gate. Requires isAPlus and a base of at least {@link LONG_BASE_MIN_SESSIONS} sessions. */
+export function aPlusPlusRuleText(): string {
+  return `isAPlusPlus requires isAPlus and max(baseLengthDays, range-base lengthSessions) >= ${LONG_BASE_MIN_SESSIONS} (about one quarter of sessions, longer than a normal base). Equality at ${LONG_BASE_MIN_SESSIONS} passes. 62 fails. A++ uses the same kyleScore floor as A+ (${KYLE_SCORE_CONFIG.aPlusFloor}) and adds no further bump. Not a signal and not Kyle's official Rating.`
+}
+
+/** Range-base rule. Numbers come from {@link RANGE_BASE_CONFIG}. */
+export function rangeBaseRuleText(): string {
+  const c = RANGE_BASE_CONFIG
+  return `Compression is (max high − min low) / latest close × 100 over the last ${c.recentSessions} sessions, divided by ADR%. It passes when that ratio is <= ${c.compressionMax} (null fails). The band is the older half of the lookback: min low and max high, expanded by adrSlack ${c.adrSlack} × ADR% of the latest close, so a high or low that misses a flat line by a fraction of an ADR still counts. Containment is the fraction of newer-half bars whose close or midpoint lies in that band, and it must be >= ${c.containmentMin}. The older half's own range / ADR must be <= ${c.bandRangeOverAdrMax} or the window is not a range. The above-50 fraction (close > that bar's ${c.smaPeriod}-day SMA) must be >= ${c.above50Min}. lengthSessions is the longest window from ${c.minSessions} to ${c.maxLookbackSessions} that clears containment, the 50 SMA fraction, and the band-width cap; it is 0 when none does. lengthScore is log1p(sessions / ${c.monthSessions}) / log1p(${c.yearSessions} / ${c.monthSessions}), clamped 0–1. A month scores lower than a year. Higher lows reuse the Range Breakout check and add ${c.higherLowsBonus} to the score. higherLowsHardFail is ${c.higherLowsHardFail}, so a missing higher-low does not fail ok. The score is ${c.weightCompression}×compression + ${c.weightContainment}×containment + ${c.weightLength}×lengthScore + ${c.weightAbove50}×above50, plus the bonus, clamped to 0–1. ok needs the structural window and compression.`
 }
 
 /** Point build. Numbers come from {@link KYLE_SCORE_CONFIG}. */
 export function kyleScoreRuleText(): string {
   const k = KYLE_SCORE_CONFIG
-  return `Returns ${k.below200Score} when price is not above the 200-day SMA. Otherwise it starts at ${k.base} and adds ${k.aboveSma50} above SMA${SMA_PERIODS.sma50}, ${k.aboveSma20} above SMA${SMA_PERIODS.sma20}, ${k.aboveSma10} above SMA${SMA_PERIODS.sma10}, ${k.nearHighPoints} when pctFrom52wHigh >= -${k.nearHighPct} (else ${k.nearHighSoftPoints} when >= -${k.nearHighSoftPct}), ${k.rvolHighPoints} when RVOL >= ${k.rvolHigh} (else ${k.rvolMidPoints} when >= ${k.rvolMid}), ${k.priorRunHighPoints} when priorRunPct >= ${k.priorRunHigh} (else ${k.priorRunMidPoints} when >= ${k.priorRunMid}), and ${k.adrPoints} when ADR% is from ${k.adrMin} through ${k.adrMax}. An A+ result is lifted to at least ${k.aPlusFloor}, then the score is rounded to 2 decimals and clamped to ${k.clampMin}–${k.clampMax}.`
+  return `Returns ${k.below200Score} when price is not above the 200-day SMA. Otherwise it starts at ${k.base} and adds ${k.aboveSma50} above SMA${SMA_PERIODS.sma50}, ${k.aboveSma20} above SMA${SMA_PERIODS.sma20}, ${k.aboveSma10} above SMA${SMA_PERIODS.sma10}, ${k.nearHighPoints} when pctFrom52wHigh >= -${k.nearHighPct} (else ${k.nearHighSoftPoints} when >= -${k.nearHighSoftPct}), ${k.rvolHighPoints} when RVOL >= ${k.rvolHigh} (else ${k.rvolMidPoints} when >= ${k.rvolMid}), ${k.priorRunHighPoints} when priorRunPct >= ${k.priorRunHigh} (else ${k.priorRunMidPoints} when >= ${k.priorRunMid}), and ${k.adrPoints} when ADR% is from ${k.adrMin} through ${k.adrMax}. An A+ result is lifted to at least ${k.aPlusFloor}. An A that is not A+ adds ${k.aBump}, and that bump cannot cross ${k.aPlusFloor} from below (it stops 0.01 under). The score is rounded to 2 decimals and clamped to ${k.clampMin}–${k.clampMax}.`
 }
 
 function rvolHow(): string {
@@ -132,9 +153,11 @@ function extensionAdr50PresetNote(): string {
   const presets = MAX_EXTENSION_ADR50_PRESETS.map((t, i) =>
     i === 0 ? `< ${t} ADR` : `< ${t}`,
   ).join(' | ')
-  const def = DEFAULT_FILTERS.maxExtensionAdr50
-  const defaultText = def == null ? 'Any (no filter)' : `< ${def}`
-  return `Presets: Any (no filter) | ${presets}. Default: ${defaultText} so first load is unchanged.`
+  const scan = DEFAULT_FILTERS.maxExtensionAdr50
+  const group = GROUP_VIEW_DEFAULT_FILTERS.maxExtensionAdr50
+  const scanText = scan == null ? 'Any (no filter)' : `< ${scan} ADR`
+  const groupText = group == null ? 'Any (no filter)' : `< ${group} ADR`
+  return `Presets: Any (no filter) | ${presets}. Normal scan default: ${scanText}. Group view default: ${groupText} (left on Any on purpose). A missing stored value migrates to the normal-scan default. Explicit null stays Any.`
 }
 
 function highHow(): string {
@@ -253,7 +276,7 @@ const stageChipNote = (stage: string) =>
   `The stage chip includes or excludes "${stage}". Clearing the last chip selects every stage again. A normal scan starts on coiled and triggering; group view starts with every stage.`
 
 const setupChipNote = (name: string) =>
-  `The setup-type chip includes or excludes ${name}. Clearing the last chip selects every setup type again.`
+  `The setup-type chip includes or excludes ${name}. Clearing the last chip selects every setup type again. A normal scan starts with Range Breakout only. Group view starts with every setup type.`
 
 const earningsChipNote = (status: string) =>
   `The earnings chip includes or excludes status "${status}". Clearing the last chip selects every status again.`
@@ -300,7 +323,7 @@ export const METRIC_DEFS = {
     'Above 200 SMA',
     'Hard trend gate.',
     smaHow(SMA_PERIODS.sma200),
-    'Below-200 names are not valid setups. The Above 200 DMA chip (requireAbove200, default on) drops them. A normal scan also drops them in Stage 1.5 before they are scored, so turning the chip off only reveals names that are actually in the payload. Group view includes below-200 members and the chip hides them until it is turned off.',
+    'Below-200 names are not valid setups. The > 200 SMA chip (requireAbove200, default on) drops them. A normal scan also drops them in Stage 1.5 before they are scored, so turning the chip off only reveals names that are actually in the payload. Group view includes below-200 members and the chip hides them until it is turned off.',
   ),
   belowSma200: d(
     'Below 200 SMA',
@@ -308,19 +331,19 @@ export const METRIC_DEFS = {
     `Shown when aboveSma200 is false, which is price <= the ${SMA_PERIODS.sma200}-day SMA (price > average is the only pass). The characteristic tag is Below 200MA. setupStageHeuristic returns null, and the stage badge reads Below 200.`,
   ),
   aboveSma50: d(
-    'Above 50 SMA',
+    '> 50 SMA',
     'Loose price versus the 50-day average.',
     smaHow(SMA_PERIODS.sma50),
     looseAboveNote(SMA_PERIODS.sma50, 'aboveSma50'),
   ),
   aboveSma10: d(
-    'Above 10 SMA',
+    '> 10 SMA',
     'Loose price versus the 10-day average.',
     smaHow(SMA_PERIODS.sma10),
     `${looseAboveNote(SMA_PERIODS.sma10, 'aboveSma10')} Strict riding is the 10MA Surfer chip.`,
   ),
   aboveSma20: d(
-    'Above 20 SMA',
+    '> 20 SMA',
     'Loose price versus the 20-day average.',
     smaHow(SMA_PERIODS.sma20),
     `${looseAboveNote(SMA_PERIODS.sma20, 'aboveSma20')} Strict riding is the 20MA Surfer chip.`,
@@ -342,20 +365,17 @@ export const METRIC_DEFS = {
     `This is the ADR-multiple form. TradingIdea.pctAboveSma50 stays (price / SMA50 − 1) × 100 and is not divided by ADR% to produce this field. Colour: green at or below ${EXTENSION_ADR50_MODEST} ADR (including negative), amber through ${EXTENSION_ADR50_STRETCHED}, red above that.`,
   ),
   sma200: d('SMA200', '200-session average of closes.', smaHow(SMA_PERIODS.sma200)),
-  sma50: d('SMA50', '50-session average of closes.', smaHow(SMA_PERIODS.sma50)),
-  sma10: d('SMA10', '10-session average of closes.', smaHow(SMA_PERIODS.sma10)),
-  sma20: d('SMA20', '20-session average of closes.', smaHow(SMA_PERIODS.sma20)),
   surfer10: d(
     '10MA Surfer',
     'Strict ride of the 10-day SMA.',
     surferRuleText('sma10'),
-    'Badge 10S. The strict filter keeps rows where surfer10 is true. Price merely above the SMA is the Above 10 SMA chip. Points in kyleScore still use the loose flag.',
+    'Badge 10S. The strict filter keeps rows where surfer10 is true. Price merely above the SMA is the > 10 SMA chip. Points in kyleScore still use the loose flag.',
   ),
   surfer20: d(
     '20MA Surfer',
     'Strict ride of the 20-day SMA.',
     surferRuleText('sma20'),
-    'Badge 20S. The strict filter keeps rows where surfer20 is true. Price merely above the SMA is the Above 20 SMA chip.',
+    'Badge 20S. The strict filter keeps rows where surfer20 is true. Price merely above the SMA is the > 20 SMA chip.',
   ),
   surfer50: d(
     '50MA Surfer',
@@ -366,7 +386,7 @@ export const METRIC_DEFS = {
   nearAth: d(
     'Near ATH',
     'Within a few percent of the 52-week high.',
-    `Characteristic "near ATH" when pctFrom52wHigh >= -${NEAR_ATH_PCT}. The percent itself is ${highHow()}`,
+    `Characteristic "near ATH" when pctFrom52wHigh >= -${NEAR_ATH_MAX_PCT}. NEAR_ATH_MAX_PCT is ${NEAR_ATH_MAX_PCT}, the same number as NEAR_ATH_PCT (${NEAR_ATH_PCT}), and it is the A+ near-high gate. The percent itself is ${highHow()}`,
   ),
   surferColumn: d(
     'Surfer column',
@@ -407,7 +427,7 @@ export const METRIC_DEFS = {
   tightAboveSma50: d(
     'Above SMA50',
     'Tight rule versus the 50-day average.',
-    `Price must be above the ${TIGHT_CONFIG.sma50Period}-day SMA. This is the tight-consolidation gate, not the strict surfer flag and not the Above 50 SMA filter.`,
+    `Price must be above the ${TIGHT_CONFIG.sma50Period}-day SMA. This is the tight-consolidation gate, not the strict surfer flag and not the > 50 SMA filter.`,
   ),
   tightAboveSma200: d(
     'Above 200 DMA',
@@ -437,7 +457,7 @@ export const METRIC_DEFS = {
     'Range Breakout',
     'Prior leg, tight range versus ADR, and higher lows.',
     setupTypeHow(),
-    `${setupChipNote('Range Breakout')} The prior leg reuses idea.priorRunPct, so Kyle score, A+, and coiled still read that same proxy. Research: qullamaggie.com/my-3-timeless-setups-that-have-made-me-tens-of-millions (a 30-100%+ move in the past 1-3 months, then higher lows and a tightening range); kristjankullamagi.com/setups/breakout (about 30-100% over the previous one to three months, orderly higher lows near rising 10/20 MAs); tickerguard.com/articles/qullamaggie-backtest-study (at least 30% inside 63 sessions, then a 10-42 session base); breakoutshappen.com/stock-news/how-to-trade-like-qullamaggie-setups-strategy-and-screener (30-100% then higher lows and a tightening range). VCP write-ups treat a Stage-2 advance as often 30%+ and measure contractions from swing high to swing low (luxalgo.com/library/concept/volatility-contraction-pattern; bullvelocity.in/blog/vcp-volatility-contraction-pattern-guide). The half-window floor is the same idea as a rising base floor (investorstack.in/help/tech-minervini-vcp). Swing lows use a confirmed N-bar pivot (quantum-algo.com/glossary/swing-point).`,
+    `${setupChipNote('Range Breakout')} The prior leg reuses idea.priorRunPct, so Kyle score and the coiled stage still read that same proxy. The A and A+ flags do not. Research: qullamaggie.com/my-3-timeless-setups-that-have-made-me-tens-of-millions (a 30-100%+ move in the past 1-3 months, then higher lows and a tightening range); kristjankullamagi.com/setups/breakout (about 30-100% over the previous one to three months, orderly higher lows near rising 10/20 MAs); tickerguard.com/articles/qullamaggie-backtest-study (at least 30% inside 63 sessions, then a 10-42 session base); breakoutshappen.com/stock-news/how-to-trade-like-qullamaggie-setups-strategy-and-screener (30-100% then higher lows and a tightening range). VCP write-ups treat a Stage-2 advance as often 30%+ and measure contractions from swing high to swing low (luxalgo.com/library/concept/volatility-contraction-pattern; bullvelocity.in/blog/vcp-volatility-contraction-pattern-guide). The half-window floor is the same idea as a rising base floor (investorstack.in/help/tech-minervini-vcp). Swing lows use a confirmed N-bar pivot (quantum-algo.com/glossary/swing-point).`,
   ),
   setupEpisodicPivot: d('Episodic Pivot', 'Wide day with heavy relative volume.', setupTypeHow(), setupChipNote('Episodic Pivot')),
   setupContinuation: d('Continuation', 'Everything that is not the other two labels.', setupTypeHow(), setupChipNote('Continuation')),
@@ -454,7 +474,7 @@ export const METRIC_DEFS = {
   rangeBreakoutPriorLeg: d(
     'Prior leg%',
     'Prior run into the base, reused from priorRunPct.',
-    `Passes when priorRunPct >= ${RANGE_BREAKOUT_CONFIG.priorLegMinPct}. ${priorRunHow()} Range Breakout reads this same field. Kyle score, A+, and coiled are unchanged.`,
+    `Passes when priorRunPct >= ${RANGE_BREAKOUT_CONFIG.priorLegMinPct}. ${priorRunHow()} Range Breakout reads this same field. Kyle score and the coiled stage still read it. The A and A+ flags do not.`,
   ),
   rangeBreakoutRangeAdr: d(
     'Range / ADR',
@@ -480,17 +500,35 @@ export const METRIC_DEFS = {
     kyleScoreRuleText(),
     'Surfer additions use loose above-SMA10/20 flags. Pinning a row writes the ticker into the manual watchlist (same list as the Watchlist panel).',
   ),
+  qualityA: d(
+    'A',
+    'Constructive setup. Catalyst not required.',
+    aRuleText(),
+    'The A chip keeps rows where isA is true, which includes A+ and A++. All quality chips off means no quality filter. With any of the A, A+, or A++ chips on, a row stays if it matches any selected tier (A+ already implies A, and A++ already implies A+). An earnings avoid status forces the flag off and the cell shows AVOID instead. The badge is the muted gold A. A+ uses the solid gold badge. A++ uses the brighter gold badge and replaces A+ when isAPlusPlus is true.',
+  ),
   aPlus: d(
     'A+',
-    'Heuristic A+ flag.',
+    'A, plus catalyst, near ATH, and a longer base.',
     aPlusRuleText(),
-    'The A+ only chip keeps rows where isAPlus is true. An earnings avoid status forces the flag off and the cell shows AVOID instead.',
+    'The A+ chip keeps rows where isAPlus is true, which includes A++. A stored aPlusOnly true migrates to requireAPlus. The A, A+, and A++ chips default off. An earnings avoid status forces A off, so A+ and A++ are off, and the cell shows AVOID instead.',
+  ),
+  aPlusPlus: d(
+    'A++',
+    'A+ with a base of at least one quarter.',
+    aPlusPlusRuleText(),
+    'The A++ chip (requireAPlusPlus, default off) keeps rows where isAPlusPlus is true. The A+ chip still includes those rows because they are isAPlus. The badge prints A++ in brighter gold instead of A+.',
+  ),
+  rangeBase: d(
+    'Range base',
+    'Contained base that allows imperfect highs and lows.',
+    rangeBaseRuleText(),
+    'isA can use rangeBase.ok as a constructive path. A+ base quality reads lengthSessions and rangeBaseScore. The detail panel lists the stored gate values.',
   ),
   earningsStatus: d(
     'Earnings',
     'How close the next report is.',
     earningsHow(),
-    'AVOID is a hard fail for the A+ flag. The column badge prints the status or the trading-day count.',
+    'AVOID is a hard fail for the A flag, and therefore for A+. The column badge prints the status or the trading-day count.',
   ),
   earningsAvoid: d('Earnings avoid', 'Same day or next trading day.', earningsHow(), earningsChipNote('avoid')),
   earningsAlert: d('Earnings alert', 'Two trading days out.', earningsHow(), earningsChipNote('alert')),
@@ -535,7 +573,7 @@ export const METRIC_DEFS = {
   whyQualifies: d(
     'Why it qualifies',
     'Sentence rewritten from the same gates.',
-    'avoid earnings replaces the sentence with the hard-fail line. Otherwise an A+ pass uses the A+ summary, a name above the 200-day SMA uses the watchlist line, and a name at or under that SMA uses the Below 200MA line.',
+    'avoid earnings replaces the sentence with the hard-fail line. Otherwise an A++ pass uses the A++ summary, an A+ pass uses the A+ summary, an A pass uses the A summary, a name above the 200-day SMA uses the watchlist line, and a name at or under that SMA uses the Below 200MA line.',
   ),
   ideaNotes: d(
     'Notes',
@@ -579,17 +617,17 @@ export const METRIC_DEFS = {
   filterReset: d(
     'Reset filters',
     'Put the chips back to the baseline.',
-    'applyFilterReset restores the scan filters to DEFAULT_FILTERS but keeps the current groupId, and restores group-view filters to the group baseline (every stage, Above 200 DMA still on, 10/20/50 and strict surfer/tight not required). It does not start a new scan.',
+    'applyFilterReset restores the scan filters to DEFAULT_FILTERS (Range Breakout only, A++ off) but keeps the current groupId, and restores group-view filters to the group baseline (every stage, every setup type, the > 200 SMA chip still on, 10/20/50 and strict surfer/tight not required, A++ off). It does not start a new scan.',
   ),
   filterShowAll: d(
     'Show all group members',
     'Drop the group-view gates, including below the 200-day SMA.',
-    'applyShowAllGroup replaces group filters with every stage, every setup type, every earnings status, Above 200 DMA off, SMA and surfer and tight requirements off, min RVOL 0, min dollar volume $0, Near highs ≤ Any, max ADR extension from 50 SMA Any, A+ only off, catalyst off, and search cleared. Scan filters are left as they are.',
+    'applyShowAllGroup replaces group filters with every stage, every setup type, every earnings status, the > 200 SMA chip off, SMA and surfer and tight requirements off, min RVOL 0, min dollar volume $0, Near highs ≤ Any, max ADR extension from 50 SMA Any, A off, A+ off, A++ off, catalyst off, and search cleared. Scan filters are left as they are.',
   ),
   filterActiveCount: d(
     'Active filters',
     'How many controls differ from the baseline.',
-    'countActiveFilters increments once per field that differs from the baseline: search, min RVOL, min dollar volume, near highs, max ADR extension from 50 SMA, group, setup types, stages, each SMA / surfer / tight / Above 200 DMA flag, earnings statuses, A+ only, and catalyst. The baseline is the normal defaults, or the group-view baseline while a group is open. Above 200 DMA counts when it is off against a baseline that has it on.',
+    'countActiveFilters increments once per field that differs from the baseline: search, min RVOL, min dollar volume, near highs, max ADR extension from 50 SMA, group, setup types, stages, each SMA / surfer / tight / > 200 SMA flag, earnings statuses, the A chip, the A+ chip, the A++ chip, and catalyst. The normal-scan baseline setup types are Range Breakout only. The group-view baseline still includes every setup type. Selecting all three setup types on a normal scan counts as one active filter. The baseline is the normal defaults, or the group-view baseline while a group is open. The > 200 SMA chip counts when it is off against a baseline that has it on.',
   ),
   watchlistPin: d(
     'Pin',
@@ -834,8 +872,8 @@ export const METRIC_DEFS = {
   chartSmaColors: d(
     'SMA colours',
     'Saved colours for the moving-average lines.',
-    `Each SMA chip, including Vol SMA ${VOLUME_SMA_PERIOD}, has a colour input. The choice is written to localStorage ${CHART_SMA_COLORS_KEY} as hex colours for 10, 20, 50, 200, and vol20. A bad entry or a partial object keeps the default for that key. Reset colours writes the defaults back. Defaults are ${DEFAULT_SMA_COLORS['10']} (10), ${DEFAULT_SMA_COLORS['20']} (20), ${DEFAULT_SMA_COLORS['50']} (50), ${DEFAULT_SMA_COLORS['200']} (200), and ${DEFAULT_SMA_COLORS.vol20} (volume).`,
-    'The map is per browser. It does not change the scan payload.',
+    `Each SMA chip, including Vol SMA ${VOLUME_SMA_PERIOD}, has a colour input and an on/off toggle. Save as default writes localStorage ${CHART_SMA_PREFS_KEY} as { colors, enabled } for 10, 20, 50, 200, and vol20. A bad colour or a non-boolean enabled entry keeps that key's default. A partial object keeps the default for the missing key. If that v2 key is absent and ${CHART_SMA_COLORS_KEY} is present, its colours are copied, enabled stays at the code defaults, and v2 is written. Reset writes the code defaults for colours and enabled. Colour defaults are ${DEFAULT_SMA_COLORS['10']} (10), ${DEFAULT_SMA_COLORS['20']} (20), ${DEFAULT_SMA_COLORS['50']} (50), ${DEFAULT_SMA_COLORS['200']} (200), and ${DEFAULT_SMA_COLORS.vol20} (volume). Price SMA 10, 20, 50, and 200 and Vol SMA 20 default on.`,
+    'The map is per browser. Session colour and toggle changes stay until Save as default or Reset. It does not change the scan payload. Vol SMA 20 has no last-value label on the axis. Each visible price SMA shows its current value on the right price axis.',
   ),
   marketCap: d(
     'Market cap',

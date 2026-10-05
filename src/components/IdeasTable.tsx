@@ -4,7 +4,7 @@ import type { CharacteristicTag, EarningsStatus, SetupStage, TradingIdea } from 
 import { SHOW_ALL_GROUP_LABEL } from '../lib/ideaFilters'
 import { groupViewFilterNote } from '../lib/groupView'
 import { extensionAdr50Class, formatExtensionAdr50 } from '../lib/extensionAdr'
-import { KYLE_SCORE_CONFIG, NEAR_ATH_PCT } from '../lib/metrics'
+import { KYLE_SCORE_CONFIG, NEAR_ATH_MAX_PCT } from '../lib/metrics'
 import { metricTipAttrs } from '../lib/metricDefinitions'
 import { stageLabel } from '../lib/setupStage'
 import { surferBadgeTitle } from '../lib/surfer'
@@ -295,7 +295,7 @@ function EarningsBadge({ idea }: { idea: TradingIdea }) {
   )
 }
 
-function APlusCell({ idea }: { idea: TradingIdea }) {
+function QualityCell({ idea }: { idea: TradingIdea }) {
   const avoid = idea.earningsStatus === 'avoid'
   if (avoid) {
     return (
@@ -304,6 +304,16 @@ function APlusCell({ idea }: { idea: TradingIdea }) {
         className="inline-flex rounded border border-terminal-red/50 bg-terminal-red-dim px-1.5 py-0.5 text-[10px] font-bold text-terminal-red"
       >
         AVOID
+      </MetricTip>
+    )
+  }
+  if (idea.isAPlusPlus) {
+    return (
+      <MetricTip
+        id="aPlusPlus"
+        className="inline-flex rounded bg-terminal-a-plus-plus px-1.5 py-0.5 text-[10px] font-bold text-terminal-bg ring-1 ring-white/80"
+      >
+        A++
       </MetricTip>
     )
   }
@@ -317,8 +327,18 @@ function APlusCell({ idea }: { idea: TradingIdea }) {
       </MetricTip>
     )
   }
+  if (idea.isA) {
+    return (
+      <MetricTip
+        id="qualityA"
+        className="inline-flex rounded border border-terminal-a-plus/40 bg-terminal-a-plus/15 px-1.5 py-0.5 text-[10px] font-bold text-terminal-a-plus"
+      >
+        A
+      </MetricTip>
+    )
+  }
   return (
-    <MetricTip id="aPlus" className="text-terminal-dim">
+    <MetricTip id="qualityA" className="text-terminal-dim">
       ·
     </MetricTip>
   )
@@ -328,8 +348,10 @@ function rowHighlight(idea: TradingIdea) {
   const avoid = idea.earningsStatus === 'avoid'
   if (avoid) return 'bg-terminal-red-dim/70'
   if (!idea.aboveSma200) return 'bg-terminal-red-dim/60'
+  if (idea.isAPlusPlus) return 'bg-terminal-a-plus-plus/15'
   if (idea.isAPlus && idea.catalyst) return 'bg-terminal-a-plus-bg/80'
   if (idea.isAPlus) return 'bg-terminal-a-plus-bg/40'
+  if (idea.isA) return 'bg-terminal-a-plus-bg/20'
   return ''
 }
 
@@ -427,7 +449,7 @@ function IdeaCard({
             <MetricTip id="ticker" extra={rowTitle} className="font-mono text-sm font-bold text-terminal-fg">
               {idea.ticker}
             </MetricTip>
-            <APlusCell idea={idea} />
+            <QualityCell idea={idea} />
             <StageBadge stage={idea.setupStage} aboveSma200={idea.aboveSma200} />
             <EarningsBadge idea={idea} />
           </div>
@@ -477,7 +499,7 @@ function IdeaCard({
         <MetricTip
           id="pctFrom52wHigh"
           className={`font-mono ${
-            Math.abs(idea.pctFrom52wHigh) <= NEAR_ATH_PCT ? 'text-terminal-green' : 'text-terminal-muted'
+            Math.abs(idea.pctFrom52wHigh) <= NEAR_ATH_MAX_PCT ? 'text-terminal-green' : 'text-terminal-muted'
           }`}
         >
           {fmtPct(idea.pctFrom52wHigh)} Hi
@@ -869,7 +891,7 @@ export function IdeasTable({
                 className="sticky right-0 z-20 bg-terminal-elevated text-center"
                 style={{ right: 0 }}
               >
-                <MetricTip id="aPlus">A+</MetricTip>
+                <MetricTip id="qualityA">A</MetricTip>
               </ResizableTh>
             </tr>
           </thead>
@@ -943,7 +965,7 @@ export function IdeasTable({
                   </td>
                   <td
                     className={`hidden overflow-hidden px-2 py-1.5 text-right font-mono lg:table-cell ${
-                      Math.abs(idea.pctFrom52wHigh) <= NEAR_ATH_PCT
+                      Math.abs(idea.pctFrom52wHigh) <= NEAR_ATH_MAX_PCT
                         ? 'text-terminal-green'
                         : 'text-terminal-muted'
                     }`}
@@ -1000,7 +1022,7 @@ export function IdeasTable({
                     className={`sticky right-0 z-[5] overflow-hidden px-2 py-1.5 text-center ${highlight || 'bg-terminal-panel'}`}
                     style={{ right: 0, width: aPlusW, minWidth: aPlusW }}
                   >
-                    <APlusCell idea={idea} />
+                    <QualityCell idea={idea} />
                   </td>
                 </tr>
               )

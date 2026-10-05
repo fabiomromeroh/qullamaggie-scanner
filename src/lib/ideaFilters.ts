@@ -1,5 +1,11 @@
 import { ideaMatchesFinvizGroup } from './groupMatch'
 import {
+  readJsonFrom,
+  removeKeyFrom,
+  writeJsonTo,
+  type KeyValueStore,
+} from './persist'
+import {
   ALL_EARNINGS_STATUSES,
   ALL_SETUP_TYPES,
   DEFAULT_FILTERS,
@@ -14,7 +20,24 @@ import {
 } from '../types'
 
 /** Chip label. One filter — not a set of moving-average variants. */
-export const ABOVE_200_DMA_LABEL = 'Above 200 DMA'
+export const ABOVE_200_DMA_LABEL = '> 200 SMA'
+
+/**
+ * Stored normal-scan filters. v1 (missing version, or `qm.scanFilters.v1`)
+ * rewrites a setupTypes list that is exactly the old default — all three
+ * labels — to Range Breakout only, once. v2 keeps that list, including an
+ * explicit all-three choice made after the migration.
+ */
+export const FILTERS_STORAGE_VERSION = 2
+export const FILTERS_STORAGE_KEY = 'qm.scanFilters.v2'
+export const FILTERS_STORAGE_V1_KEY = 'qm.scanFilters.v1'
+
+/** Previous normal-scan default. Matching this list on a pre-v2 blob is the one-time rewrite. */
+const LEGACY_ALL_SETUP_TYPES: readonly SetupType[] = [
+  'Range Breakout',
+  'Episodic Pivot',
+  'Continuation',
+]
 
 /**
  * Hover text for the Above 200 DMA chip.
@@ -60,7 +83,11 @@ export interface FilterableIdea {
    */
   extensionAdr50?: number | null
   setupType: SetupType
+  /** Missing is treated as false when the A chip is on. */
+  isA?: boolean
   isAPlus: boolean
+  /** Missing is treated as false when the A++ chip is on. A+ still includes these rows. */
+  isAPlusPlus?: boolean
   earningsStatus: EarningsStatus
   catalyst: string | null
   /** Present on merged payloads. Undefined falls back to a non-null `catalyst` string. */
@@ -94,7 +121,9 @@ export function cloneIdeaFilters(filters: IdeaFilters): IdeaFilters {
     maxPctFromHigh: filters.maxPctFromHigh ?? null,
     maxExtensionAdr50: filters.maxExtensionAdr50 ?? null,
     setupTypes: [...(filters.setupTypes ?? [])],
-    aPlusOnly: filters.aPlusOnly,
+    requireA: Boolean(filters.requireA),
+    requireAPlus: Boolean(filters.requireAPlus),
+    requireAPlusPlus: Boolean(filters.requireAPlusPlus),
     hasCatalyst: filters.hasCatalyst,
     requireAbove200: requireAbove200On(filters),
     requireSma50: filters.requireSma50,
@@ -130,7 +159,9 @@ export function showAllGroupFilters(): IdeaFilters {
     minAvgDollarVol: 0,
     maxPctFromHigh: null,
     maxExtensionAdr50: null,
-    aPlusOnly: false,
+    requireA: false,
+    requireAPlus: false,
+    requireAPlusPlus: false,
     hasCatalyst: false,
     search: '',
     groupId: null,
@@ -177,7 +208,9 @@ export function countActiveFilters(
   if (Boolean(filters.requireTight) !== Boolean(baseline.requireTight)) n += 1
   if (requireAbove200On(filters) !== requireAbove200On(baseline)) n += 1
   if (!sameMembers(filters.earningsStatuses, baseline.earningsStatuses)) n += 1
-  if (Boolean(filters.aPlusOnly) !== Boolean(baseline.aPlusOnly)) n += 1
+  if (Boolean(filters.requireA) !== Boolean(baseline.requireA)) n += 1
+  if (Boolean(filters.requireAPlus) !== Boolean(baseline.requireAPlus)) n += 1
+  if (Boolean(filters.requireAPlusPlus) !== Boolean(baseline.requireAPlusPlus)) n += 1
   if (Boolean(filters.hasCatalyst) !== Boolean(baseline.hasCatalyst)) n += 1
   return n
 }
@@ -241,23 +274,45 @@ function migrateMaxPctFromHigh(value: unknown): number | null {
   return best
 }
 
+function storedFiltersVersion(src: Record<string, unknown>): number {
+  const version = src.filtersVersion
+  return typeof version === 'number' && Number.isFinite(version) ? version : 1
+}
+
 /**
- * Filters are not stored in localStorage. This still accepts an older object
- * (for example one read from storage later) that has no `requireAbove200` and
- * fills that field with true. Explicit `false` is kept. Invalid shapes fall
- * back field-by-field and do not throw.
+ * Accepts an older object (for example one read from storage) that has no
+ * `requireAbove200` and fills that field with true. Explicit `false` is kept.
+ * Invalid shapes fall back field-by-field and do not throw.
+ *
+ * Setup types: a pre-v2 object whose list is exactly the old three-label
+ * default becomes Range Breakout only. A v2 object keeps an explicit
+ * all-three choice. A missing list uses the current normal-scan default.
  */
 export function migrateStoredFilters(raw: unknown): IdeaFilters {
   const base = cloneIdeaFilters(DEFAULT_FILTERS)
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return base
   const src = raw as Record<string, unknown>
+  const version = storedFiltersVersion(src)
+  let setupTypes = pickList(src.setupTypes, ALL_SETUP_TYPES, base.setupTypes)
+  if (version < FILTERS_STORAGE_VERSION && sameMembers(setupTypes, LEGACY_ALL_SETUP_TYPES)) {
+    setupTypes = ['Range Breakout']
+  }
   return {
     minRvol: pickNum(src.minRvol, base.minRvol),
     minAvgDollarVol: Math.max(0, pickNum(src.minAvgDollarVol, base.minAvgDollarVol)),
     maxPctFromHigh: migrateMaxPctFromHigh(src.maxPctFromHigh),
     maxExtensionAdr50: pickNumOrNull(src.maxExtensionAdr50, base.maxExtensionAdr50),
-    setupTypes: pickList(src.setupTypes, ALL_SETUP_TYPES, base.setupTypes),
-    aPlusOnly: pickBool(src.aPlusOnly, base.aPlusOnly),
+    setupTypes,
+    requireA: pickBool(src.requireA, base.requireA),
+    // A stored aPlusOnly: true (the old single chip) becomes requireAPlus
+    // when the new field is absent. An explicit requireAPlus boolean wins.
+    requireAPlus:
+      typeof src.requireAPlus === 'boolean'
+        ? src.requireAPlus
+        : src.aPlusOnly === true
+          ? true
+          : base.requireAPlus,
+    requireAPlusPlus: pickBool(src.requireAPlusPlus, base.requireAPlusPlus),
     hasCatalyst: pickBool(src.hasCatalyst, base.hasCatalyst),
     requireAbove200: src.requireAbove200 === false ? false : true,
     requireSma50: pickBool(src.requireSma50, base.requireSma50),
@@ -272,6 +327,49 @@ export function migrateStoredFilters(raw: unknown): IdeaFilters {
     groupId: typeof src.groupId === 'string' && src.groupId.trim() ? src.groupId : null,
     search: typeof src.search === 'string' ? src.search : '',
   }
+}
+
+function browserStore(): KeyValueStore | null {
+  try {
+    if (typeof localStorage === 'undefined') return null
+    return localStorage
+  } catch {
+    return null
+  }
+}
+
+function resolveStore(store?: KeyValueStore | null): KeyValueStore | null {
+  if (store !== undefined) return store
+  return browserStore()
+}
+
+function withLegacyVersion(raw: unknown): unknown {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return raw
+  const src = raw as Record<string, unknown>
+  if (typeof src.filtersVersion === 'number') return src
+  return { ...src, filtersVersion: 1 }
+}
+
+/** Normal-scan filters from `qm.scanFilters.v2`, else a one-time v1 migration, else defaults. */
+export function loadStoredScanFilters(store?: KeyValueStore | null): IdeaFilters {
+  const kv = resolveStore(store)
+  if (!kv) return cloneIdeaFilters(DEFAULT_FILTERS)
+  if (kv.getItem(FILTERS_STORAGE_KEY) != null) {
+    return migrateStoredFilters(readJsonFrom(kv, FILTERS_STORAGE_KEY))
+  }
+  if (kv.getItem(FILTERS_STORAGE_V1_KEY) == null) return cloneIdeaFilters(DEFAULT_FILTERS)
+  const migrated = migrateStoredFilters(withLegacyVersion(readJsonFrom(kv, FILTERS_STORAGE_V1_KEY)))
+  saveStoredScanFilters(migrated, kv)
+  removeKeyFrom(kv, FILTERS_STORAGE_V1_KEY)
+  return migrated
+}
+
+/** Write the current normal-scan filters as v2 so a later all-three choice is not rewritten. */
+export function saveStoredScanFilters(filters: IdeaFilters, store?: KeyValueStore | null): void {
+  const kv = resolveStore(store)
+  if (!kv) return
+  const normalized = migrateStoredFilters({ ...filters, filtersVersion: FILTERS_STORAGE_VERSION })
+  writeJsonTo(kv, FILTERS_STORAGE_KEY, { ...normalized, filtersVersion: FILTERS_STORAGE_VERSION })
 }
 
 /**
@@ -355,7 +453,14 @@ export function passesFilters(
     if (typeof ext === 'number' && Number.isFinite(ext) && ext > f.maxExtensionAdr50) return false
   }
   if (f.setupTypes && !f.setupTypes.includes(idea.setupType)) return false
-  if (f.aPlusOnly && !idea.isAPlus) return false
+  // Quality chips are a union. All off skips the gate. A+ implies A, and
+  // A++ implies A+, so the wider chip already includes the stricter tier.
+  if (f.requireA || f.requireAPlus || f.requireAPlusPlus) {
+    const keepA = f.requireA && idea.isA === true
+    const keepPlus = f.requireAPlus && idea.isAPlus === true
+    const keepPlusPlus = f.requireAPlusPlus && idea.isAPlusPlus === true
+    if (!keepA && !keepPlus && !keepPlusPlus) return false
+  }
   if (f.earningsStatuses?.length && !f.earningsStatuses.includes(idea.earningsStatus)) return false
   if (f.hasCatalyst && !ideaHasCatalyst(idea)) return false
   if (!groupView && f.groupId) {

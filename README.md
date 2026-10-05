@@ -36,7 +36,7 @@ Optional: copy `dist/` into the Windows package at `/workspace/qullamaggie-dashb
 
 Every calculated label in the dashboard (table headers and cells, filter chips, the detail panel, group strength, the watchlist, the header, and the chart) opens a definition from `src/lib/metricDefinitions.ts`.
 
-Add one by extending `METRIC_DEFS` with a `label`, a one-line `short`, and a `how` (one to three sentences). Where a threshold already exists, interpolate that constant (`SURFER_CONFIG`, `TIGHT_CONFIG`, `STAGE_CONFIG`, `APLUS_CONFIG`, `KYLE_SCORE_CONFIG`, and the other exported configs) instead of typing the number again. Then render `<MetricTip id="yourId">` or spread `metricTipAttrs('yourId')` on a control that is already focusable. Pass `extra` when a row has a live detail (distance versus its average, a headline, an earnings date) that should sit under the shared definition.
+Add one by extending `METRIC_DEFS` with a `label`, a one-line `short`, and a `how` (one to three sentences). Where a threshold already exists, interpolate that constant (`SURFER_CONFIG`, `TIGHT_CONFIG`, `STAGE_CONFIG`, `A_CONFIG`, `APLUS_CONFIG`, `RANGE_BASE_CONFIG`, `KYLE_SCORE_CONFIG`, and the other exported configs) instead of typing the number again. Then render `<MetricTip id="yourId">` or spread `metricTipAttrs('yourId')` on a control that is already focusable. Pass `extra` when a row has a live detail (distance versus its average, a headline, an earnings date) that should sit under the shared definition.
 
 Hover opens the tip after a short delay. Tab focuses the trigger and shows it immediately. Escape hides it. A tap on a touch screen toggles it, and a tap elsewhere closes it. One tooltip is shared for the whole page, so a large ideas table does not mount a popover per cell. Column-resize drags do not open it.
 
@@ -74,7 +74,7 @@ Idea `groupId` / `groupName` come from the membership snapshot. A ticker in more
 
 #### Reliability (measured 2026-10-05, live)
 
-- Snapshot `server/data/finviz-group-members.json`: `generatedAt` **2026-09-30**, **144** groups, **1859** unique tickers, filters price &gt; $5 and average volume &gt; 750K.
+- Snapshot `server/data/finviz-group-members.json`: `generatedAt` **2026-10-05**, **144** groups, **1854** unique tickers, filters price &gt; $5 and average volume &gt; 750K.
 - Universe is **only** members of the current top 12. Mega-cap names (NVDA, AMD, and similar) appear only when their Finviz industry is in that period's top 12. Ranking is the live Finviz groups page; membership is the snapshot.
 - Default period is **1M**. Changing 1D/1W/1M/3M/6M rebuilds the universe for that window and rescans. The groups panel uses the same default when `qm-groups-period` is unset.
 - Render: the Finviz screener returns **403**. The groups page answers. The intended refresh is a weekly GitHub Actions job on Mondays at **06:00 UTC**: run `npm run build:groups`, commit `server/data/finviz-group-members.json` when Finviz is reachable, and **exit 0** on HTTP 403. That workflow file cannot ship until a token with the `workflow` scope pushes it. Until then, run `npm run build:groups` weekly from a host that can reach Finviz and commit `server/data/finviz-group-members.json`. Render cannot rebuild the snapshot.
@@ -132,13 +132,13 @@ For each Stage-1.5 survivor (Yahoo-first cascade: Yahoo → Finnhub → Stooq):
 - Null (UI `—`) when `adrPct <= 0`, `price <= 0`, or `sma50` is missing/non-finite
 - Rounded to 2 decimals on the idea
 
-The ideas table has an **Ext50** column, the detail panel a chip **Ext. 50SMA: +2.3 ADR**, and the daily chart a matching chip next to the SMA toggles (uses the idea field, or recomputes from bars + ADR if that field is missing).
+The ideas table has an **Ext50** column and the detail panel a chip **Ext. 50SMA: +2.3 ADR**. The daily chart does not repeat that readout.
 
-**Max ADR extension from 50 SMA** filter (Numeric group, after Near highs ≤): presets Any | < 5 ADR | < 4 | < 3 | < 2 | < 1. Default **Any** (no filter). When threshold T is selected, ideas with `extensionAdr50 != null` AND `extensionAdr50 > T` are excluded. Unknown (`null`) values are kept. Negative extensions (below the 50 SMA) always pass.
+**Max ADR extension from 50 SMA** filter (Numeric group, after Near highs ≤): presets Any | < 5 ADR | < 4 | < 3 | < 2 | < 1. Normal-scan default **< 5 ADR** (`DEFAULT_FILTERS.maxExtensionAdr50 = 5`). Group view stays **Any** (`GROUP_VIEW_DEFAULT_FILTERS.maxExtensionAdr50 = null`). When threshold T is selected, ideas with `extensionAdr50 != null` AND `extensionAdr50 > T` are excluded. Unknown (`null`) values are kept. Equality at T passes. Negative extensions (below the 50 SMA) always pass.
 
 Results are written to `data/scan-cache.json` (gitignored). Default staleness **45 minutes** (`SCAN_CACHE_STALE_MS`).
 
-Payloads are stamped with `SCAN_CACHE_SCHEMA` (`server/scanCache.ts`). Schema 7 discards scans from before the leading-groups universe dropped the liquid list and defaulted to 1-month ranking. Schema 6 had discarded scans from before the Range Breakout gate change. Each idea now stores `rangeBreakoutDetail` (ADR%, above the 50 SMA, prior leg, 5-session range/ADR, higher lows, which higher-low rule fired, and whether all five gates passed). Schema 5 had discarded scans from before `extensionAdr50` (ADR multiples from the 50-day SMA). Schema 4 had discarded scans from before the ADR-relative surfer detail and the tight-consolidation 50/200 SMA fields. Catalyst fields are not stored in this file; they are merged onto the HTTP response from a separate cache. Schema 3 had added the first strict surfer / tight fields. Schema 2 had discarded scans from before the 1D-change fix: Yahoo `chartPreviousClose` on a 1-year chart is the close before that range, not the prior session, so those files stored a wrong `dayPct`. The next start throws an older file out and runs a fresh scan.
+Payloads are stamped with `SCAN_CACHE_SCHEMA` (`server/scanCache.ts`). Schema 9 discards scans from before `isA` also required a Range Breakout label and tight consolidation, and before ideas stored `isAPlusPlus`. `isAPlus` and `isAPlusPlus` are recomputed when catalyst fields are merged onto the response. Schema 8 had discarded scans from before `isA`, `rangeBaseScore`, and `rangeBaseDetail`. Schema 7 had discarded scans from before the leading-groups universe dropped the liquid list and defaulted to 1-month ranking. Schema 6 had discarded scans from before the Range Breakout gate change. Each idea now stores `rangeBreakoutDetail` (ADR%, above the 50 SMA, prior leg, 5-session range/ADR, higher lows, which higher-low rule fired, and whether all five gates passed). Schema 5 had discarded scans from before `extensionAdr50` (ADR multiples from the 50-day SMA). Schema 4 had discarded scans from before the ADR-relative surfer detail and the tight-consolidation 50/200 SMA fields. Catalyst fields are not stored in this file; they are merged onto the HTTP response from a separate cache. Schema 3 had added the first strict surfer / tight fields. Schema 2 had discarded scans from before the 1D-change fix: Yahoo `chartPreviousClose` on a 1-year chart is the close before that range, not the prior session, so those files stored a wrong `dayPct`. The next start throws an older file out and runs a fresh scan.
 
 ### API
 
@@ -296,11 +296,11 @@ Clicking a result row (or a watchlist row) opens a **split detail sheet** immedi
 
 ### Chart
 
-The chart is TradingView Lightweight Charts (lazy-loaded chunk): daily candles, a volume histogram, and SMA 10 / 20 / 50 / 200 chips (20 / 50 / 200 on by default). The crosshair legend shows OHLCV. The header shows ticker, name, and last price / day change from the selected idea. The mini sparkline in the panel is a visual only. These controls are client-only (no schema bump).
+The chart is TradingView Lightweight Charts (lazy-loaded chunk): daily candles, a volume histogram, and SMA 10 / 20 / 50 / 200 chips (10 / 20 / 50 / 200 on by default). Each visible price SMA prints its current value on the right price axis (`lastValueVisible`, coloured with that series; `priceLineVisible` stays off). Vol SMA 20 stays on the volume scale without that label. The crosshair legend shows OHLCV. The header shows ticker, name, and last price / day change from the selected idea. The mini sparkline in the panel is a visual only. These controls are client-only (no schema bump).
 
 **Volume SMA 20.** The **Vol SMA 20** chip (on by default) draws the 20-session average of share volume on the volume scale, solid `#38bdf8`. A missing or negative volume counts as 0 so the window stays on the same bars. Price SMA 20 stays `#59c2ff` on the price scale.
 
-**Colours.** Each SMA chip, including Vol SMA 20, has a colour input (`aria-label` such as "SMA 10 colour"). Choices are stored in localStorage under `qm.chartSmaColors.v1` as `{ "10", "20", "50", "200", "vol20" }` hex colours. A partial or corrupt value keeps the default for that key. An older `qm.chartSmaColors` value is copied into the v1 key once. **Reset colours** writes the defaults back (`#c792ea`, `#59c2ff`, `#ffcc66`, `#e6edf3`, `#38bdf8`).
+**Colours and toggles.** Each SMA chip, including Vol SMA 20, has a colour input (`aria-label` such as "SMA 10 colour") and an on/off toggle. **Save as default** writes localStorage key `qm.chartSmaPrefs.v2` as `{ colors, enabled }` for `10`, `20`, `50`, `200`, and `vol20`. Changing a colour or a toggle in the session does not write storage until that button. A bad colour or a non-boolean enabled entry keeps that key's default. If v2 is absent and `qm.chartSmaColors.v1` is present, those colours are copied, `enabled` stays at the code defaults (all on, including SMA 10), and v2 is written. An older unversioned `qm.chartSmaColors` value is used the same way when v1 is also absent. A present v2 key wins, including corrupt JSON, which loads the defaults and does not throw. **Reset** writes the code defaults back (`#c792ea`, `#59c2ff`, `#ffcc66`, `#e6edf3`, `#38bdf8`, every line on).
 
 **Measure.** **Measure** is off by default. The first click stores point A and the second stores point B. Each click uses that bar's close, not the cursor's Y price. The badge shows `(B − A) / A × 100` and the dollar change `B − A`, with the two dates. Between the clicks the badge previews the crosshair bar's close. **Clear** drops the points and leaves Measure on. Clicking Measure while it is on clears the points and turns it off. Esc turns Measure off and clears the points without closing the sheet (a colour input still keeps Esc for its own popup). The OHLC readout still follows the crosshair. A start close at or below 0 has no percent.
 
@@ -336,7 +336,7 @@ All three routes validate `:symbol` with `/^[A-Z0-9.\-^]{1,12}$/` after upper-ca
 | **coiled** | Legacy: tight days (≥5 of last 15) + near highs (≤10% from 52w) + loose `aboveShortMas` (above SMA10 or SMA20, unrelated to the strict surfer label) + prior-run help. Extra route: strict tight consolidation and near highs |
 | **triggering** | Elevated RVOL / breakout-day heuristic (e.g. RVOL≥1.8 near highs with green day) |
 
-**Default view (normal scan):** **coiled + triggering** and **Above 200 DMA** on. Watching is opt-in. Sort order: triggering → coiled → watching, then kyleScore / A+.
+**Default view (normal scan):** **coiled + triggering** and **> 200 SMA** on. Watching is opt-in. Setup types start at **Range Breakout** only. Sort order: triggering → coiled → watching, then A++, then A+, then A, then kyleScore.
 
 **QQQ regime:** header still shows **QQQ 10>20** and ST direction. When ST is **Downtrend**, UI soft-warns and **deprioritizes** triggering breakouts in sort order (not a hard block).
 
@@ -344,34 +344,34 @@ All three routes validate `:symbol` with `/^[A-Z0-9.\-^]{1,12}$/` after upper-ca
 
 One shared predicate (`passesFilters` in `src/lib/ideaFilters.ts`) applies every control in the normal scan and in group view. The only group-view difference inside the predicate is that `groupId` is not applied again, because that id already selected the group payload.
 
-The request was clarified to ONE filter labeled **Above 200 DMA** (`requireAbove200`, default **on**). It means price above the 200-day SMA (`idea.aboveSma200`, not recomputed in the browser). Below-200 names are not valid setups. The chip sits in the **Above** group with the other SMA toggles, starts checked, and uses the same on/off chip colors as the other filter chips. Turning it off lets below-200 names through this predicate. It does not add a second 200-day control and it is not three filters.
+The request was clarified to ONE filter labeled **> 200 SMA** (`ABOVE_200_DMA_LABEL`, `requireAbove200`, default **on**). It means price above the 200-day SMA (`idea.aboveSma200`, not recomputed in the browser). Below-200 names are not valid setups. The chip sits in the **SMA** group with the other SMA toggles, starts checked, and uses the same on/off chip colors as the other filter chips. Turning it off lets below-200 names through this predicate. It does not add a second 200-day control and it is not three filters.
 
 Filter bar order (the same chips in the normal scan and in group view; only the baseline defaults differ). Each group has a small muted label:
 
 1. **Search** — ticker / name text.
 2. **Group** — selected industry (`groupId`), with a clear control when one is set.
 3. **Numeric** — Min RVOL, Min DolVol, Near highs ≤, Max ADR extension from 50 SMA.
-4. **Above** — Above 10 SMA, Above 20 SMA, Above 50 SMA, Above 200 DMA (`requireSma10` / `requireSma20` / `requireSma50` / `requireAbove200`). "Above 50 SMA" is the old Require 50 SMA control; the field name is still `requireSma50`.
+4. **SMA** — > 10 SMA, > 20 SMA, > 50 SMA, > 200 SMA (`requireSma10` / `requireSma20` / `requireSma50` / `requireAbove200`). "> 50 SMA" is the old Require 50 SMA control; the field name is still `requireSma50`.
 5. **Surfer (ADR-based)** — 10MA Surfer, 20MA Surfer, 50MA Surfer. Chip text does not repeat a strict suffix; the tooltip states the ADR-relative rule.
 6. **Tight consolidation** — its own chip, not inside the surfer group.
 7. **Stage** — Watching, Coiled, Triggering.
 8. **Setup type** — one chip per setup type.
 9. **Earnings** — Clear, Alert, Avoid.
-10. **Other** — A+ only, Has catalyst. When catalyst coverage is known the bar shows `Catalyst: checked X of Y candidates`. With Has catalyst on, pending and unchecked ideas are excluded and the bar adds `N ideas not yet checked`.
+10. **Other** — A, A+, A++, Has catalyst. A keeps `isA` (constructive setups, including A+ and A++). A+ keeps `isAPlus` (including A++). A++ keeps `isAPlusPlus` (`requireAPlusPlus`, default off). All three off means no quality filter. Any of them on keeps a row that matches any selected tier (A+ already implies A, and A++ already implies A+). When catalyst coverage is known the bar shows `Catalyst: checked X of Y candidates`. With Has catalyst on, pending and unchecked ideas are excluded and the bar adds `N ideas not yet checked`.
 
 **Near highs ≤** (same select in the normal scan and in group view; one control, field `maxPctFromHigh`): presets **Any | 5% | 8% | 10% | 15% | 20%**. Select only. Default **Any** (`null`) applies no distance filter. Distance is `abs(min(0, pctFrom52wHigh))`, so a print above the 52-week high counts as 0. A selected preset T hides ideas whose distance is greater than T. The previous free-number input on this same field defaulted to 100, which hid nothing; `migrateStoredFilters` maps 100 and any value ≥ 100 to Any, keeps 5, 8, 10, 15, and 20, and snaps every other finite number to the nearest preset (the lower preset when two are equally close).
 
 **Min DolVol** (`minAvgDollarVol`): the FiltersBar control is millions of dollars. It compares `avgDollarVol`, the mean of close × volume over the prior **20** sessions, excluding the latest bar (`BAR_WINDOWS.dolVolSessions`). Normal scan default is **$30M** (`DEFAULT_MIN_AVG_DOLLAR_VOL` = 30_000_000). Group view default is **$0** (no floor). `passesFilters` hides a row when that average is a finite number below the floor. A missing average is kept. `migrateStoredFilters` fills a missing or non-numeric value with $30M and clamps a negative number to 0. A blank input is stored as 0.
 
-**Normal scan baseline** (`DEFAULT_FILTERS`): Above 200 DMA on, stages coiled + triggering, Above 50 SMA on, Above 10/20 SMA off, surfer chips off, Tight consolidation off, min RVOL 0, Min DolVol **$30M**, Near highs ≤ **Any** (no filter), max ADR extension from 50 SMA **Any** (no filter), all setup types, all earnings statuses, A+ only off, Has catalyst off, search empty. With Above 200 DMA on, the table matches the old hard gate that dropped every `aboveSma200: false` row before the other checks.
+**Normal scan baseline** (`DEFAULT_FILTERS`): > 200 SMA on, stages coiled + triggering, > 50 SMA on, > 10/20 SMA off, surfer chips off, Tight consolidation off, min RVOL 0, Min DolVol **$30M**, Near highs ≤ **Any** (no filter), max ADR extension from 50 SMA **< 5 ADR**, setup types **Range Breakout** only, all earnings statuses, A off, A+ off, A++ off, Has catalyst off, search empty. With > 200 SMA on, the table matches the old hard gate that dropped every `aboveSma200: false` row before the other checks.
 
-**Group-view baseline** (`GROUP_VIEW_DEFAULT_FILTERS`): the same values except stages are all three (`watching`, `coiled`, `triggering`), Min DolVol is **$0**, and Above 50 SMA, Above 10/20 SMA, the surfer chips, and Tight consolidation are off. Above 200 DMA stays on. Near highs ≤ and Max ADR extension from 50 SMA stay **Any**. While a group is selected the filter bar shows and edits this state. The normal scan filters are left alone, so they come back when the group is cleared. Changing the group, or pressing **Reset** on the filter bar, returns the group-view state to that baseline. Filter-bar **Reset** also restores the normal scan filters to `DEFAULT_FILTERS` and keeps the selected group. The group-panel **Reset** (next to the period control, and in the results banner) clears the group and brings those scan filters back. It does not start a new scan.
+**Group-view baseline** (`GROUP_VIEW_DEFAULT_FILTERS`): the same values except stages are all three (`watching`, `coiled`, `triggering`), setup types stay all three, Min DolVol is **$0**, and > 50 SMA, > 10/20 SMA, the surfer chips, and Tight consolidation are off. > 200 SMA stays on. Near highs ≤ stays **Any**. Max ADR extension from 50 SMA stays **Any** even though the normal scan defaults to < 5 ADR. The A, A+, and A++ chips stay off. While a group is selected the filter bar shows and edits this state. The normal scan filters are left alone, so they come back when the group is cleared. Changing the group, or pressing **Reset** on the filter bar, returns the group-view state to that baseline. Filter-bar **Reset** also restores the normal scan filters to `DEFAULT_FILTERS` and keeps the selected group. The group-panel **Reset** (next to the period control, and in the results banner) clears the group and brings those scan filters back. It does not start a new scan.
 
 Every control applies as soon as it is pressed, including when the value equals a baseline. Re-enabling coiled + triggering, turning Above 50 SMA back on, or selecting every setup type hides or shows rows immediately. PR #5's rule (ignore a group filter that still equals the scanner default) is gone, which is why those controls used to look dead in group view.
 
-The banner `Showing N of M group stocks (filters hiding K)` counts every row the active group filters remove, including Above 200 DMA. A group whose members include below-200 names therefore opens as, for example, `Showing 18 of 20 group stocks (filters hiding 2)`. **Show all (incl. below 200 DMA)** turns Above 200 DMA off and sets every other group filter to its most permissive value (all stages, no SMA requirement, min RVOL 0, min dollar volume $0, Near highs ≤ Any, max ADR extension from 50 SMA Any, all setup types, all earnings statuses, A+ only off, catalyst off, search cleared) so the full member list is shown. The Above 200 DMA chip toggles that gate by itself. Rows that are shown below the 200-day SMA keep the **Below 200** stage badge, the `<200` trend badge, and the `Below 200MA` characteristic. TradingView copy and the shown count use the rows on screen. Order stays the selected period's performance descending, nulls last, ticker ascending on a tie.
+The banner `Showing N of M group stocks (filters hiding K)` counts every row the active group filters remove, including Above 200 DMA. A group whose members include below-200 names therefore opens as, for example, `Showing 18 of 20 group stocks (filters hiding 2)`. **Show all (incl. below 200 DMA)** turns Above 200 DMA off and sets every other group filter to its most permissive value (all stages, no SMA requirement, min RVOL 0, min dollar volume $0, Near highs ≤ Any, max ADR extension from 50 SMA Any, all setup types, all earnings statuses, A off, A+ off, A++ off, catalyst off, search cleared) so the full member list is shown. The Above 200 DMA chip toggles that gate by itself. Rows that are shown below the 200-day SMA keep the **Below 200** stage badge, the `<200` trend badge, and the `Below 200MA` characteristic. TradingView copy and the shown count use the rows on screen. Order stays the selected period's performance descending, nulls last, ticker ascending on a tie.
 
-The normal scan prefilters below-200 names server-side; toggle off only reveals names present in the payload, group view includes them. Stage 1.5 drops below-200 and below-50 names before deep scoring, and this change does not alter that server scan. Names that do reach the normal payload with `aboveSma200: false` are still subject to the other chips (they are staged `watching`, and Above 50 SMA is on by default). Filter values are not written to localStorage. If a stored filter object has no `requireAbove200`, it is read as on (`migrateStoredFilters`) and does not throw. `hasCatalyst` and the surfer flags migrate as booleans and do not throw. A missing `maxExtensionAdr50` is read as `null` (Any). A missing `maxPctFromHigh`, a stored 100, or any value ≥ 100 is read as `null` (Any). Exact near-highs presets 5, 8, 10, 15, and 20 are kept; other finite numbers snap to the nearest preset.
+The normal scan prefilters below-200 names server-side; toggle off only reveals names present in the payload, group view includes them. Stage 1.5 drops below-200 and below-50 names before deep scoring, and this change does not alter that server scan. Names that do reach the normal payload with `aboveSma200: false` are still subject to the other chips (they are staged `watching`, and Above 50 SMA is on by default). Normal-scan filters are stored in localStorage under `qm.scanFilters.v2` (`FILTERS_STORAGE_VERSION` 2) as the filter fields plus `filtersVersion`. Group-view filters stay in memory. A missing v2 key with `qm.scanFilters.v1` present is migrated once: when that blob's setup types are exactly Range Breakout, Episodic Pivot, and Continuation, they become Range Breakout only, v2 is written, and v1 is removed. An explicit subset on v1 is kept. After that write, choosing all three setup types is stored as version 2 and is not collapsed again. A missing or corrupt value loads the normal-scan defaults and does not throw. If a stored filter object has no `requireAbove200`, it is read as on (`migrateStoredFilters`) and does not throw. `hasCatalyst` and the surfer flags migrate as booleans and do not throw. A missing `maxExtensionAdr50` migrates to the normal-scan default of 5. Explicit `null` stays Any. A non-numeric value falls back to 5. A stored `aPlusOnly: true` migrates to `requireAPlus`; an explicit `requireAPlus` boolean wins. A missing `maxPctFromHigh`, a stored 100, or any value ≥ 100 is read as `null` (Any). Exact near-highs presets 5, 8, 10, 15, and 20 are kept; other finite numbers snap to the nearest preset.
 
 ## Watchlist (manual)
 
@@ -427,7 +427,8 @@ Use only for local UI work. Default when unset: **`live`**.
 | `src/data/watchlist.ts` | `SCAN_UNIVERSE` + industry groups + scan batch defaults |
 | `src/data/demoData.ts` | Seed data — demo mode only |
 | `src/adapters/marketData.ts` | Live scan / demo adapters (no live→demo fallback) |
-| `src/lib/metrics.ts` | RVOL, ADR%, SMAs, Kyle proxies, A+, Range Breakout gates |
+| `src/lib/metrics.ts` | RVOL, ADR%, SMAs, Kyle proxies, A / A+ / A++ gates, Range Breakout gates |
+| `src/lib/rangeBase.ts` | Range-base detector (`RANGE_BASE_CONFIG`, `evaluateRangeBase`) |
 | `src/lib/surfer.ts` | Strict MA-surfer (`SURFER_CONFIG`, `evaluateSurfer`) |
 | `src/lib/tightConsolidation.ts` | Tight consolidation (`TIGHT_CONFIG`) |
 | `src/lib/setupStage.ts` | watching / coiled / triggering |
@@ -442,7 +443,7 @@ Use only for local UI work. Default when unset: **`live`**.
 | `server/tickerNews.ts` | Finnhub company-news + Yahoo search fallback, 10 min cache |
 | `server/tickerProfile.ts` | Finnhub profile2 facts + verified Wikipedia summary, 24h cache |
 | `src/lib/chartData.ts` | Pure `toCandles` / `toVolume` / `smaSeries` / `volumeSmaSeries` / `measurePctChange` |
-| `src/lib/chartSmaColors.ts` | SMA colour defaults and `qm.chartSmaColors.v1` |
+| `src/lib/chartSmaColors.ts` | SMA colour and enabled prefs (`qm.chartSmaPrefs.v2`; migrates `qm.chartSmaColors.v1`) |
 | `src/lib/splitLayout.ts` | Split-sheet width clamp, row keyboard index, Esc / typing guards |
 | `src/components/DailyChartPanel.tsx` | Lazy-loaded candlestick + volume + SMA chart, volume SMA, measure, colour pickers |
 | `src/components/SplitDetailSheet.tsx` | Row-click split sheet: chart beside detail, maximize, Esc / X |
@@ -484,18 +485,20 @@ Use only for local UI work. Default when unset: **`live`**.
 | **1M / 3M / 6M perf** | Close vs ~21 / ~63 / ~126 trading days ago |
 | **Group 1D / 1W / 1M / 3M / 6M** | Finviz industry performance (3M = 13-week, 6M = 26-week). The panel ranks by the selected period. 1W is on the tooltip, not its own column. Fallback: average of scan members' returns in that internal group |
 | **Leaders `N/D`** | Of the top 20 snapshot members with a computed selected-period performance (price &gt; $5 and avg volume &gt; 750K when the snapshot was built), how many are &gt; 0 and also sit in the current scan cache |
-| **earningsDate / daysToEarnings / earningsStatus** | Next earnings from Finnhub calendar (Nasdaq fallback); `avoid` = same/next trading day (hard fail for entry / not A+); `alert` ≈ 2 trading days; `clear` otherwise |
+| **earningsDate / daysToEarnings / earningsStatus** | Next earnings from Finnhub calendar (Nasdaq fallback); `avoid` = same/next trading day (hard fail for A, and therefore for A+); `alert` ≈ 2 trading days; `clear` otherwise |
 | **DolVol / Avg $ volume** | 20-session average of close × volume, excluding the latest bar. Normal-scan filter default $30M. Group view default $0 |
 | **SMA200 / SMA50 / SMA20 / SMA10** | Simple moving averages of daily closes |
 | **aboveSma200** | **Above 200 DMA** filter (default on). Price above the daily 200-SMA, or the name is not a valid setup. The normal scan also drops these names in Stage 1.5 before the payload is built |
 | **aboveSma50** | Soft preference; filter **Above 50 SMA** (`requireSma50`) defaults **ON** |
 | **priorRunPct / tightDays / baseLengthDays** | Kyle-style consolidation proxies. `priorRunPct` is also the Range Breakout prior-leg gate |
 | **setupType** | Episodic Pivot first, then Range Breakout when all five gates pass, otherwise Continuation. See **Range Breakout** below |
-| **kyleScore** | Heuristic 3–5 for sorting — **not** Kyle’s official Rating. Surfer points still use loose `aboveSma10` / `aboveSma20`. |
+| **kyleScore** | Heuristic 3–5 for sorting — **not** Kyle’s official Rating. Surfer points still use loose `aboveSma10` / `aboveSma20`. A+ lifts the score to at least 4.5. A that is not A+ adds 0.15 and that bump cannot cross 4.5 from below. |
 | **setupStage** | watching / coiled / triggering. The legacy coiled rule uses loose `aboveShortMas` (`aboveSma10 \|\| aboveSma20`), which is not the strict surfer label. |
 | **surfer10 / surfer20 / surfer50** | ADR-relative ride-the-MA flags (see below). Table badges **10S / 20S / 50S** mean these, not merely price above the SMA. |
 | **tightConsolidation** | Strict contraction flag (see below). **Tight** badge is separate from the surfer badges. Requires price above the 50-day and 200-day SMAs. |
-| **A+ (heuristic)** | Above 200 **and** 50 SMA, near highs, ADR% ≥ 2.5, elevated RVOL **or** prior run, preferably loose MA surfer; **earningsStatus must not be `avoid`** — heuristic, not a signal. “Surfer” here is still loose price-above-SMA10/20. |
+| **A (`isA`)** | Constructive setup. Above the 200-day and 50-day SMAs, ADR% ≥ `A_CONFIG.adrMin` (2.5), `extensionAdr50` null or ≤ `A_CONFIG.ext50MaxAdr` (5), and one of: stage coiled or triggering, tight consolidation, or `rangeBase.ok`. Catalyst is not required. Earnings `avoid` fails. See **A and A+** below. |
+| **A+ (`isAPlus`)** | `isA`, plus a checked catalyst (`hasCatalyst === true`; pending and unchecked are false), `pctFrom52wHigh >= -NEAR_ATH_MAX_PCT` (5, same number as `NEAR_ATH_PCT`), and base quality. Base quality is `clamp(log1p(days / 21), 0, 2)` with days = max(`baseLengthDays`, range-base `lengthSessions`). A month (~21 sessions) scores about 0.69 and does not clear `baseQualityMin` 1. About 37 sessions clears 1. A quarter scores higher. A year is capped at 2. Alternate path: `rangeBaseScore >= 0.85`. A+ implies A. Heuristic, not a signal. |
+| **rangeBaseScore / rangeBaseDetail** | Contained base that allows imperfect highs and lows. See **Range base** below. |
 | **hasCatalyst / catalyst** | True when an important headline (or a past earnings date) falls inside the rolling 48h window. `catalyst` is the display headline. See Catalyst classification. |
 
 ## Kyle Breakout Database field mapping (@kyletrades_)
@@ -530,7 +533,7 @@ All five gates are required. They live on `RANGE_BREAKOUT_CONFIG` in `src/lib/me
 
 `rangeOverAdr` stored on the idea is rounded to 2 decimals, and the gate uses that rounded value. `3.00` passes. `3.01` fails. Null (ADR% not positive, or the 5-session window missing) fails.
 
-**Prior leg.** This is the existing `priorRunPct` field. Range Breakout does not define a second formula. Kyle score, A+, and the coiled stage still read the same number.
+**Prior leg.** This is the existing `priorRunPct` field. Range Breakout does not define a second formula. Kyle score and the coiled stage still read the same number. The A and A+ flags do not.
 
 ```
 priorLegPct = priorRunPctProxy(bars)
@@ -578,6 +581,81 @@ The detail panel shows the five gates whenever `rangeBreakoutDetail` is present,
 
 **Limitations.** Daily bars only. The half-window can pass on one higher floor even when no swing pivot has confirmed. A wide bar inside the last five sessions can push `rangeOverAdr` over 3 and knock a name out of Range Breakout (Episodic Pivot still wins if RVOL and day% qualify on that same bar). The 0.1% floor ignores a smaller rise. The prior leg is not TickerGuard’s close-to-close 63-day return.
 
+## A, A+, and A++
+
+Three tiers. A+ implies A. A++ implies A+. All three are heuristics, not signals and not Kyle’s official Rating. The previous loose A+ path (near highs, elevated RVOL or a prior run, loose SMA10/20) is gone. Constants live in `A_CONFIG`, `APLUS_CONFIG`, `LONG_BASE_MIN_SESSIONS`, and `KYLE_SCORE_CONFIG` in `src/lib/metrics.ts`. `NEAR_ATH_MAX_PCT` equals `NEAR_ATH_PCT` (both 5) and is the only near-high number the A+ gate reads.
+
+**A (`isA`)** needs all of the following. Catalyst is not read.
+
+| Gate | Rule |
+|------|------|
+| Trend | `aboveSma200` and `aboveSma50`. The previous A+ hard gate already required both. A price equal to the SMA is not above. |
+| ADR% | `adrPct >= A_CONFIG.adrMin` (2.5). Equality passes. |
+| Extension | `extensionAdr50 == null` or `extensionAdr50 <= A_CONFIG.ext50MaxAdr` (5). Equality at 5 passes. A known value above 5 fails. Same comparison as the Max Ext50 filter (`extensionAdr50 > T` is excluded). |
+| Constructive path | Any one of: `setupStage` is `coiled` or `triggering`, `tightConsolidation`, or `rangeBaseDetail.ok`. Episodic Pivot by itself is not a path. |
+| Setup | `setupType === 'Range Breakout'`. Continuation and Episodic Pivot fail even when the other gates pass. |
+| Tight | `tightConsolidation === true`. A coiled, triggering, or range-base name that is not tight fails. |
+| Earnings | `earningsStatus === 'avoid'` fails A, and therefore fails A+ and A++. |
+
+**A+ (`isAPlus`)** requires `isA`, then all of the following.
+
+| Gate | Rule |
+|------|------|
+| Catalyst | `hasCatalyst === true`. `catalystStatus` `pending` or `unchecked` is false even if the boolean was left true. A missing boolean is false. The headline string is not used. |
+| Near ATH | `pctFrom52wHigh >= -NEAR_ATH_MAX_PCT` (−5). |
+| Base quality | `baseQuality >= APLUS_CONFIG.baseQualityMin` (1), **or** `rangeBaseScore >= APLUS_CONFIG.rangeBaseScoreMin` (0.85). |
+
+```
+days = max(baseLengthDays, rangeBase.lengthSessions)
+baseQuality = clamp(log1p(days / monthSessions), 0, baseQualityCap)
+```
+
+`monthSessions` is 21 and `baseQualityCap` is 2. `lengthSessions` is 0 when no structural range base was found, so a failed lookback does not grant a year of credit. A month (~21 sessions) scores `log1p(1) ≈ 0.69` and does not clear 1. About 37 sessions clears 1. A quarter (63) scores about 1.39. A year (252) scores `log1p(12) ≈ 2.56` and is capped at 2. Month-scale bases score lower than multi-month and year bases. The 0.85 score path is high enough that a perfect ~10–21 session base does not sneak through on score alone; a strong quarter-length base can. Because A+ requires A, it also requires Range Breakout and tight consolidation.
+
+**A++ (`isAPlusPlus`)** requires `isAPlus` and `max(baseLengthDays, rangeBase.lengthSessions) >= LONG_BASE_MIN_SESSIONS`. `LONG_BASE_MIN_SESSIONS` is **63** (about one quarter of sessions, longer than a normal month-scale base). Equality at 63 passes. 62 is still A+ when the other A+ gates pass, and it is not A++. The same `baseQualityDays` pair is used, so a range-base `lengthSessions` of 63 counts even when `baseLengthDays` is shorter.
+
+**kyleScore.** Below the 200-day SMA the score is `below200Score` (1) and is not clamped. Otherwise it starts at 3, adds the existing points (including loose above-SMA10/20), and is rounded to 2 decimals. A+ is then lifted to at least `aPlusFloor` (4.5). A++ is A+, so it uses that same floor and gets no further bump. A that is not A+ adds `aBump` (0.15). If the raw score is still under 4.5, that bump stops at 4.49. The result is clamped to 3–5.
+
+The table badge is **AVOID** when earnings are `avoid`, otherwise brighter gold **A++** when `isAPlusPlus`, otherwise solid gold **A+** when `isAPlus`, otherwise a muted gold **A** when `isA`. The Other filter chips are **A** (`requireA`), **A+** (`requireAPlus`), and **A++** (`requireAPlusPlus`). All three default off. The A+ chip includes A++. Any selected chip keeps its tier, and several on together keep the union. All off applies no quality filter.
+
+Scan cache schema 9 stores `isA`, `isAPlusPlus`, `rangeBaseScore`, and `rangeBaseDetail`. `isAPlus` and `isAPlusPlus` are recomputed when catalyst fields are merged onto the response, because the scan file does not store catalyst status. A cold catalyst lookup leaves `isAPlus` and `isAPlusPlus` false until the status is `checked`. `applyQualityFlags` is the one place those flags are written, including after the catalyst merge.
+
+## Range base
+
+`src/lib/rangeBase.ts` looks for a sideways stretch whose highs and lows do not have to sit on a perfect line. `computeIdeaMetrics` stores `rangeBaseScore` (0–1) and `rangeBaseDetail`.
+
+The reference band is the **older half** of a lookback window: that half’s minimum low and maximum high, expanded on each side by `adrSlack × ADR%` of the latest close (`adrSlack` 0.5). A newer-half bar counts as contained when its close **or** its midpoint `(high+low)/2` lies inside the expanded band. Slack is what lets a high or low miss a flat line by a fraction of an ADR and still count. The full window’s own min/max is not the test band: every close already sits inside that span, so the fraction could not fail.
+
+A trending older half would make a huge band and a later pause would look like a year-long base. `bandRangeOverAdrMax` (8) rejects those windows. The search keeps the **longest** window from `minSessions` (10) up to `maxLookbackSessions` (252) that also clears containment and the above-50 fraction. `lengthSessions` is that window, or 0 when none exists. Recent-session compression is a separate gate on `ok`. A structural window still feeds A+ base quality through `lengthSessions` even when compression fails `ok`.
+
+| Constant | Value | Role |
+|----------|-------|------|
+| `recentSessions` | 12 | Compression window, including the latest bar |
+| `compressionMax` | 4.5 | `(max high − min low) / latest close × 100 / ADR%` must be ≤ this. Null fails. |
+| `containmentMin` | 0.7 | Fraction of newer-half bars inside the slack band. Equality passes. |
+| `adrSlack` | 0.5 | Each side of the band grows by this many ADR% of the latest close |
+| `bandRangeOverAdrMax` | 8 | Older-half range / ADR must be ≤ this |
+| `above50Min` | 0.75 | Fraction of lookback closes strictly above that bar’s SMA50 |
+| `smaPeriod` | 50 | Rolling average for the above-50 fraction |
+| `minSessions` | 10 | Shortest structural window |
+| `maxLookbackSessions` | 252 | Longest window the search tries |
+| `monthSessions` / `yearSessions` | 21 / 252 | Length-score scale |
+| `higherLowsBonus` | 0.05 | Added when Range Breakout `hasHigherLows` is true |
+| `higherLowsHardFail` | false | A missing higher-low is a bonus, not a fail |
+| weights | 0.25 / 0.30 / 0.30 / 0.15 | compression, containment, length, above-50. They sum to 1 before the bonus. The total is clamped to 0–1. |
+
+```
+lengthScore = clamp(
+  log1p(sessions / monthSessions) / log1p(yearSessions / monthSessions),
+  0,
+  1,
+)
+```
+
+A month (~21) scores about 0.27. A year (~252) scores 1. Compression score is 1 at or under `compressionMax` and falls to 0 at twice that ratio. Gate inputs and stored fields are rounded to 3 decimals before the compare. `ok` is true when a structural window exists, compression passes, containment and the above-50 fraction still pass, and (only if `higherLowsHardFail`) higher lows pass.
+
+`failedReasons` can include `length`, `compression`, `containment`, `above50`, `bandWidth` (only when no structural window was found and the longest lookback’s band is too wide), and `higherLows` (only when the hard-fail flag is on).
+
 ## Strict MA surfer
 
 A **10MA / 20MA / 50MA Surfer** badge means the stock is riding that SMA, measured as percent distance relative to the stock's own ADR% (`src/lib/surfer.ts`). Discrete test counts are not used. Price merely sitting above the SMA is the loose `aboveSma10` / `aboveSma20` / `aboveSma50` flag and a different filter.
@@ -607,9 +685,9 @@ The slower average uses a larger proximity multiple because a normal pullback si
 
 Each idea stores `surferDetail` per average: `ok`, `distancePct`, `distanceAdr`, `nearBars`, `windowBars`, `minDistancePct`, `maxCloseBelowPct`, `recovered`, `slopePct`, `adrPct`, `proximityPct`, and `reason` when `ok` is false. The badge tooltip reads like `+0.8% above 20MA = 0.2 ADR`.
 
-**Filters.** **Above 10 SMA** / **Above 20 SMA** / **Above 50 SMA** (`requireSma10` / `requireSma20` / `requireSma50`) are the loose price-above-SMA chips. **10MA Surfer** / **20MA Surfer** / **50MA Surfer** (`requireSurfer10` / `requireSurfer20` / `requireSurfer50`) default off in both `DEFAULT_FILTERS` and `GROUP_VIEW_DEFAULT_FILTERS`. Missing stored fields migrate to `false` and do not throw.
+**Filters.** **> 10 SMA** / **> 20 SMA** / **> 50 SMA** (`requireSma10` / `requireSma20` / `requireSma50`) are the loose price-above-SMA chips. **10MA Surfer** / **20MA Surfer** / **50MA Surfer** (`requireSurfer10` / `requireSurfer20` / `requireSurfer50`) default off in both `DEFAULT_FILTERS` and `GROUP_VIEW_DEFAULT_FILTERS`. Missing stored fields migrate to `false` and do not throw.
 
-**A+ and kyleScore** still use the loose `aboveSma10` / `aboveSma20` flags. Switching them to the strict label would shrink A+ counts for a different reason than the original heuristic.
+**kyleScore** still adds points for the loose `aboveSma10` / `aboveSma20` flags. The A and A+ flags do not. They require price above the 200-day and 50-day SMAs, and they do not read SMA10 or SMA20.
 
 **Coiled stage.** The legacy branch uses a local named `aboveShortMas` (`aboveSma10 || aboveSma20`). That name is deliberate: it is not the strict surfer label. The extra coiled route is `tightConsolidation && near highs` and does not depend on SMA10 or SMA20.
 
@@ -640,7 +718,7 @@ Each idea stores `surferDetail` per average: `ok`, `distancePct`, `distanceAdr`,
 | `highLookback` | 252 | Same 52-week window as metrics |
 | `useInCoiled` | `true` | Extra coiled OR-route. 2026-10-02 live scan: 66 → 67 coiled (+1.5%, NET only). |
 
-The **Tight** badge is its own badge, not a surfer badge. Filter chip **Tight consolidation** (`requireTight`, default off) is its own group. The detail panel lists range ratio, volume ratio, close spread, days, near the 52-week high, above SMA50, and above the 200-day SMA. The surfer section of the same panel lists distance in percent and in ADR multiples, near-bar count, slope, and the recovered flag.
+The **Tight** badge is its own badge, not a surfer badge. Filter chip **Tight consolidation** (`requireTight`, default off) is its own group. The detail panel lists range ratio, volume ratio, close spread, days, near the 52-week high, above SMA50, and above the 200-day SMA. That panel does not list the strict surfer cards or the raw trend-gate flag dump. Surfer badges stay on the ideas table, and the SMA200 tile stays in the detail metrics.
 
 **Coiled OR-route.** `coiled = (existing tightDays + aboveShortMas) OR (tightConsolidation && near highs)`. `TIGHT_CONFIG.useInCoiled` is **true**. A 2026-10-02 live scan of 187 ideas had 66 coiled on the legacy rule and 67 with the OR-route (NET only, +1.5%), under the ~25% inflation cap. Triggering still wins over coiled. Dropping the SMA10/SMA20 gate from tight does not change the legacy branch.
 
@@ -707,7 +785,7 @@ When every Finnhub row fails that check, the ticker falls through to Yahoo searc
 - Review of Financial Studies 2011 / NBER w14971, “When are analyst recommendation changes influential?”: only about 10–12% of rating changes move the price visibly, more often from star analysts and away from consensus. Upgrades and price-target raises count at a lower weight; reiterations are excluded; a named large firm adds a small bonus.
 - EventStudyTools comparative event-type page: M&A targets, then buybacks (about +3–4%), earnings surprises, dividend increases or splits (about +1–3%), analyst recommendations (about 1–3%).
 
-**Rate limit and honesty.** Finnhub’s free tier is 60 calls/min shared with the scan, so catalyst Finnhub calls are capped at **25/min** with concurrency 2 (`CATALYST_FETCH`). Yahoo search does not spend a Finnhub token. A 429 respects Retry-After (capped at 60s) and that ticker falls through to Yahoo. Candidates are ideas with stage coiled or triggering, or RVOL ≥ 1.5, or |day %| ≥ 4, or A+. The set is capped at 120, prioritized triggering, then coiled, then higher RVOL. Group view enriches that group’s ideas (already the top 20) with the same cap. Per-ticker cache TTL is 20 minutes, including a checked miss. Failures use a 5-minute negative TTL and keep a previous success (stale-on-error). Enrichment runs in the background after a scan and on dashboard / group-stock reads. It does not block the response and it is not written into `data/scan-cache.json`.
+**Rate limit and honesty.** Finnhub’s free tier is 60 calls/min shared with the scan, so catalyst Finnhub calls are capped at **25/min** with concurrency 2 (`CATALYST_FETCH`). Yahoo search does not spend a Finnhub token. A 429 respects Retry-After (capped at 60s) and that ticker falls through to Yahoo. Candidates are ideas with stage coiled or triggering, or RVOL ≥ 1.5, or |day %| ≥ 4, or `isA`, or `isAPlus`. A constructive name is included so a later headline can still promote it to A+. The set is capped at 120, prioritized triggering, then coiled, then higher RVOL. Group view enriches that group’s ideas (already the top 20) with the same cap. Per-ticker cache TTL is 20 minutes, including a checked miss. Failures use a 5-minute negative TTL and keep a previous success (stale-on-error). Enrichment runs in the background after a scan and on dashboard / group-stock reads. It does not block the response and it is not written into `data/scan-cache.json`.
 
 A cold cache reports `hasCatalyst: false` and `catalystStatus: 'pending'` for candidates, `'unchecked'` for everyone else. The payload includes `catalystMeta: { checked, pending, failed, unchecked, candidates, asOf, windowHours, finnhubCalls, yahooCalls, maxFinnhubCallsPer60s }`. The client refetches the dashboard a few times with backoff while `pending > 0`. There is no separate catalyst polling route.
 
