@@ -266,11 +266,21 @@ On Render's free tier a cold instance has an empty quote cache and the dyno may 
 
 Clicking a result row (or a watchlist row) opens a **split detail sheet** immediately: a daily candlestick chart on the left and the existing detail content on the right (metrics, news, company profile). There is no second expand step and no dimmed backdrop. The results table stays in the page underneath, so another row click switches the ticker. The chart and the panel update together. While the new bars load, the previous chart stays up with a small “Loading SYMBOL…” label. A slower response for an earlier ticker is ignored.
 
-The chart is TradingView Lightweight Charts (lazy-loaded chunk): volume histogram, SMA 10 / 20 / 50 / 200 chips (20 / 50 / 200 on by default), and a crosshair legend with OHLCV. The chart header shows ticker, name, and last price / day change from the selected idea. The mini sparkline in the panel is a visual only.
+### Chart
+
+The chart is TradingView Lightweight Charts (lazy-loaded chunk): daily candles, a volume histogram, and SMA 10 / 20 / 50 / 200 chips (20 / 50 / 200 on by default). The crosshair legend shows OHLCV. The header shows ticker, name, and last price / day change from the selected idea. The mini sparkline in the panel is a visual only. These controls are client-only (no schema bump).
+
+**Volume SMA 20.** The **Vol SMA 20** chip (on by default) draws the 20-session average of share volume on the volume scale, solid `#38bdf8`. A missing or negative volume counts as 0 so the window stays on the same bars. Price SMA 20 stays `#59c2ff` on the price scale.
+
+**Colours.** Each SMA chip, including Vol SMA 20, has a colour input (`aria-label` such as "SMA 10 colour"). Choices are stored in localStorage under `qm.chartSmaColors.v1` as `{ "10", "20", "50", "200", "vol20" }` hex colours. A partial or corrupt value keeps the default for that key. An older `qm.chartSmaColors` value is copied into the v1 key once. **Reset colours** writes the defaults back (`#c792ea`, `#59c2ff`, `#ffcc66`, `#e6edf3`, `#38bdf8`).
+
+**Measure.** **Measure** is off by default. The first click stores point A and the second stores point B. Each click uses that bar's close, not the cursor's Y price. The badge shows `(B − A) / A × 100` and the dollar change `B − A`, with the two dates. Between the clicks the badge previews the crosshair bar's close. **Clear** drops the points and leaves Measure on. Clicking Measure while it is on clears the points and turns it off. Esc turns Measure off and clears the points without closing the sheet (a colour input still keeps Esc for its own popup). The OHLC readout still follows the crosshair. A start close at or below 0 has no percent.
+
+**Right margin.** The last candle sits 10 bars (`CHART_RIGHT_OFFSET_BARS`, `timeScale.rightOffset`) left of the price axis. The offset is set when the chart is created and again immediately before and after `fitContent`. In Lightweight Charts v5 that fit includes `rightOffset` in the fitted range when `rightOffsetPixels` is unset, so the gap is empty bars rather than the last print pinned to the axis.
 
 **Desktop (1024px and up).** The sheet is fixed to the right. It defaults to about 70% of the viewport and always leaves the leading-groups column plus a 240px strip of the results table clickable. Drag the sheet’s left edge to change that width, and drag the divider between the chart and the panel to change the split. Preferred floors are 560px for the chart and 380px for the panel; on a viewport that cannot fit both plus the strip, the panes scale down (absolute floors 200px / 160px) instead of covering the table. **Maximize chart** expands the same side-by-side split over the whole viewport and toggles back. Maximize is not remembered. Widths are stored in `qm-split-sheet-width` and `qm-split-panel-width`.
 
-**Keyboard.** While the sheet is open, ArrowUp / ArrowDown move through the rows currently shown in the results table and wrap at the ends. Those keys are ignored when focus is in an input, textarea, select, or contentEditable. Esc and the X close the chart and the panel together and move focus back to the selected row when that row is on screen. Esc still closes from the search box (search does not handle Esc). It does not close when focus is on a native `<select>`, a datalist input, or a date / time / color input, so that control can dismiss its own popup.
+**Keyboard.** While the sheet is open, ArrowUp / ArrowDown move through the rows currently shown in the results table and wrap at the ends. Those keys are ignored when focus is in an input, textarea, select, or contentEditable. Esc and the X close the chart and the panel together and move focus back to the selected row when that row is on screen. While Measure is on, Esc turns Measure off and clears its points instead of closing the sheet; the next Esc closes. Esc still closes from the search box (search does not handle Esc). It does not close when focus is on a native `<select>`, a datalist input, or a date / time / color input, so that control can dismiss its own popup.
 
 **Narrow screens (under 1024px).** One full-viewport sheet scrolls as a single column: header (ticker, name, close), chart at about 52vh (minimum 280px, pinch-zoom and touch pan on the chart), then metrics, news, and profile. Tap targets are at least 40px. The sheet pads for the safe area, and the page behind it does not scroll.
 
@@ -400,9 +410,10 @@ Use only for local UI work. Default when unset: **`live`**.
 | `server/marketBars.ts` | Bars payload shaping (last 500, sort, drop NaN) + 15 min cache |
 | `server/tickerNews.ts` | Finnhub company-news + Yahoo search fallback, 10 min cache |
 | `server/tickerProfile.ts` | Finnhub profile2 facts + verified Wikipedia summary, 24h cache |
-| `src/lib/chartData.ts` | Pure `toCandles` / `toVolume` / `smaSeries` helpers |
+| `src/lib/chartData.ts` | Pure `toCandles` / `toVolume` / `smaSeries` / `volumeSmaSeries` / `measurePctChange` |
+| `src/lib/chartSmaColors.ts` | SMA colour defaults and `qm.chartSmaColors.v1` |
 | `src/lib/splitLayout.ts` | Split-sheet width clamp, row keyboard index, Esc / typing guards |
-| `src/components/DailyChartPanel.tsx` | Lazy-loaded candlestick + volume + SMA chart (fills its parent) |
+| `src/components/DailyChartPanel.tsx` | Lazy-loaded candlestick + volume + SMA chart, volume SMA, measure, colour pickers |
 | `src/components/SplitDetailSheet.tsx` | Row-click split sheet: chart beside detail, maximize, Esc / X |
 | `server/finvizGroups.ts` | Finviz leading-groups fetch, 12-minute cache, `/api/groups` routes |
 | `server/finvizParse.ts` | Pure `FinvizInitGroupsPerformance` parser |

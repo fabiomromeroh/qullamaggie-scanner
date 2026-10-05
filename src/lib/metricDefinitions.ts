@@ -44,6 +44,8 @@ import {
   EXTENSION_ADR50_MODEST,
   EXTENSION_ADR50_STRETCHED,
 } from './extensionAdr'
+import { CHART_RIGHT_OFFSET_BARS, VOLUME_SMA_PERIOD } from './chartData'
+import { CHART_SMA_COLORS_KEY, DEFAULT_SMA_COLORS } from './chartSmaColors'
 import type { GroupPeriod } from '../types'
 
 export interface MetricDef {
@@ -798,6 +800,25 @@ export const METRIC_DEFS = {
     'Daily',
     'The chart timeframe.',
     'The panel loads daily OHLCV (about the last 260 sessions, capped at 500) and overlays the SMA lines you toggle. It does not draw intraday bars.',
+    `The time scale keeps ${CHART_RIGHT_OFFSET_BARS} empty bars to the right of the last candle (rightOffset) so that print does not sit on the price axis.`,
+  ),
+  chartVolSma20: d(
+    'Vol SMA 20',
+    `Toggle the ${VOLUME_SMA_PERIOD}-session average of share volume.`,
+    `volumeSmaSeries averages share volume over ${VOLUME_SMA_PERIOD} sessions. A missing, non-finite, or negative volume counts as 0 so the window stays aligned with those bars. The first ${VOLUME_SMA_PERIOD - 1} points are null. The line is solid ${DEFAULT_SMA_COLORS.vol20} on the volume scale. Price SMA ${SMA_PERIODS.sma20} stays ${DEFAULT_SMA_COLORS['20']} on the price scale.`,
+    'The chip defaults on. It is share volume, not dollar volume, and it is not the scan RVOL ratio.',
+  ),
+  chartMeasure: d(
+    'Measure',
+    'Percent and dollar move between two daily closes.',
+    'Turn Measure on, then click two bars. Each click uses that bar\'s close, not the cursor Y price, so the reading stays on a real print. Percent is (close B − close A) / close A × 100. Dollar change is close B − close A. A live preview uses the crosshair bar\'s close until the second click. A third click does not replace the pair. Esc turns Measure off and clears the points. Clear drops the points and leaves Measure on. Clicking Measure while it is on clears the points and turns it off.',
+    'If close A is not above 0 the percent is omitted. The OHLC readout still follows the crosshair. Esc while Measure is on does not close the detail sheet. A colour input keeps Esc for its own popup.',
+  ),
+  chartSmaColors: d(
+    'SMA colours',
+    'Saved colours for the moving-average lines.',
+    `Each SMA chip, including Vol SMA ${VOLUME_SMA_PERIOD}, has a colour input. The choice is written to localStorage ${CHART_SMA_COLORS_KEY} as hex colours for 10, 20, 50, 200, and vol20. A bad entry or a partial object keeps the default for that key. Reset colours writes the defaults back. Defaults are ${DEFAULT_SMA_COLORS['10']} (10), ${DEFAULT_SMA_COLORS['20']} (20), ${DEFAULT_SMA_COLORS['50']} (50), ${DEFAULT_SMA_COLORS['200']} (200), and ${DEFAULT_SMA_COLORS.vol20} (volume).`,
+    'The map is per browser. It does not change the scan payload.',
   ),
   marketCap: d(
     'Market cap',
