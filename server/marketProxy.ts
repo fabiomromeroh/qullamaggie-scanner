@@ -1133,6 +1133,7 @@ if (url.pathname === '/api/market/dashboard') {
             ideas: merged.ideas,
             catalystMeta: merged.meta,
             stage1Source: meta?.stage1Source,
+            leadingGroupsMeta: meta?.leadingGroupsMeta ?? null,
             stage1Count: meta?.stage1Count,
             stage15Count: meta?.stage15Count,
             shortlistCount: meta?.shortlistCount,

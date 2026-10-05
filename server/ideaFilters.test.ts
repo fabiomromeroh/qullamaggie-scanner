@@ -20,10 +20,12 @@ import {
   showAllGroupFilters,
   type DashboardFilterState,
 } from '../src/lib/ideaFilters.ts'
+import { BAR_WINDOWS } from '../src/lib/metrics.ts'
 import {
   ALL_EARNINGS_STATUSES,
   ALL_SETUP_TYPES,
   DEFAULT_FILTERS,
+  DEFAULT_MIN_AVG_DOLLAR_VOL,
   GROUP_VIEW_DEFAULT_FILTERS,
   NEAR_HIGHS_PRESETS,
   type IdeaFilters,
@@ -42,6 +44,7 @@ function idea(partial: Partial<TradingIdea> = {}): TradingIdea {
     aboveSma20: true,
     setupStage: 'coiled',
     rvol: 2,
+    avgDollarVol: 100_000_000,
     pctFrom52wHigh: -1,
     setupType: 'Continuation',
     isAPlus: false,
@@ -202,6 +205,36 @@ test('passesFilters truth table for each normal-scan control', () => {
       name: 'minRvol 0 allows',
       row: idea({ rvol: 0 }),
       f: filters({ minRvol: 0 }),
+      pass: true,
+    },
+    {
+      name: 'default min dollar volume hides a name under $30M',
+      row: idea({ avgDollarVol: DEFAULT_MIN_AVG_DOLLAR_VOL - 1 }),
+      f: filters(),
+      pass: false,
+    },
+    {
+      name: 'default min dollar volume keeps a name at $30M',
+      row: idea({ avgDollarVol: DEFAULT_MIN_AVG_DOLLAR_VOL }),
+      f: filters(),
+      pass: true,
+    },
+    {
+      name: 'dollarVolume alias is used when avgDollarVol is missing',
+      row: idea({ avgDollarVol: undefined, dollarVolume: 1_000_000 }),
+      f: filters(),
+      pass: false,
+    },
+    {
+      name: 'missing dollar volume is kept',
+      row: idea({ avgDollarVol: undefined }),
+      f: filters(),
+      pass: true,
+    },
+    {
+      name: 'group-view floor of 0 keeps a thin name',
+      row: idea({ avgDollarVol: 1_000_000 }),
+      f: filters({ minAvgDollarVol: 0 }),
       pass: true,
     },
     {
@@ -532,6 +565,16 @@ test('migrateStoredFilters fills requireAbove200 and rejects bad shapes', () => 
   assert.equal(migrateStoredFilters({ groupId: '' }).groupId, null)
   assert.equal(migrateStoredFilters({ groupId: 4 }).groupId, null)
   assert.equal(migrateStoredFilters({ minRvol: Number.NaN }).minRvol, 0)
+  assert.equal(BAR_WINDOWS.dolVolSessions, 20)
+  assert.equal(DEFAULT_MIN_AVG_DOLLAR_VOL, 30_000_000)
+  assert.equal(DEFAULT_FILTERS.minAvgDollarVol, DEFAULT_MIN_AVG_DOLLAR_VOL)
+  assert.equal(GROUP_VIEW_DEFAULT_FILTERS.minAvgDollarVol, 0)
+  assert.equal(migrateStoredFilters({}).minAvgDollarVol, DEFAULT_MIN_AVG_DOLLAR_VOL)
+  assert.equal(migrateStoredFilters({ minAvgDollarVol: 0 }).minAvgDollarVol, 0)
+  assert.equal(migrateStoredFilters({ minAvgDollarVol: Number.NaN }).minAvgDollarVol, DEFAULT_MIN_AVG_DOLLAR_VOL)
+  assert.equal(migrateStoredFilters({ minAvgDollarVol: -5 }).minAvgDollarVol, 0)
+  assert.equal(showAllGroupFilters().minAvgDollarVol, 0)
+  assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, minAvgDollarVol: 0 }), 1)
   assert.equal(migrateStoredFilters({}).maxExtensionAdr50, null)
   assert.equal(migrateStoredFilters({ maxExtensionAdr50: 3 }).maxExtensionAdr50, 3)
   assert.equal(migrateStoredFilters({ maxExtensionAdr50: null }).maxExtensionAdr50, null)
@@ -725,6 +768,12 @@ test('UI copy and README use the single Above 200 DMA label', () => {
   assert.doesNotMatch(bar, /Surfer \(strict\)/)
   assert.match(bar, /Tight consolidation/)
   assert.deepEqual([...NEAR_HIGHS_PRESETS], [5, 8, 10, 15, 20])
+  assert.match(bar, /Min DolVol/)
+  assert.match(bar, /aria-label="Min DolVol"/)
+  assert.match(bar, /filterMinDollarVol/)
+  assert.match(readme, /Min DolVol/)
+  assert.match(readme, /LEADING_SCAN_SUPPLEMENT=0/)
+  assert.match(readme, /leading-groups-top12/)
   assert.match(bar, /Near highs ≤/)
   assert.match(bar, /aria-label="Near highs ≤"/)
   assert.match(bar, /NEAR_HIGHS_PRESETS/)

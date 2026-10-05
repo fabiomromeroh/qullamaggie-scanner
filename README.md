@@ -60,9 +60,29 @@ If the key is missing or Finnhub errors/rate-limits, the proxy falls through the
 
 Three-stage **server-side** scan (Stage 1 → Stage 1.5 SMA → Stage 2). The browser never walks thousands of symbols on page load — it only reads `GET /api/market/dashboard` (file cache).
 
-### Stage 1 — Yahoo EquityQuery screener (universe)
+### Stage 1 — top Finviz groups (default universe)
 
-Unofficial Yahoo Finance screener POST (`/v1/finance/screener`) with cookie + crumb, paginated at ≤250 rows.
+The default scan universe is the members of the **top 12** Finviz industry groups by 3-month performance, plus a liquid supplement. `server/leadingGroupsUniverse.ts` loads the same groups page as `GET /api/groups`, ranks with `rankGroups` (period **3m**), takes `LEADING_GROUPS_COUNT` (12), and unions tickers from `server/data/finviz-group-members.json`. Each **Refresh** rebuilds that list. `stage1Source` is `leading-groups-top12`.
+
+`GET /api/market/dashboard` exposes `leadingGroupsMeta`: `groups` (slug, name, rank, snapshot member count, 3-month performance), `symbolCount` (symbols scanned after `SCAN_STAGE1_CAP`), `supplementCount`, `snapshotGeneratedAt`, `period`, and `supplementEnabled`. The stats line shows `topN +S` when that object is present.
+
+`SCAN_STAGE1_CAP` (default 800) still applies. Members of the top 12 stay ahead of supplement-only names, so the cap does not drop a leading-group member to make room for a supplement ticker.
+
+Supplement tickers are added only when they appear somewhere in the snapshot: NVDA, AMD, AVGO, MU, SMCI, AAPL, MSFT, AMZN, META, GOOGL, GOOG, TSLA, PLTR, ARM, TSM, NFLX, CRM, ORCL, COST, JPM, V, MA. `LEADING_SCAN_SUPPLEMENT=0` turns that list off (`supplementCount` stays 0).
+
+If the groups payload is not Finviz, the snapshot is missing or invalid, or the union has fewer than 20 symbols, Stage 1 falls back to the Yahoo screener below. `stage1Source` is then that Yahoo path (`yahoo-screener` or `yahoo-predefined-fallback`), and `leadingGroupsMeta` is null. A Yahoo list that is also too thin still uses the emergency `SCAN_UNIVERSE` (`emergency-fallback-universe`).
+
+Idea `groupId` / `groupName` come from the membership snapshot. A ticker in more than one group uses the current top-12 group with the best 3-month rank. The detail header shows that label as **Finviz · {group}**. Finnhub industry on the company block is secondary (**Finnhub · {industry}**). Yahoo sector/industry and `WATCHLIST_GROUPS` are used only when the snapshot has no row for that ticker.
+
+#### Reliability (measured 2026-10-05, live)
+
+- Snapshot `server/data/finviz-group-members.json`: `generatedAt` **2026-09-30**, **144** groups, **1859** unique tickers, filters price &gt; $5 and average volume &gt; 750K. The file contains mega-caps.
+- Live top 12 by 3-month performance that day were mostly oil, gold, shipping, and software — about **272** unique members. Of **145** scan ideas, about **55** were in the top 12 and about **90** were outside it (NVDA, AMD, SMCI, MU, AAPL, GOOGL, and similar). A pure top-12 universe drops mega-cap tech when those industries are not leading. The supplement puts those liquid names back when they are in the snapshot.
+- Render: the Finviz screener returns **403**. The groups page answers. Membership refresh is manual and about weekly (`npm run build:groups`). Render cannot rebuild the snapshot.
+
+### Stage 1 fallback — Yahoo EquityQuery screener
+
+Unofficial Yahoo Finance screener POST (`/v1/finance/screener`) with cookie + crumb, paginated at ≤250 rows. Used only when the leading-groups universe cannot be built.
 
 | Filter | Value | Notes |
 |--------|-------|--------|
@@ -100,7 +120,7 @@ For each Stage-1.5 survivor (Yahoo-first cascade: Yahoo → Finnhub → Stooq):
 1. Daily bars → Kyle / Qullamaggie proxies (`computeIdeaMetrics`)
 2. Hard gate: **above daily 200 SMA** (recomputed from bars) or excluded
 3. Earnings overlay (Finnhub calendar → Nasdaq)
-4. Industry labels from Yahoo sector/industry (static `WATCHLIST_GROUPS` when the ticker is known). Those labels feed idea `groupId` / `groupName` and the internal group fallback. The Group Strength panel itself uses live Finviz groups (`GET /api/groups`).
+4. Industry labels from the Finviz membership snapshot (the current top-12 group when the ticker is in one). Yahoo sector/industry and static `WATCHLIST_GROUPS` remain the fallback when the snapshot has no row. Those labels feed idea `groupId` / `groupName` and the internal group fallback. The Group Strength panel itself uses live Finviz groups (`GET /api/groups`). The detail header shows the Finviz group; Finnhub industry on the company block is secondary.
 5. QQQ regime from live bars
 
 **ADR extension from the 50 SMA** (`extensionAdr50` on every idea, scan and group drill-down):
@@ -312,7 +332,7 @@ Filter bar order (the same chips in the normal scan and in group view; only the 
 
 1. **Search** — ticker / name text.
 2. **Group** — selected industry (`groupId`), with a clear control when one is set.
-3. **Numeric** — Min RVOL, Near highs ≤, Max ADR extension from 50 SMA.
+3. **Numeric** — Min RVOL, Min DolVol, Near highs ≤, Max ADR extension from 50 SMA.
 4. **Above** — Above 10 SMA, Above 20 SMA, Above 50 SMA, Above 200 DMA (`requireSma10` / `requireSma20` / `requireSma50` / `requireAbove200`). "Above 50 SMA" is the old Require 50 SMA control; the field name is still `requireSma50`.
 5. **Surfer (ADR-based)** — 10MA Surfer, 20MA Surfer, 50MA Surfer. Chip text does not repeat a strict suffix; the tooltip states the ADR-relative rule.
 6. **Tight consolidation** — its own chip, not inside the surfer group.
@@ -323,13 +343,15 @@ Filter bar order (the same chips in the normal scan and in group view; only the 
 
 **Near highs ≤** (same select in the normal scan and in group view; one control, field `maxPctFromHigh`): presets **Any | 5% | 8% | 10% | 15% | 20%**. Select only. Default **Any** (`null`) applies no distance filter. Distance is `abs(min(0, pctFrom52wHigh))`, so a print above the 52-week high counts as 0. A selected preset T hides ideas whose distance is greater than T. The previous free-number input on this same field defaulted to 100, which hid nothing; `migrateStoredFilters` maps 100 and any value ≥ 100 to Any, keeps 5, 8, 10, 15, and 20, and snaps every other finite number to the nearest preset (the lower preset when two are equally close).
 
-**Normal scan baseline** (`DEFAULT_FILTERS`): Above 200 DMA on, stages coiled + triggering, Above 50 SMA on, Above 10/20 SMA off, surfer chips off, Tight consolidation off, min RVOL 0, Near highs ≤ **Any** (no filter), max ADR extension from 50 SMA **Any** (no filter), all setup types, all earnings statuses, A+ only off, Has catalyst off, search empty. With Above 200 DMA on, the table matches the old hard gate that dropped every `aboveSma200: false` row before the other checks.
+**Min DolVol** (`minAvgDollarVol`): the FiltersBar control is millions of dollars. It compares `avgDollarVol`, the mean of close × volume over the prior **20** sessions, excluding the latest bar (`BAR_WINDOWS.dolVolSessions`). Normal scan default is **$30M** (`DEFAULT_MIN_AVG_DOLLAR_VOL` = 30_000_000). Group view default is **$0** (no floor). `passesFilters` hides a row when that average is a finite number below the floor. A missing average is kept. `migrateStoredFilters` fills a missing or non-numeric value with $30M and clamps a negative number to 0. A blank input is stored as 0.
 
-**Group-view baseline** (`GROUP_VIEW_DEFAULT_FILTERS`): the same values except stages are all three (`watching`, `coiled`, `triggering`) and Above 50 SMA, Above 10/20 SMA, the surfer chips, and Tight consolidation are off. Above 200 DMA stays on. Near highs ≤ and Max ADR extension from 50 SMA stay **Any**. While a group is selected the filter bar shows and edits this state. The normal scan filters are left alone, so they come back when the group is cleared. Changing the group, or pressing **Reset** on the filter bar, returns the group-view state to that baseline. Filter-bar **Reset** also restores the normal scan filters to `DEFAULT_FILTERS` and keeps the selected group. The group-panel **Reset** (next to the period control, and in the results banner) clears the group and brings those scan filters back. It does not start a new scan.
+**Normal scan baseline** (`DEFAULT_FILTERS`): Above 200 DMA on, stages coiled + triggering, Above 50 SMA on, Above 10/20 SMA off, surfer chips off, Tight consolidation off, min RVOL 0, Min DolVol **$30M**, Near highs ≤ **Any** (no filter), max ADR extension from 50 SMA **Any** (no filter), all setup types, all earnings statuses, A+ only off, Has catalyst off, search empty. With Above 200 DMA on, the table matches the old hard gate that dropped every `aboveSma200: false` row before the other checks.
+
+**Group-view baseline** (`GROUP_VIEW_DEFAULT_FILTERS`): the same values except stages are all three (`watching`, `coiled`, `triggering`), Min DolVol is **$0**, and Above 50 SMA, Above 10/20 SMA, the surfer chips, and Tight consolidation are off. Above 200 DMA stays on. Near highs ≤ and Max ADR extension from 50 SMA stay **Any**. While a group is selected the filter bar shows and edits this state. The normal scan filters are left alone, so they come back when the group is cleared. Changing the group, or pressing **Reset** on the filter bar, returns the group-view state to that baseline. Filter-bar **Reset** also restores the normal scan filters to `DEFAULT_FILTERS` and keeps the selected group. The group-panel **Reset** (next to the period control, and in the results banner) clears the group and brings those scan filters back. It does not start a new scan.
 
 Every control applies as soon as it is pressed, including when the value equals a baseline. Re-enabling coiled + triggering, turning Above 50 SMA back on, or selecting every setup type hides or shows rows immediately. PR #5's rule (ignore a group filter that still equals the scanner default) is gone, which is why those controls used to look dead in group view.
 
-The banner `Showing N of M group stocks (filters hiding K)` counts every row the active group filters remove, including Above 200 DMA. A group whose members include below-200 names therefore opens as, for example, `Showing 18 of 20 group stocks (filters hiding 2)`. **Show all (incl. below 200 DMA)** turns Above 200 DMA off and sets every other group filter to its most permissive value (all stages, no SMA requirement, min RVOL 0, Near highs ≤ Any, max ADR extension from 50 SMA Any, all setup types, all earnings statuses, A+ only off, catalyst off, search cleared) so the full member list is shown. The Above 200 DMA chip toggles that gate by itself. Rows that are shown below the 200-day SMA keep the **Below 200** stage badge, the `<200` trend badge, and the `Below 200MA` characteristic. TradingView copy and the shown count use the rows on screen. Order stays the selected period's performance descending, nulls last, ticker ascending on a tie.
+The banner `Showing N of M group stocks (filters hiding K)` counts every row the active group filters remove, including Above 200 DMA. A group whose members include below-200 names therefore opens as, for example, `Showing 18 of 20 group stocks (filters hiding 2)`. **Show all (incl. below 200 DMA)** turns Above 200 DMA off and sets every other group filter to its most permissive value (all stages, no SMA requirement, min RVOL 0, min dollar volume $0, Near highs ≤ Any, max ADR extension from 50 SMA Any, all setup types, all earnings statuses, A+ only off, catalyst off, search cleared) so the full member list is shown. The Above 200 DMA chip toggles that gate by itself. Rows that are shown below the 200-day SMA keep the **Below 200** stage badge, the `<200` trend badge, and the `Below 200MA` characteristic. TradingView copy and the shown count use the rows on screen. Order stays the selected period's performance descending, nulls last, ticker ascending on a tie.
 
 The normal scan prefilters below-200 names server-side; toggle off only reveals names present in the payload, group view includes them. Stage 1.5 drops below-200 and below-50 names before deep scoring, and this change does not alter that server scan. Names that do reach the normal payload with `aboveSma200: false` are still subject to the other chips (they are staged `watching`, and Above 50 SMA is on by default). Filter values are not written to localStorage. If a stored filter object has no `requireAbove200`, it is read as on (`migrateStoredFilters`) and does not throw. `hasCatalyst` and the surfer flags migrate as booleans and do not throw. A missing `maxExtensionAdr50` is read as `null` (Any). A missing `maxPctFromHigh`, a stored 100, or any value ≥ 100 is read as `null` (Any). Exact near-highs presets 5, 8, 10, 15, and 20 are kept; other finite numbers snap to the nearest preset.
 
@@ -392,7 +414,8 @@ Use only for local UI work. Default when unset: **`live`**.
 | `src/lib/tightConsolidation.ts` | Tight consolidation (`TIGHT_CONFIG`) |
 | `src/lib/setupStage.ts` | watching / coiled / triggering |
 | `src/lib/userWatchlistStore.ts` | Manual watchlist localStorage (`qm.userWatchlist.v2`) |
-| `server/yahooScreener.ts` | Stage-1 Yahoo EquityQuery client (crumb + pagination) |
+| `server/yahooScreener.ts` | Stage-1 Yahoo EquityQuery client (crumb + pagination). Fallback when leading groups cannot be built |
+| `server/leadingGroupsUniverse.ts` | Default Stage-1 universe: top-12 Finviz groups plus the liquid supplement |
 | `server/scanEngine.ts` | Stage-1→1.5→2 orchestration + cache writer |
 | `server/scanCache.ts` | `data/scan-cache.json` load/save + scan lock |
 | `server/marketProxy.ts` | Cascade + TTL cache + Vite middleware (`/api/market/*` including bars/news/profile/quote) |
@@ -426,7 +449,7 @@ Use only for local UI work. Default when unset: **`live`**.
 
 ## How to extend / tune the scan
 
-1. **Liquidity / price** — env `SCAN_MIN_AVG_VOL` (default 750000), `SCAN_MIN_PRICE` (default 5), `SCAN_STAGE1_CAP` (default 800).
+1. **Liquidity / price** — Stage 1 is the top 12 Finviz groups (3-month rank) union `LEADING_SCAN_SUPPLEMENT_TICKERS` when those tickers are in the membership snapshot. `LEADING_SCAN_SUPPLEMENT=0` disables the supplement. `SCAN_STAGE1_CAP` (default 800) caps the list and keeps top-group members ahead of supplement-only names. The Yahoo fallback still uses env `SCAN_MIN_AVG_VOL` (default 750000) and `SCAN_MIN_PRICE` (default 5). The client Min DolVol filter defaults to $30M on a normal scan and $0 in group view. It does not change the server universe.
 2. **Stage 1.5 SMA** — `SMA_QUOTE_BATCH` (default 20), `SMA_QUOTE_GAP_MS` (default 120), `SMA_QUOTE_CACHE_TTL_MS` (default 5m). Always requires above 200 **and** above 50.
 3. **Staleness** — `SCAN_CACHE_STALE_MS` (default 45m).
 4. **Emergency list** — edit `SCAN_UNIVERSE` in `src/data/watchlist.ts` only as a last-resort fallback.
@@ -443,7 +466,7 @@ Use only for local UI work. Default when unset: **`live`**.
 | **Group 1D / 1W / 1M / 3M / 6M** | Finviz industry performance (3M = 13-week, 6M = 26-week). The panel ranks by the selected period. 1W is on the tooltip, not its own column. Fallback: average of scan members' returns in that internal group |
 | **Leaders `N/D`** | Of the top 20 snapshot members with a computed selected-period performance (price &gt; $5 and avg volume &gt; 750K when the snapshot was built), how many are &gt; 0 and also sit in the current scan cache |
 | **earningsDate / daysToEarnings / earningsStatus** | Next earnings from Finnhub calendar (Nasdaq fallback); `avoid` = same/next trading day (hard fail for entry / not A+); `alert` ≈ 2 trading days; `clear` otherwise |
-| **DolVol / Avg $ volume** | 20-day average of close × volume |
+| **DolVol / Avg $ volume** | 20-session average of close × volume, excluding the latest bar. Normal-scan filter default $30M. Group view default $0 |
 | **SMA200 / SMA50 / SMA20 / SMA10** | Simple moving averages of daily closes |
 | **aboveSma200** | **Above 200 DMA** filter (default on). Price above the daily 200-SMA, or the name is not a valid setup. The normal scan also drops these names in Stage 1.5 before the payload is built |
 | **aboveSma50** | Soft preference; filter **Above 50 SMA** (`requireSma50`) defaults **ON** |

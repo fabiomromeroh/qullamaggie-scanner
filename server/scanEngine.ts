@@ -1,10 +1,11 @@
 /**
  * Three-stage US liquid equity scan.
- * Stage 1: Yahoo screener (price > $5, avg vol >= 750k, equities only).
+ * Stage 1: top-12 Finviz leading groups plus a liquid supplement.
+ *          Yahoo screener if that universe cannot be built.
  * Stage 1.5: cheap Yahoo quote SMA prefilter (above 200 AND above 50).
  * Stage 2: deep Kyle/Qullamaggie metrics on survivors (Yahoo-first cascade).
  */
-import type { IndustryGroup, TradingIdea } from '../src/types/index.ts'
+import type { IndustryGroup, LeadingGroupsMeta, TradingIdea } from '../src/types/index.ts'
 import {
   applyEarningsToIdea,
   computeIdeaMetrics,
@@ -26,6 +27,11 @@ import {
   runYahooEquityScreener,
   type ScreenerHit,
 } from './yahooScreener.ts'
+import {
+  LEADING_STAGE1_SOURCE,
+  buildLeadingGroupsUniverse,
+  type IdeaGroupLabel,
+} from './leadingGroupsUniverse.ts'
 import {
   beginScanLock,
   endScanLock,
@@ -266,27 +272,55 @@ export async function runFullScan(): Promise<ScanCachePayload> {
   }
 
   let hits: ScreenerHit[] = []
+  let leadingGroupsMeta: LeadingGroupsMeta | null = null
+  let lookup: ((symbol: string) => IdeaGroupLabel | null) | null = null
   try {
-    const screen = await runYahooEquityScreener()
-    hits = screen.hits
-    stage1Source = screen.source
-    stage1Filters = { ...stage1Filters, ...screen.filters }
-    errors.push(...screen.errors)
+    const built = await buildLeadingGroupsUniverse({ cap: STAGE1_CAP })
+    if (!built.ok) throw new Error(built.error)
+    if (built.hits.length < 20) {
+      throw new Error(`leading-groups universe too thin (${built.hits.length})`)
+    }
+    hits = built.hits
+    lookup = built.lookup
+    leadingGroupsMeta = built.meta
+    stage1Source = LEADING_STAGE1_SOURCE
+    stage1Filters = {
+      universe: LEADING_STAGE1_SOURCE,
+      period: built.meta.period,
+      leadingGroupCount: built.meta.groups.length,
+      symbolCount: built.meta.symbolCount,
+      supplementCount: built.meta.supplementCount,
+      supplementEnabled: built.meta.supplementEnabled,
+      snapshotGeneratedAt: built.meta.snapshotGeneratedAt,
+      stage1Cap: STAGE1_CAP,
+    }
   } catch (err) {
-    errors.push(`stage1: ${err instanceof Error ? err.message : String(err)}`)
-  }
+    const message = err instanceof Error ? err.message : String(err)
+    errors.push(`stage1 leading-groups: ${message}`)
+    lookup = null
+    leadingGroupsMeta = null
+    try {
+      const screen = await runYahooEquityScreener()
+      hits = screen.hits
+      stage1Source = screen.source
+      stage1Filters = { ...stage1Filters, ...screen.filters }
+      errors.push(...screen.errors)
+    } catch (yahooErr) {
+      errors.push(`stage1: ${yahooErr instanceof Error ? yahooErr.message : String(yahooErr)}`)
+    }
 
-  if (hits.length < 20) {
-    emergencyFallback = true
-    stage1Source = 'emergency-fallback-universe'
-    errors.push(
-      `Yahoo screen failed or too thin (${hits.length}) — using emergency SCAN_UNIVERSE (${SCAN_UNIVERSE.length} names)`,
-    )
-    hits = SCAN_UNIVERSE.map((e) => ({
-      symbol: e.ticker,
-      shortName: e.name,
-      quoteType: 'EQUITY',
-    }))
+    if (hits.length < 20) {
+      emergencyFallback = true
+      stage1Source = 'emergency-fallback-universe'
+      errors.push(
+        `Yahoo screen failed or too thin (${hits.length}) — using emergency SCAN_UNIVERSE (${SCAN_UNIVERSE.length} names)`,
+      )
+      hits = SCAN_UNIVERSE.map((e) => ({
+        symbol: e.ticker,
+        shortName: e.name,
+        quoteType: 'EQUITY',
+      }))
+    }
   }
 
   const stage1Hits = hits.slice(0, STAGE1_CAP)
@@ -343,7 +377,9 @@ export async function runFullScan(): Promise<ScanCachePayload> {
       includeBelowSma200: false,
       describe(symbol) {
         const group = resolveGroup(hitBySym.get(symbol.toUpperCase()), symbol)
-        return { name: group.name, groupId: group.groupId, groupName: group.groupName }
+        const snap = lookup?.(symbol)
+        if (!snap) return { name: group.name, groupId: group.groupId, groupName: group.groupName }
+        return { name: group.name, groupId: snap.groupId, groupName: snap.groupName }
       },
     },
   )
@@ -384,6 +420,7 @@ export async function runFullScan(): Promise<ScanCachePayload> {
     meta: {
       schemaVersion: SCAN_CACHE_SCHEMA,
       stage1Source,
+      leadingGroupsMeta,
       stage1Count: stage1Hits.length,
       stage15Count,
       shortlistCount: shortlist.length,
@@ -425,6 +462,8 @@ export async function triggerScan(
         stage15: result.meta.stage15Count,
         hits: result.scanHitCount,
         source: result.meta.stage1Source,
+        leadingGroups: result.meta.leadingGroupsMeta?.groups.length ?? 0,
+        supplement: result.meta.leadingGroupsMeta?.supplementCount ?? 0,
         ms: result.meta.scanDurationMs,
         emergencyFallback: result.meta.emergencyFallback,
       }),

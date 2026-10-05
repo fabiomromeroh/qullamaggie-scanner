@@ -24,6 +24,14 @@ export function ScanStatsLine({ data }: { data: DashboardData }) {
       <MetricTip id="scanBelow200">below200 {data.scanBelow200Count ?? 0}</MetricTip>
       <span aria-hidden>·</span>
       <MetricTip id="scanFails">fails {data.scanFailCount ?? 0}</MetricTip>
+      {data.leadingGroupsMeta ? (
+        <>
+          <span aria-hidden>·</span>
+          <MetricTip id="leadingGroupsUniverse">
+            top{data.leadingGroupsMeta.groups.length} +{data.leadingGroupsMeta.supplementCount}
+          </MetricTip>
+        </>
+      ) : null}
       {showPrefilter ? (
         <>
           <span aria-hidden>·</span>

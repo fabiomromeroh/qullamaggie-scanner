@@ -376,7 +376,7 @@ export function DetailDrawer({ idea, source = 'live', isPinned, onTogglePin }: P
             <MetricTip id="name">{idea.name}</MetricTip>
           </p>
           <p className="text-[11px] text-terminal-dim">
-            <MetricTip id="ideaGroup">{idea.groupName}</MetricTip>
+            <MetricTip id="ideaGroup">Finviz · {idea.groupName}</MetricTip>
           </p>
         </div>
         {onTogglePin ? (
