@@ -9,7 +9,6 @@ import type { TradingIdea } from '../types'
 import { RANGE_BREAKOUT_CONFIG } from '../lib/metrics'
 import { RANGE_BASE_CONFIG } from '../lib/rangeBase'
 import { stageLabel } from '../lib/setupStage'
-import { formatSurferDistance, SURFER_CONFIG } from '../lib/surfer'
 import { TIGHT_CONFIG } from '../lib/tightConsolidation'
 import { fmtDollarVol, fmtPct, fmtPrice, fmtRvol, pctClass } from '../utils/format'
 import { MetricTip } from './MetricTip'
@@ -43,57 +42,6 @@ function MetricCell({ id, label, value }: { id: MetricId; label: string; value: 
       <div className="text-[9px] uppercase tracking-wide text-terminal-dim">{label}</div>
       <div className="mt-0.5 truncate font-mono text-xs text-terminal-fg">{value}</div>
     </MetricTip>
-  )
-}
-
-function SurferDetailSection({ idea }: { idea: TradingIdea }) {
-  const rows: { label: string; ok: boolean; key: 'sma10' | 'sma20' | 'sma50' }[] = [
-    { label: '10MA', ok: Boolean(idea.surfer10), key: 'sma10' },
-    { label: '20MA', ok: Boolean(idea.surfer20), key: 'sma20' },
-    { label: '50MA', ok: Boolean(idea.surfer50), key: 'sma50' },
-  ]
-  return (
-    <section>
-      <h3 className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-terminal-dim">
-        Strict MA surfer
-      </h3>
-      <p className="mb-2 text-[11px] text-terminal-dim">
-        ADR-relative ride (window {SURFER_CONFIG.windowSessions.sma10}/
-        {SURFER_CONFIG.windowSessions.sma20}/{SURFER_CONFIG.windowSessions.sma50} sessions,
-        kProximity {SURFER_CONFIG.kProximity.sma10}/{SURFER_CONFIG.kProximity.sma20}/
-        {SURFER_CONFIG.kProximity.sma50} × ADR%, extension cap {SURFER_CONFIG.maxExtensionAdrMultiple}× ADR).
-        Loose above-SMA flags stay on Trend gate.
-      </p>
-      <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-3">
-        {rows.map((row) => {
-          const d = idea.surferDetail?.[row.key]
-          return (
-            <MetricTip
-              key={row.key}
-              id={row.key === 'sma10' ? 'surfer10' : row.key === 'sma20' ? 'surfer20' : 'surfer50'}
-              extra={d ? formatSurferDistance(row.label, d) : undefined}
-              className="block rounded border border-terminal-border bg-terminal-bg px-2 py-2"
-            >
-              <div className="flex items-center justify-between gap-1">
-                <span className="text-[10px] font-semibold uppercase tracking-wide text-terminal-muted">
-                  {row.label}
-                </span>
-                <span
-                  className={`text-[10px] font-mono ${
-                    row.ok ? 'text-terminal-green' : 'text-terminal-dim'
-                  }`}
-                >
-                  {row.ok ? 'YES' : 'no'}
-                </span>
-              </div>
-              <div className="mt-1 font-mono text-[11px] text-terminal-fg">
-                {d ? formatSurferDistance(row.label, d) : '—'}
-              </div>
-            </MetricTip>
-          )
-        })}
-      </div>
-    </section>
   )
 }
 
@@ -340,6 +288,13 @@ export function DetailDrawer({ idea, source = 'live', isPinned, onTogglePin }: P
               >
                 AVOID EARNINGS
               </MetricTip>
+            ) : idea.isAPlusPlus ? (
+              <MetricTip
+                id="aPlusPlus"
+                className="rounded bg-terminal-a-plus-plus px-1.5 py-0.5 text-[10px] font-bold text-terminal-bg ring-1 ring-white/80"
+              >
+                A++
+              </MetricTip>
             ) : idea.isAPlus ? (
               <MetricTip
                 id="aPlus"
@@ -520,30 +475,9 @@ export function DetailDrawer({ idea, source = 'live', isPinned, onTogglePin }: P
           <MetricCell id="tightDays" label="Tight days" value={String(idea.tightDays)} />
           <MetricCell id="baseLengthDays" label="Base length" value={`${idea.baseLengthDays}d`} />
           <MetricCell id="dolVol" label="DolVol" value={fmtDollarVol(idea.dollarVolume || idea.avgDollarVol)} />
-          <MetricCell id="sma10" label="SMA10" value={fmtPrice(idea.sma10)} />
-          <MetricCell id="sma20" label="SMA20" value={fmtPrice(idea.sma20)} />
-          <MetricCell id="sma50" label="SMA50" value={fmtPrice(idea.sma50)} />
           <MetricCell id="kyleScore" label="kyleScore" value={String(idea.kyleScore)} />
         </div>
 
-        <section>
-          <h3 className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-terminal-dim">
-            <MetricTip id="trendGate">Trend gate</MetricTip>
-          </h3>
-          <p className="rounded border border-terminal-border bg-terminal-bg px-3 py-2 text-sm text-terminal-muted">
-            <MetricTip id="aboveSma200">aboveSma200={String(idea.aboveSma200)}</MetricTip>
-            {' · '}
-            <MetricTip id="aboveSma50">aboveSma50={String(idea.aboveSma50)}</MetricTip>
-            {' · '}
-            <MetricTip id="aboveSma20">aboveSma20={String(idea.aboveSma20)}</MetricTip>
-            {' · '}
-            <MetricTip id="aboveSma10">aboveSma10={String(idea.aboveSma10)}</MetricTip>
-            {' · '}
-            <MetricTip id="sma50">SMA50 {fmtPrice(idea.sma50)}</MetricTip>
-          </p>
-        </section>
-
-        <SurferDetailSection idea={idea} />
         <TightDetailSection idea={idea} />
         <RangeBreakoutGatesSection idea={idea} />
         <RangeBaseSection idea={idea} />

@@ -29,19 +29,15 @@ import {
   type OhlcvBar,
 } from '../lib/chartData'
 import {
-  loadSmaColors,
+  defaultChartSmaPrefs,
+  loadChartSmaPrefs,
   parseSmaColors,
-  saveSmaColors,
+  saveChartSmaPrefs,
+  type ChartSmaPrefs,
   type SmaColorKey,
   type SmaColorMap,
 } from '../lib/chartSmaColors'
-import {
-  extensionAdr50Tone,
-  extensionAdrFrom50,
-  formatExtensionAdr50,
-  roundExtensionAdr50,
-} from '../lib/extensionAdr'
-import { BAR_WINDOWS, SMA_PERIODS, smaClose } from '../lib/metrics'
+import { SMA_PERIODS } from '../lib/metrics'
 import { metricTipAttrs } from '../lib/metricDefinitions'
 import { fmtPct, fmtPrice, pctClass } from '../utils/format'
 import { MetricTip } from './MetricTip'
@@ -61,14 +57,10 @@ interface Props {
   name?: string
   price?: number | null
   dayPct?: number | null
-  /** Stored ADR extension from the 50 SMA. Used when present; otherwise recomputed from bars. */
-  extensionAdr50?: number | null
-  adrPct?: number | null
-  sma50?: number | null
 }
 
 const SMA_META = [
-  { n: SMA_PERIODS.sma10, key: '10' as const, label: 'SMA 10', defaultOn: false },
+  { n: SMA_PERIODS.sma10, key: '10' as const, label: 'SMA 10', defaultOn: true },
   { n: SMA_PERIODS.sma20, key: '20' as const, label: 'SMA 20', defaultOn: true },
   { n: SMA_PERIODS.sma50, key: '50' as const, label: 'SMA 50', defaultOn: true },
   { n: SMA_PERIODS.sma200, key: '200' as const, label: 'SMA 200', defaultOn: true },
@@ -171,58 +163,6 @@ function isAbort(err: unknown): boolean {
   return err instanceof Error && err.name === 'AbortError'
 }
 
-function adrPctFromChartBars(bars: OhlcvBar[]): number | null {
-  const lookback = bars.slice(-(BAR_WINDOWS.adrSessions + 1), -1)
-  if (!lookback.length) return null
-  let sum = 0
-  for (const bar of lookback) {
-    sum += bar.c > 0 ? ((bar.h - bar.l) / bar.c) * 100 : 0
-  }
-  return sum / lookback.length
-}
-
-/**
- * Prefer the idea field when it is a finite number (including 0).
- * Otherwise recompute from bars + ADR so a missing payload still shows a value.
- */
-function resolveChartExtensionAdr50(opts: {
-  stored?: number | null
-  price?: number | null
-  sma50?: number | null
-  adrPct?: number | null
-  bars: OhlcvBar[]
-  barsMatch: boolean
-}): number | null {
-  if (typeof opts.stored === 'number' && Number.isFinite(opts.stored)) return opts.stored
-  if (!opts.barsMatch || opts.bars.length === 0) return null
-  const last = opts.bars[opts.bars.length - 1]
-  const price =
-    opts.price != null && Number.isFinite(opts.price) && opts.price > 0
-      ? opts.price
-      : last && Number.isFinite(last.c)
-        ? last.c
-        : null
-  const sma50 =
-    opts.sma50 != null && Number.isFinite(opts.sma50)
-      ? opts.sma50
-      : smaClose(opts.bars.map((b) => b.c), SMA_PERIODS.sma50)
-  const adrPct =
-    opts.adrPct != null && Number.isFinite(opts.adrPct) && opts.adrPct > 0
-      ? opts.adrPct
-      : adrPctFromChartBars(opts.bars)
-  if (price == null || sma50 == null || adrPct == null) return null
-  return roundExtensionAdr50(extensionAdrFrom50(price, sma50, adrPct))
-}
-
-function ext50ChartChipClass(value: number | null): string {
-  const tone = extensionAdr50Tone(value)
-  const base = 'min-h-10 rounded-full border px-3 text-[11px] font-mono'
-  if (tone === 'green') return `${base} border-terminal-green/40 bg-terminal-green/15 text-terminal-green`
-  if (tone === 'amber') return `${base} border-terminal-amber/40 bg-terminal-amber-dim text-terminal-amber`
-  if (tone === 'red') return `${base} border-terminal-red/40 bg-terminal-red-dim text-terminal-red`
-  return `${base} border-terminal-border text-terminal-dim`
-}
-
 function buildMeasureMarkers(points: MeasurePoints): SeriesMarker<Time>[] {
   const rows: { time: number; text: string; color: string }[] = []
   const a = points.a
@@ -311,10 +251,30 @@ function MeasureReadout({
   )
 }
 
-function initialEnabled(): Record<SmaN, boolean> {
-  const enabled = {} as Record<SmaN, boolean>
-  for (const meta of SMA_META) enabled[meta.n] = meta.defaultOn
-  return enabled
+function enabledRecord(prefs: ChartSmaPrefs): Record<SmaN, boolean> {
+  return {
+    [SMA_PERIODS.sma10]: prefs.enabled['10'],
+    [SMA_PERIODS.sma20]: prefs.enabled['20'],
+    [SMA_PERIODS.sma50]: prefs.enabled['50'],
+    [SMA_PERIODS.sma200]: prefs.enabled['200'],
+  }
+}
+
+function prefsFromState(
+  colors: SmaColorMap,
+  enabled: Record<SmaN, boolean>,
+  volSmaOn: boolean,
+): ChartSmaPrefs {
+  return {
+    colors,
+    enabled: {
+      '10': enabled[SMA_PERIODS.sma10],
+      '20': enabled[SMA_PERIODS.sma20],
+      '50': enabled[SMA_PERIODS.sma50],
+      '200': enabled[SMA_PERIODS.sma200],
+      vol20: volSmaOn,
+    },
+  }
 }
 
 /**
@@ -326,13 +286,11 @@ export default function DailyChartPanel({
   name,
   price,
   dayPct,
-  extensionAdr50,
-  adrPct,
-  sma50,
 }: Props) {
-  const [enabled, setEnabled] = useState<Record<SmaN, boolean>>(initialEnabled)
-  const [volSmaOn, setVolSmaOn] = useState(true)
-  const [colors, setColors] = useState<SmaColorMap>(() => loadSmaColors())
+  const [loadedPrefs] = useState(() => loadChartSmaPrefs())
+  const [enabled, setEnabled] = useState<Record<SmaN, boolean>>(() => enabledRecord(loadedPrefs))
+  const [volSmaOn, setVolSmaOn] = useState(loadedPrefs.enabled.vol20)
+  const [colors, setColors] = useState<SmaColorMap>(loadedPrefs.colors)
   const [measureMode, setMeasureMode] = useState(false)
   const [measurePoints, setMeasurePoints] = useState<MeasurePoints>(EMPTY_MEASURE)
   const [loading, setLoading] = useState(true)
@@ -375,19 +333,6 @@ export default function DailyChartPanel({
           close: liveCrosshair.close,
         }
       : null
-  const chartExtensionAdr50 = useMemo(
-    () =>
-      resolveChartExtensionAdr50({
-        stored: extensionAdr50,
-        price,
-        sma50,
-        adrPct,
-        bars,
-        barsMatch,
-      }),
-    [extensionAdr50, price, sma50, adrPct, bars, barsMatch],
-  )
-
   if (symbol !== activeSymbol) {
     setActiveSymbol(symbol)
     setLoading(true)
@@ -663,12 +608,16 @@ export default function DailyChartPanel({
           color: colors[meta.key],
           lineWidth: 1,
           priceLineVisible: false,
-          lastValueVisible: false,
+          lastValueVisible: true,
           crosshairMarkerVisible: false,
         })
         smaRef.current.set(meta.n, series)
       }
-      series.applyOptions({ color: colors[meta.key] })
+      series.applyOptions({
+        color: colors[meta.key],
+        priceLineVisible: false,
+        lastValueVisible: true,
+      })
       const points = smaSeries(bars, meta.n)
         .filter((p): p is { time: number; value: number } => p.value != null)
         .map((p) => ({ time: p.time as UTCTimestamp, value: p.value }))
@@ -722,16 +671,21 @@ export default function DailyChartPanel({
   function updateSmaColor(key: SmaColorKey, value: string) {
     const next = parseSmaColors({ ...colors, [key]: value })
     setColors(next)
-    saveSmaColors(next)
     paintColor(key, next[key])
   }
 
-  function resetColors() {
-    const next = parseSmaColors({})
-    setColors(next)
-    saveSmaColors(next)
-    for (const meta of SMA_META) paintColor(meta.key, next[meta.key])
-    paintColor('vol20', next.vol20)
+  function saveAsDefault() {
+    saveChartSmaPrefs(prefsFromState(colors, enabled, volSmaOn))
+  }
+
+  function resetPrefs() {
+    const next = defaultChartSmaPrefs()
+    setColors(next.colors)
+    setEnabled(enabledRecord(next))
+    setVolSmaOn(next.enabled.vol20)
+    saveChartSmaPrefs(next)
+    for (const meta of SMA_META) paintColor(meta.key, next.colors[meta.key])
+    paintColor('vol20', next.colors.vol20)
   }
 
   function toggleMeasure() {
@@ -839,19 +793,20 @@ export default function DailyChartPanel({
           </button>
           <button
             type="button"
-            onClick={resetColors}
+            onClick={saveAsDefault}
             {...metricTipAttrs('chartSmaColors')}
             className="min-h-10 cursor-help rounded-full border border-terminal-border px-3 text-[11px] font-mono text-terminal-dim"
           >
-            Reset colours
+            Save as default
           </button>
-          <MetricTip
-            id="extensionAdr50"
-            extra={`${formatExtensionAdr50(chartExtensionAdr50)} ADR from the 50 SMA`}
-            className={ext50ChartChipClass(chartExtensionAdr50)}
+          <button
+            type="button"
+            onClick={resetPrefs}
+            {...metricTipAttrs('chartSmaColors')}
+            className="min-h-10 cursor-help rounded-full border border-terminal-border px-3 text-[11px] font-mono text-terminal-dim"
           >
-            Ext. 50SMA {formatExtensionAdr50(chartExtensionAdr50)} ADR
-          </MetricTip>
+            Reset
+          </button>
         </div>
       </header>
 

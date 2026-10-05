@@ -7,7 +7,9 @@ import {
   applyFilterReset,
   applyShowAllGroup,
   cloneIdeaFilters,
+  loadStoredScanFilters,
   matchesFilters,
+  saveStoredScanFilters,
 } from '../lib/ideaFilters'
 import { DEFAULT_GROUP_PERIOD, GROUP_PERIODS, isGroupPeriod, isGroupSlug } from '../lib/groupPeriod'
 import { selectGroupViewRows } from '../lib/groupView'
@@ -73,7 +75,7 @@ export function useDashboard() {
   const [scanning, setScanning] = useState(false)
   const [scanMessage, setScanMessage] = useState<string | null>(null)
   const [mode, setMode] = useState<'live' | 'demo'>('live')
-  const [scanFilters, setScanFilters] = useState<IdeaFilters>(() => cloneIdeaFilters(DEFAULT_FILTERS))
+  const [scanFilters, setScanFilters] = useState<IdeaFilters>(() => loadStoredScanFilters())
   const [groupFilters, setGroupFilters] = useState<IdeaFilters>(() =>
     cloneIdeaFilters(GROUP_VIEW_DEFAULT_FILTERS),
   )
@@ -377,6 +379,7 @@ export function useDashboard() {
         // Coiled + triggering first (stage rank), then score
         const sr = stageSortRank(a.setupStage) - stageSortRank(b.setupStage)
         if (sr !== 0) return sr
+        if (a.isAPlusPlus !== b.isAPlusPlus) return a.isAPlusPlus ? -1 : 1
         if (a.isAPlus !== b.isAPlus) return a.isAPlus ? -1 : 1
         if (a.isA !== b.isA) return a.isA ? -1 : 1
         if (a.kyleScore !== b.kyleScore) return b.kyleScore - a.kyleScore
@@ -447,6 +450,10 @@ export function useDashboard() {
       if (periodRefreshTimer.current) clearTimeout(periodRefreshTimer.current)
     }
   }, [])
+
+  useEffect(() => {
+    saveStoredScanFilters(scanFilters)
+  }, [scanFilters])
 
   const setFilters = useCallback((next: IdeaFilters) => {
     const result = applyFilterChange(

@@ -179,9 +179,6 @@ export function SplitDetailSheet({
                   name={idea.name}
                   price={idea.price}
                   dayPct={idea.dayPct}
-                  extensionAdr50={idea.extensionAdr50}
-                  adrPct={idea.adrPct}
-                  sma50={idea.sma50}
                 />
               </Suspense>
             </div>

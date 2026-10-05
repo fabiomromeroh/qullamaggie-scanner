@@ -123,7 +123,14 @@ export const EARNINGS_PROXIMITY = {
  *
  * Constructive path (any one): setupStage coiled or triggering, OR
  * tightConsolidation, OR rangeBase.ok. Episodic Pivot by itself is not a path.
- * Earnings `avoid` fails A, and therefore fails A+.
+ * Earnings `avoid` fails A, and therefore fails A+ and A++.
+ *
+ * On top of those gates, isA also requires setupType === 'Range Breakout'
+ * and tightConsolidation === true (the existing strict tight-consolidation
+ * boolean). A name can still need the constructive path; tight is required
+ * even when coiled, triggering, or a range base already supplies that path.
+ * A+ requires isA, so A+ inherits both. A++ requires A+ plus a long base
+ * ({@link LONG_BASE_MIN_SESSIONS}).
  */
 export const A_CONFIG = {
   /** ADR% floor. Equality passes. */
@@ -157,11 +164,20 @@ export const APLUS_CONFIG = {
 } as const
 
 /**
+ * A++ base length. About one quarter of sessions (252 / 4 = 63), longer than
+ * a normal month-scale base. isAPlusPlus requires isAPlus and
+ * max(baseLengthDays, range-base lengthSessions) >= this. Equality passes.
+ * 62 fails. A++ uses the same kyleScore floor as A+ ({@link KYLE_SCORE_CONFIG.aPlusFloor});
+ * it does not add another bump.
+ */
+export const LONG_BASE_MIN_SESSIONS = 63
+
+/**
  * kyleScoreHeuristic points. Below the 200 SMA returns `below200Score` and skips
  * the 3–5 clamp. Otherwise the score starts at `base` and is clamped to
  * [clampMin, clampMax] after rounding to 2 decimals. isAPlus lifts the score
- * to at least `aPlusFloor` before the clamp. isA adds `aBump` and does not
- * receive that floor.
+ * to at least `aPlusFloor` before the clamp. A++ is isAPlus, so it gets that
+ * same floor and no further lift. isA adds `aBump` and does not receive that floor.
  */
 export const KYLE_SCORE_CONFIG = {
   below200Score: 1,
@@ -442,6 +458,8 @@ export interface SetupQualityInput {
    */
   rangeBaseLengthSessions: number
   rangeBaseScore: number | null
+  /** A requires this to be Range Breakout. Other labels fail even when the other gates pass. */
+  setupType: SetupType
 }
 
 /** Null and non-finite extensions pass. A known value fails only when it is above the cap. */
@@ -491,6 +509,7 @@ export function baseQualityDays(
 /**
  * Constructive A. Above the 200-day and 50-day SMAs, ADR at the floor,
  * extension within the cap (or unknown), and one constructive path.
+ * Also requires a Range Breakout label and strict tight consolidation.
  * Earnings avoid fails. Catalyst is not read.
  */
 export function isAHeuristic(m: SetupQualityInput): boolean {
@@ -499,6 +518,8 @@ export function isAHeuristic(m: SetupQualityInput): boolean {
   if (!(m.adrPct >= A_CONFIG.adrMin)) return false
   if (!extensionPassesAGate(m.extensionAdr50)) return false
   if (!constructiveSetup(m)) return false
+  if (m.setupType !== 'Range Breakout') return false
+  if (m.tightConsolidation !== true) return false
   return true
 }
 
@@ -527,6 +548,16 @@ export function isAPlusHeuristic(m: SetupQualityInput): boolean {
   const rangeScoreOk =
     typeof rangeScore === 'number' && Number.isFinite(rangeScore) && rangeScore >= APLUS_CONFIG.rangeBaseScoreMin
   return quality >= APLUS_CONFIG.baseQualityMin || rangeScoreOk
+}
+
+/**
+ * A++ is A+ with a base longer than normal.
+ * Days are max(baseLengthDays, range-base lengthSessions), the same pair
+ * base quality uses. Equality at {@link LONG_BASE_MIN_SESSIONS} passes.
+ */
+export function isAPlusPlusHeuristic(m: SetupQualityInput): boolean {
+  if (!isAPlusHeuristic(m)) return false
+  return baseQualityDays(m) >= LONG_BASE_MIN_SESSIONS
 }
 
 /**
@@ -787,10 +818,12 @@ export function computeMarketRegime(bars: DailyBar[]): MarketRegime | null {
 
 const WHY_AVOID =
   'Earnings same day or next trading day — AVOID entry (hard fail). Not tradeable A or A+ regardless of other metrics.'
+const WHY_APLUS_PLUS =
+  'Heuristic A++: an A+ setup whose base is at least one quarter of sessions (longer than a normal base). Same score floor as A+. Not a signal and not Kyle Rating.'
 const WHY_APLUS =
   'Heuristic A+: an A setup with a checked catalyst, inside the near-ATH band, and a longer base. A month-scale base scores lower than a multi-month or year base. Not a signal and not Kyle Rating.'
 const WHY_A =
-  'Heuristic A: above the 200-day and 50-day SMAs, ADR at the A floor, extension from the 50 SMA within the cap or unknown, and a constructive path (coiled, triggering, tight consolidation, or a range base). Catalyst is not required.'
+  'Heuristic A: Range Breakout, strict tight consolidation, above the 200-day and 50-day SMAs, ADR at the A floor, extension from the 50 SMA within the cap or unknown, and a constructive path (coiled, triggering, tight consolidation, or a range base). Catalyst is not required.'
 const WHY_WATCH = 'On watchlist above 200 SMA; does not meet the heuristic A thresholds today.'
 const WHY_BELOW =
   'Below daily 200 SMA — fails Qullamaggie hard trend gate (not a valid setup). Tag: Below 200MA.'
@@ -815,22 +848,25 @@ export function qualityInputFromIdea(idea: TradingIdea): SetupQualityInput {
     rangeBaseLengthSessions:
       typeof detail?.lengthSessions === 'number' && Number.isFinite(detail.lengthSessions) ? detail.lengthSessions : 0,
     rangeBaseScore: typeof storedScore === 'number' && Number.isFinite(storedScore) ? storedScore : null,
+    setupType: idea.setupType,
   }
 }
 
-function whyQualifiesFor(idea: TradingIdea, isA: boolean, isAPlus: boolean): string {
+function whyQualifiesFor(idea: TradingIdea, isA: boolean, isAPlus: boolean, isAPlusPlus: boolean): string {
   if (idea.earningsStatus === 'avoid') return WHY_AVOID
+  if (isAPlusPlus) return WHY_APLUS_PLUS
   if (isAPlus) return WHY_APLUS
   if (isA) return WHY_A
   if (idea.aboveSma200) return WHY_WATCH
   return WHY_BELOW
 }
 
-/** Recompute isA, isAPlus, kyleScore, and the qualify sentence from the idea's current fields. */
+/** Recompute isA, isAPlus, isAPlusPlus, kyleScore, and the qualify sentence from the idea's current fields. */
 export function applyQualityFlags(idea: TradingIdea): TradingIdea {
   const input = qualityInputFromIdea(idea)
   const isA = isAHeuristic(input)
   const isAPlus = isAPlusHeuristic(input)
+  const isAPlusPlus = isAPlusPlusHeuristic(input)
   const kyleScore = kyleScoreHeuristic({
     aboveSma200: idea.aboveSma200 === true,
     aboveSma50: idea.aboveSma50 === true,
@@ -847,8 +883,9 @@ export function applyQualityFlags(idea: TradingIdea): TradingIdea {
     ...idea,
     isA,
     isAPlus,
+    isAPlusPlus,
     kyleScore,
-    whyQualifies: whyQualifiesFor(idea, isA, isAPlus),
+    whyQualifies: whyQualifiesFor(idea, isA, isAPlus, isAPlusPlus),
   }
 }
 
@@ -1025,6 +1062,7 @@ export function computeIdeaMetrics(
     catalyst,
     isA: false,
     isAPlus: false,
+    isAPlusPlus: false,
     notes: `Live metrics via ${snap.provider}. Catalyst is filled after the scan from news inside 48 hours. Kyle-style proxies from bars only.`,
     whyQualifies: '',
     suggestedEntry: null,

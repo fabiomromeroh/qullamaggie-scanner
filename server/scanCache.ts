@@ -33,8 +33,11 @@ import type { DashboardData, LeadingGroupsMeta } from '../src/types/index.ts'
  * v8: ideas store isA, rangeBaseScore, and rangeBaseDetail. isAPlus is the
  * stricter tier (checked catalyst, near ATH, longer base) on top of isA.
  * Catalyst fields are still merged onto the response and can flip isAPlus.
+ * v9: isA also requires Range Breakout and tight consolidation. Ideas store
+ * isAPlusPlus (A+ and a base of at least LONG_BASE_MIN_SESSIONS). isAPlus
+ * and isAPlusPlus are recomputed when catalyst fields are merged.
  */
-export const SCAN_CACHE_SCHEMA = 8
+export const SCAN_CACHE_SCHEMA = 9
 
 export interface ScanCacheMeta {
   schemaVersion?: number

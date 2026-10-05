@@ -5,7 +5,7 @@
  */
 import type { CharacteristicTag, DashboardData, IndustryGroup, RangeBaseDetail, TradingIdea, SparkPoint } from '../types'
 import { extensionAdrFrom50, roundExtensionAdr50 } from '../lib/extensionAdr'
-import { deriveCharacteristics, isAHeuristic, isAPlusHeuristic, kyleScoreHeuristic } from '../lib/metrics'
+import { deriveCharacteristics, isAHeuristic, isAPlusHeuristic, isAPlusPlusHeuristic, kyleScoreHeuristic } from '../lib/metrics'
 import { rangeBaseLengthScore } from '../lib/rangeBase'
 import { setupStageHeuristic } from '../lib/setupStage'
 
@@ -141,7 +141,7 @@ type DemoIdeaSeed = Omit<
   | 'perf6M' | 'earningsDate' | 'daysToEarnings' | 'earningsStatus'
   | 'surfer10' | 'surfer20' | 'surfer50' | 'surferDetail'
   | 'tightConsolidation' | 'tightDetail' | 'extensionAdr50'
-  | 'isA' | 'rangeBaseScore' | 'rangeBaseDetail'
+  | 'isA' | 'isAPlusPlus' | 'rangeBaseScore' | 'rangeBaseDetail'
 >
 
 function enrichKyleDemo(idea: DemoIdeaSeed): TradingIdea {
@@ -227,9 +227,11 @@ function enrichKyleDemo(idea: DemoIdeaSeed): TradingIdea {
     baseLengthDays,
     rangeBaseLengthSessions: lengthSessions,
     rangeBaseScore: rangeBaseDetail.score,
+    setupType: idea.setupType,
   }
   const isA = isAHeuristic(quality)
   const isAPlus = isAPlusHeuristic(quality)
+  const isAPlusPlus = isAPlusPlusHeuristic(quality)
   const kyleScore = kyleScoreHeuristic({
     aboveSma200: idea.aboveSma200,
     aboveSma50: idea.aboveSma50,
@@ -246,6 +248,7 @@ function enrichKyleDemo(idea: DemoIdeaSeed): TradingIdea {
     ...idea,
     isA,
     isAPlus,
+    isAPlusPlus,
     extensionAdr50,
     sma10: Math.round(idea.price * 0.98 * 100) / 100,
     sma20: Math.round(idea.price * 0.96 * 100) / 100,

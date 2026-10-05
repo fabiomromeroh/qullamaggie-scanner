@@ -307,6 +307,16 @@ function QualityCell({ idea }: { idea: TradingIdea }) {
       </MetricTip>
     )
   }
+  if (idea.isAPlusPlus) {
+    return (
+      <MetricTip
+        id="aPlusPlus"
+        className="inline-flex rounded bg-terminal-a-plus-plus px-1.5 py-0.5 text-[10px] font-bold text-terminal-bg ring-1 ring-white/80"
+      >
+        A++
+      </MetricTip>
+    )
+  }
   if (idea.isAPlus) {
     return (
       <MetricTip
@@ -338,6 +348,7 @@ function rowHighlight(idea: TradingIdea) {
   const avoid = idea.earningsStatus === 'avoid'
   if (avoid) return 'bg-terminal-red-dim/70'
   if (!idea.aboveSma200) return 'bg-terminal-red-dim/60'
+  if (idea.isAPlusPlus) return 'bg-terminal-a-plus-plus/15'
   if (idea.isAPlus && idea.catalyst) return 'bg-terminal-a-plus-bg/80'
   if (idea.isAPlus) return 'bg-terminal-a-plus-bg/40'
   if (idea.isA) return 'bg-terminal-a-plus-bg/20'

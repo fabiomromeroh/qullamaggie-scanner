@@ -9,6 +9,7 @@ import {
   BASE_LENGTH_PROXY,
   EARNINGS_PROXIMITY,
   KYLE_SCORE_CONFIG,
+  LONG_BASE_MIN_SESSIONS,
   NEAR_ATH_MAX_PCT,
   NEAR_ATH_PCT,
   PRIOR_RUN_PROXY,
@@ -18,11 +19,13 @@ import {
   TIGHT_DAYS_PROXY,
   isAHeuristic,
   isAPlusHeuristic,
+  isAPlusPlusHeuristic,
   kyleScoreHeuristic,
 } from '../src/lib/metrics.ts'
 import { RANGE_BASE_CONFIG } from '../src/lib/rangeBase.ts'
 import {
   METRIC_DEFS,
+  aPlusPlusRuleText,
   aPlusRuleText,
   aRuleText,
   getMetricDef,
@@ -132,7 +135,7 @@ function usedMetricIds(dir: string): Set<string> {
     for (const body of balancedCallBodies(source, 'metricTipAttrs')) {
       for (const id of quotedIds(body)) ids.add(id)
     }
-    for (const tagName of ['MetricTip', 'MetricCell']) {
+    for (const tagName of ['MetricTip', 'MetricCell', 'CheckChip']) {
       for (const tag of openingTags(source, tagName)) {
         for (const expr of idExpressions(tag)) {
           for (const id of idsInAttribute(expr)) {
@@ -225,7 +228,15 @@ test('tooltip text is built from the live scanner constants', () => {
   includes('qualityA', `${A_CONFIG.adrMin}`)
   includes('qualityA', `${A_CONFIG.ext50MaxAdr}`)
   includes('qualityA', 'coiled')
+  includes('qualityA', 'Range Breakout')
+  includes('qualityA', 'tightConsolidation')
   assert.ok(metricTooltipText('aPlus').includes(aPlusRuleText()))
+  assert.ok(metricTooltipText('aPlusPlus').includes(aPlusPlusRuleText()))
+  includes('aPlusPlus', `${LONG_BASE_MIN_SESSIONS}`)
+  includes('aPlusPlus', `${KYLE_SCORE_CONFIG.aPlusFloor}`)
+  assert.equal(getMetricDef('aboveSma10').label, '> 10 SMA')
+  assert.equal(getMetricDef('aboveSma20').label, '> 20 SMA')
+  assert.equal(getMetricDef('aboveSma50').label, '> 50 SMA')
   includes('aPlus', `${NEAR_ATH_MAX_PCT}`)
   includes('aPlus', `${APLUS_CONFIG.baseQualityMin}`)
   includes('aPlus', `${APLUS_CONFIG.rangeBaseScoreMin}`)
@@ -427,7 +438,8 @@ test('stage, A+, and kyle score boundaries stay on the exported constants', () =
     priorRunPct: 40,
     extensionAdr50: 1,
     setupStage: 'coiled' as const,
-    tightConsolidation: false,
+    setupType: 'Range Breakout' as const,
+    tightConsolidation: true,
     rangeBaseOk: false,
     earningsStatus: 'clear' as const,
     hasCatalyst: true,
@@ -438,6 +450,10 @@ test('stage, A+, and kyle score boundaries stay on the exported constants', () =
   }
   assert.equal(isAHeuristic(sample), true)
   assert.equal(isAPlusHeuristic(sample), true)
+  assert.equal(isAPlusPlusHeuristic(sample), true)
+  assert.equal(isAPlusPlusHeuristic({ ...sample, baseLengthDays: LONG_BASE_MIN_SESSIONS - 1 }), false)
+  assert.equal(isAHeuristic({ ...sample, tightConsolidation: false }), false)
+  assert.equal(isAHeuristic({ ...sample, setupType: 'Continuation' }), false)
   assert.equal(kyleScoreHeuristic({ ...sample, isA: true, isAPlus: true }), 5)
   assert.equal(
     kyleScoreHeuristic({ ...sample, aboveSma200: false, isA: false, isAPlus: false }),

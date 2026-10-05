@@ -113,7 +113,7 @@ function scannerIdea(partial: Partial<TradingIdea>): TradingIdea {
     setupStage: 'coiled',
     rvol: 2,
     pctFrom52wHigh: -1,
-    setupType: 'Continuation',
+    setupType: 'Range Breakout',
     isAPlus: false,
     earningsStatus: 'clear',
     catalyst: null,
@@ -478,7 +478,7 @@ test('normal scanner defaults still hide below-200, watching, and below-50', () 
   assert.ok(amd && avgo && swks)
   assert.equal(passesFilters(asScannerIdea(amd), DEFAULT_FILTERS), false)
   assert.equal(passesFilters(asScannerIdea(avgo), DEFAULT_FILTERS), false)
-  assert.equal(passesFilters(asScannerIdea(swks), DEFAULT_FILTERS), true)
+  assert.equal(passesFilters(asScannerIdea(swks), DEFAULT_FILTERS), false)
   // groupView no longer exempts below-200 names from stage or SMA gates.
   assert.equal(passesFilters(asScannerIdea(amd), DEFAULT_FILTERS, { groupView: true }), false)
   assert.equal(passesFilters(asScannerIdea(avgo), DEFAULT_FILTERS, { groupView: true }), false)
@@ -487,7 +487,7 @@ test('normal scanner defaults still hide below-200, watching, and below-50', () 
   )
   assert.deepEqual(
     normalDefaults.map((idea) => idea.ticker).sort(),
-    ['ASX', 'NVDA', 'QRVO', 'SMTC', 'SWKS', 'TSM'],
+    ['QRVO'],
   )
 })
 
@@ -499,7 +499,6 @@ test('passing the scanner defaults into group view now filters, it does not no-o
     earningsStatuses: [...DEFAULT_FILTERS.earningsStatuses],
   }
   const selected = selectGroupViewRows(fixture.ideas, filters, fixture.finvizPerf)
-  assert.deepEqual(tickers(selected.rows), ['SWKS', 'QRVO', 'SMTC', 'NVDA', 'ASX', 'TSM'])
-  assert.equal(selected.hiddenCount, 14)
-  assert.equal(selected.rows[4]?.ticker, 'ASX')
+  assert.deepEqual(tickers(selected.rows), ['QRVO'])
+  assert.equal(selected.hiddenCount, 19)
 })

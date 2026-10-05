@@ -19,13 +19,14 @@ const STAGE_CHIP_ORDER: SetupStage[] = ['watching', 'coiled', 'triggering']
 const CHIP =
   'flex min-h-8 cursor-help items-center gap-1.5 rounded border px-2.5 py-1.5 text-[10px]'
 
-function chipClass(on: boolean, tone: 'green' | 'blue' | 'amber' | 'purple' | 'red' | 'gold' | 'goldLite' = 'green'): string {
+function chipClass(on: boolean, tone: 'green' | 'blue' | 'amber' | 'purple' | 'red' | 'gold' | 'goldBright' | 'goldLite' = 'green'): string {
   if (!on) return `${CHIP} border-terminal-border bg-terminal-bg text-terminal-dim`
   if (tone === 'blue') return `${CHIP} border-terminal-blue/40 bg-terminal-blue/20 text-terminal-blue`
   if (tone === 'amber') return `${CHIP} border-terminal-amber/40 bg-terminal-amber/20 text-terminal-amber`
   if (tone === 'purple') return `${CHIP} border-terminal-purple/40 bg-terminal-purple/20 text-terminal-purple`
   if (tone === 'red') return `${CHIP} border-terminal-red/40 bg-terminal-red-dim text-terminal-red`
   if (tone === 'gold') return `${CHIP} border-terminal-a-plus/40 bg-terminal-a-plus/15 text-terminal-a-plus`
+  if (tone === 'goldBright') return `${CHIP} border-terminal-a-plus-plus/70 bg-terminal-a-plus-plus/25 text-terminal-a-plus-plus`
   if (tone === 'goldLite') return `${CHIP} border-terminal-a-plus/30 bg-terminal-a-plus/10 text-terminal-a-plus/80`
   return `${CHIP} border-terminal-green/40 bg-terminal-green/15 text-terminal-green`
 }
@@ -56,7 +57,7 @@ function CheckChip({
   label: string
   checked: boolean
   onChange: (checked: boolean) => void
-  tone?: 'green' | 'gold' | 'goldLite'
+  tone?: 'green' | 'gold' | 'goldBright' | 'goldLite'
 }) {
   return (
     <label {...metricTipAttrs(id)} className={chipClass(checked, tone)}>
@@ -307,10 +308,10 @@ export function FiltersBar({
         </label>
       </FilterGroup>
 
-      <FilterGroup label="Above">
-        <CheckChip id="aboveSma10" label="Above 10 SMA" checked={Boolean(filters.requireSma10)} onChange={(checked) => onChange({ ...filters, requireSma10: checked })} />
-        <CheckChip id="aboveSma20" label="Above 20 SMA" checked={Boolean(filters.requireSma20)} onChange={(checked) => onChange({ ...filters, requireSma20: checked })} />
-        <CheckChip id="aboveSma50" label="Above 50 SMA" checked={Boolean(filters.requireSma50)} onChange={(checked) => onChange({ ...filters, requireSma50: checked })} />
+      <FilterGroup label="SMA">
+        <CheckChip id="aboveSma10" label="> 10 SMA" checked={Boolean(filters.requireSma10)} onChange={(checked) => onChange({ ...filters, requireSma10: checked })} />
+        <CheckChip id="aboveSma20" label="> 20 SMA" checked={Boolean(filters.requireSma20)} onChange={(checked) => onChange({ ...filters, requireSma20: checked })} />
+        <CheckChip id="aboveSma50" label="> 50 SMA" checked={Boolean(filters.requireSma50)} onChange={(checked) => onChange({ ...filters, requireSma50: checked })} />
         <CheckChip
           id="aboveSma200"
           label={ABOVE_200_DMA_LABEL}
@@ -399,6 +400,13 @@ export function FiltersBar({
           checked={filters.requireAPlus}
           onChange={(checked) => onChange({ ...filters, requireAPlus: checked })}
         />
+        <CheckChip
+          id="aPlusPlus"
+          label="A++"
+          tone="goldBright"
+          checked={Boolean(filters.requireAPlusPlus)}
+          onChange={(checked) => onChange({ ...filters, requireAPlusPlus: checked })}
+        />
         <label {...metricTipAttrs('hasCatalyst')} className={chipClass(filters.hasCatalyst, 'green')}>
           <input
             type="checkbox"
@@ -483,7 +491,7 @@ export function FiltersBar({
           default. {ABOVE_200_DMA_TOOLTIP} Default stages:{' '}
           <span className="text-terminal-purple">Coiled</span> +{' '}
           <span className="text-terminal-amber">Triggering</span> (enable Watching to see
-          base-builders). Group view starts with every stage. Above 10/20/50 SMA, Surfer, and
+          base-builders). Group view starts with every stage. &gt; 10/20/50 SMA, Surfer, and
           Tight consolidation start off in group view.
         </p>
       ) : null}

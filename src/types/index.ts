@@ -276,6 +276,12 @@ export interface TradingIdea {
    * Pending or unchecked catalyst status is not a catalyst. See `isAPlusHeuristic`.
    */
   isAPlus: boolean
+  /**
+   * A+ whose base is at least {@link LONG_BASE_MIN_SESSIONS} sessions
+   * (max of baseLengthDays and range-base lengthSessions). See `isAPlusPlusHeuristic`.
+   * Implies isAPlus and isA. Kyle score uses the A+ floor.
+   */
+  isAPlusPlus: boolean
   notes: string
   whyQualifies: string
   suggestedEntry: number | null
@@ -521,16 +527,22 @@ export interface IdeaFilters {
   setupTypes: SetupType[]
   /**
    * Keep rows with `isA`. Off by default.
-   * Combined with `requireAPlus` as a union: a row stays if it matches any
-   * selected tier. Both off means no quality filter. A+ implies A, so both
-   * chips together match every A (including A+).
+   * Combined with `requireAPlus` and `requireAPlusPlus` as a union: a row
+   * stays if it matches any selected tier. All off means no quality filter.
+   * A+ implies A, and A++ implies A+, so the wider chip already includes
+   * the stricter tier.
    */
   requireA: boolean
   /**
-   * Keep rows with `isAPlus`. Off by default.
+   * Keep rows with `isAPlus` (includes A++). Off by default.
    * A stored `aPlusOnly: true` migrates here.
    */
   requireAPlus: boolean
+  /**
+   * Keep rows with `isAPlusPlus` only. Off by default.
+   * The A+ chip still keeps these rows because isAPlus stays true.
+   */
+  requireAPlusPlus: boolean
   hasCatalyst: boolean
   /**
    * Above 200 DMA: require price above the 200-day SMA (`aboveSma200`).
@@ -580,9 +592,11 @@ export const DEFAULT_FILTERS: IdeaFilters = {
    * Group view sets this back to null (Any) on purpose.
    */
   maxExtensionAdr50: 5,
-  setupTypes: [...ALL_SETUP_TYPES],
+  /** Episodic Pivot and Continuation start off. Group view keeps every label. */
+  setupTypes: ['Range Breakout'],
   requireA: false,
   requireAPlus: false,
+  requireAPlusPlus: false,
   hasCatalyst: false,
   requireAbove200: true,
   requireSma50: true,
@@ -614,6 +628,7 @@ export const GROUP_VIEW_DEFAULT_FILTERS: IdeaFilters = {
   maxExtensionAdr50: null,
   requireA: false,
   requireAPlus: false,
+  requireAPlusPlus: false,
   requireAbove200: true,
   requireSma50: false,
   requireSma10: false,

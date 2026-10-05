@@ -7,8 +7,10 @@ import {
   NEAR_ATH_MAX_PCT,
   baseQualityDays,
   baseQualityScore,
+  LONG_BASE_MIN_SESSIONS,
   isAHeuristic,
   isAPlusHeuristic,
+  isAPlusPlusHeuristic,
   kyleScoreHeuristic,
   type SetupQualityInput,
 } from '../src/lib/metrics.ts'
@@ -29,7 +31,8 @@ function quality(partial: Partial<SetupQualityInput> = {}): SetupQualityInput {
     adrPct: 3,
     extensionAdr50: 1.2,
     setupStage: 'coiled',
-    tightConsolidation: false,
+    setupType: 'Range Breakout',
+    tightConsolidation: true,
     rangeBaseOk: false,
     earningsStatus: 'clear',
     pctFrom52wHigh: -3,
@@ -71,9 +74,19 @@ test('isA and isAPlus matrix', () => {
     isAHeuristic(quality({ setupStage: 'watching', tightConsolidation: false, rangeBaseOk: false })),
     false,
   )
-  assert.equal(isAHeuristic(quality({ setupStage: 'watching', rangeBaseOk: true })), true)
+  assert.equal(
+    isAHeuristic(quality({ setupStage: 'watching', rangeBaseOk: true, tightConsolidation: false })),
+    false,
+  )
   assert.equal(isAHeuristic(quality({ setupStage: 'watching', tightConsolidation: true })), true)
-  assert.equal(isAHeuristic(quality({ setupStage: 'triggering', hasCatalyst: false })), true)
+  assert.equal(
+    isAHeuristic(quality({ setupStage: 'triggering', hasCatalyst: false, tightConsolidation: false })),
+    false,
+  )
+  assert.equal(isAHeuristic(quality({ setupStage: 'coiled', tightConsolidation: false })), false)
+  assert.equal(isAHeuristic(quality({ setupType: 'Continuation', tightConsolidation: true })), false)
+  assert.equal(isAHeuristic(quality({ setupType: 'Episodic Pivot', tightConsolidation: true })), false)
+  assert.equal(isAHeuristic(quality({ setupType: 'Range Breakout', tightConsolidation: true })), true)
 
   const plus = quality({
     hasCatalyst: true,
@@ -122,7 +135,32 @@ test('isA and isAPlus matrix', () => {
     rangeBaseScore: APLUS_CONFIG.rangeBaseScoreMin,
   })
   assert.equal(isAPlusHeuristic(scorePath), true)
+  assert.equal(isAPlusPlusHeuristic(scorePath), false)
   assert.equal(isAPlusHeuristic({ ...scorePath, rangeBaseScore: APLUS_CONFIG.rangeBaseScoreMin - 0.01 }), false)
+
+  const days62 = quality({
+    hasCatalyst: true,
+    catalystStatus: 'checked',
+    pctFrom52wHigh: -2,
+    baseLengthDays: LONG_BASE_MIN_SESSIONS - 1,
+    rangeBaseLengthSessions: 0,
+  })
+  const days63 = quality({
+    hasCatalyst: true,
+    catalystStatus: 'checked',
+    pctFrom52wHigh: -2,
+    baseLengthDays: 21,
+    rangeBaseLengthSessions: LONG_BASE_MIN_SESSIONS,
+  })
+  assert.equal(LONG_BASE_MIN_SESSIONS, 63)
+  assert.equal(isAPlusHeuristic(days62), true)
+  assert.equal(isAPlusPlusHeuristic(days62), false)
+  assert.equal(isAPlusPlusHeuristic(days63), true)
+  assert.equal(
+    isAPlusPlusHeuristic(quality({ ...days63, baseLengthDays: LONG_BASE_MIN_SESSIONS, rangeBaseLengthSessions: 0 })),
+    true,
+  )
+  assert.equal(isAPlusPlusHeuristic(plus), true)
 })
 
 test('kyleScore A bump stays under the A+ floor when the raw score is under it', () => {
@@ -140,6 +178,7 @@ test('kyleScore A bump stays under the A+ floor when the raw score is under it',
   const plain = kyleScoreHeuristic(bare)
   const bumped = kyleScoreHeuristic({ ...bare, isA: true })
   const floored = kyleScoreHeuristic({ ...bare, isA: true, isAPlus: true })
+  // A++ is isAPlus, so it uses this same floor. kyleScoreHeuristic has no extra bump.
   const expectedBump = Math.round((plain + KYLE_SCORE_CONFIG.aBump) * 100) / 100
   const underFloor = Math.round((KYLE_SCORE_CONFIG.aPlusFloor - 0.01) * 100) / 100
   assert.equal(bumped, Math.min(expectedBump, underFloor))
@@ -207,7 +246,7 @@ test('default Ext50 is 5 on the scan and Any in group view', () => {
   assert.equal(GROUP_VIEW_DEFAULT_FILTERS.maxExtensionAdr50, null)
   assert.equal(DEFAULT_FILTERS.requireA, false)
   assert.equal(DEFAULT_FILTERS.requireAPlus, false)
-  const row = { extensionAdr50: 5.01, aboveSma50: true, aboveSma200: true, setupStage: 'coiled', setupType: 'Continuation', isAPlus: false, isA: true, earningsStatus: 'clear', catalyst: null, rvol: 1, pctFrom52wHigh: -1, aboveSma10: true, aboveSma20: true, ticker: 'AAA', name: 'A', groupName: 'G' } as TradingIdea
+  const row = { extensionAdr50: 5.01, aboveSma50: true, aboveSma200: true, setupStage: 'coiled', setupType: 'Range Breakout', isAPlus: false, isA: true, earningsStatus: 'clear', catalyst: null, rvol: 1, pctFrom52wHigh: -1, aboveSma10: true, aboveSma20: true, ticker: 'AAA', name: 'A', groupName: 'G' } as TradingIdea
   assert.equal(passesFilters(row, DEFAULT_FILTERS), false)
   assert.equal(passesFilters({ ...row, extensionAdr50: 5 }, DEFAULT_FILTERS), true)
   assert.equal(passesFilters({ ...row, extensionAdr50: null }, DEFAULT_FILTERS), true)
