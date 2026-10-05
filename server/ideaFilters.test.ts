@@ -772,7 +772,7 @@ test('UI copy and README use the single Above 200 DMA label', () => {
   assert.match(bar, /aria-label="Min DolVol"/)
   assert.match(bar, /filterMinDollarVol/)
   assert.match(readme, /Min DolVol/)
-  assert.match(readme, /LEADING_SCAN_SUPPLEMENT=0/)
+  assert.match(readme, /LEADING_GROUPS_PERIOD/)
   assert.match(readme, /leading-groups-top12/)
   assert.match(bar, /Near highs ≤/)
   assert.match(bar, /aria-label="Near highs ≤"/)

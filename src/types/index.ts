@@ -96,7 +96,7 @@ export type GroupPeriod = '1d' | '1w' | '1m' | '3m' | '6m'
 export interface LeadingGroupRef {
   slug: string
   name: string
-  /** 1-based rank on the selected period (3-month by default). */
+  /** 1-based rank on the selected period (default 1-month). */
   rank: number
   /** Unique snapshot members of this group. */
   memberCount: number
@@ -112,10 +112,7 @@ export interface LeadingGroupsMeta {
   groups: LeadingGroupRef[]
   /** Symbols scanned after the Stage-1 cap. */
   symbolCount: number
-  /** Supplement tickers added beyond top-group members, after the cap. */
-  supplementCount: number
   snapshotGeneratedAt: string | null
-  supplementEnabled: boolean
 }
 
 /**

@@ -6,6 +6,9 @@ import type { GroupPeriod, IndustryGroup } from '../types/index.ts'
 
 export const GROUP_PERIOD_IDS: readonly GroupPeriod[] = ['1d', '1w', '1m', '3m', '6m']
 
+/** App + scan default when `qm-groups-period` is unset and when refresh omits `period`. */
+export const DEFAULT_GROUP_PERIOD: GroupPeriod = '1m'
+
 /** Membership file older than this is flagged stale in the groups UI. */
 export const MEMBERSHIP_STALE_DAYS = 14
 export const MEMBERSHIP_STALE_MS = MEMBERSHIP_STALE_DAYS * 24 * 60 * 60 * 1000
@@ -81,6 +84,13 @@ export const GROUP_PERIODS: Record<GroupPeriod, GroupPeriodMeta> = {
 
 export function isGroupPeriod(value: string): value is GroupPeriod {
   return (GROUP_PERIOD_IDS as readonly string[]).includes(value)
+}
+
+/** Trim + lowercase; null when missing or not a known period. */
+export function parseGroupPeriod(raw: string | null | undefined): GroupPeriod | null {
+  if (raw == null) return null
+  const period = raw.trim().toLowerCase()
+  return isGroupPeriod(period) ? period : null
 }
 
 /** Finviz industry slugs are lowercase alphanumeric (`f=ind_<slug>`). */

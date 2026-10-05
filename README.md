@@ -62,23 +62,22 @@ Three-stage **server-side** scan (Stage 1 → Stage 1.5 SMA → Stage 2). The br
 
 ### Stage 1 — top Finviz groups (default universe)
 
-The default scan universe is the members of the **top 12** Finviz industry groups by 3-month performance, plus a liquid supplement. `server/leadingGroupsUniverse.ts` loads the same groups page as `GET /api/groups`, ranks with `rankGroups` (period **3m**), takes `LEADING_GROUPS_COUNT` (12), and unions tickers from `server/data/finviz-group-members.json`. Each **Refresh** rebuilds that list. `stage1Source` is `leading-groups-top12`.
+The default scan universe is **only** the members of the **top 12** Finviz industry groups for the selected period (default **1M**). `server/leadingGroupsUniverse.ts` loads the same groups page as `GET /api/groups`, ranks with `rankGroups` (`LEADING_GROUPS_PERIOD` **1m** unless the refresh request passes another period), takes `LEADING_GROUPS_COUNT` (12), and takes tickers from `server/data/finviz-group-members.json` for those 12 groups only. Changing the groups period selector (1D/1W/1M/3M/6M) re-ranks live Finviz groups, rebuilds that universe from the new top 12 (snapshot membership), and rescans (`POST /api/market/scan/refresh?period=1m`). **Refresh** does the same with the current selected period. `stage1Source` is `leading-groups-top12`.
 
-`GET /api/market/dashboard` exposes `leadingGroupsMeta`: `groups` (slug, name, rank, snapshot member count, 3-month performance), `symbolCount` (symbols scanned after `SCAN_STAGE1_CAP`), `supplementCount`, `snapshotGeneratedAt`, `period`, and `supplementEnabled`. The stats line shows `topN +S` when that object is present.
+`GET /api/market/dashboard` exposes `leadingGroupsMeta`: `groups` (slug, name, rank, snapshot member count, 3-month performance), `symbolCount` (symbols scanned after `SCAN_STAGE1_CAP`), `snapshotGeneratedAt`, and `period`. The stats line shows `topN · 1M` (the scan period) when that object is present.
 
-`SCAN_STAGE1_CAP` (default 800) still applies. Members of the top 12 stay ahead of supplement-only names, so the cap does not drop a leading-group member to make room for a supplement ticker.
+`SCAN_STAGE1_CAP` (default 800) still applies.
 
-Supplement tickers are added only when they appear somewhere in the snapshot: NVDA, AMD, AVGO, MU, SMCI, AAPL, MSFT, AMZN, META, GOOGL, GOOG, TSLA, PLTR, ARM, TSM, NFLX, CRM, ORCL, COST, JPM, V, MA. `LEADING_SCAN_SUPPLEMENT=0` turns that list off (`supplementCount` stays 0).
+If the groups payload is not Finviz, the snapshot is missing or invalid, or the universe has fewer than 20 symbols, Stage 1 falls back to the Yahoo screener below. `stage1Source` is then that Yahoo path (`yahoo-screener` or `yahoo-predefined-fallback`), and `leadingGroupsMeta` is null. A Yahoo list that is also too thin still uses the emergency `SCAN_UNIVERSE` (`emergency-fallback-universe`).
 
-If the groups payload is not Finviz, the snapshot is missing or invalid, or the union has fewer than 20 symbols, Stage 1 falls back to the Yahoo screener below. `stage1Source` is then that Yahoo path (`yahoo-screener` or `yahoo-predefined-fallback`), and `leadingGroupsMeta` is null. A Yahoo list that is also too thin still uses the emergency `SCAN_UNIVERSE` (`emergency-fallback-universe`).
-
-Idea `groupId` / `groupName` come from the membership snapshot. A ticker in more than one group uses the current top-12 group with the best 3-month rank. The detail header shows that label as **Finviz · {group}**. Finnhub industry on the company block is secondary (**Finnhub · {industry}**). Yahoo sector/industry and `WATCHLIST_GROUPS` are used only when the snapshot has no row for that ticker.
+Idea `groupId` / `groupName` come from the membership snapshot. A ticker in more than one group uses the current top-12 group with the best rank on the selected period. The detail header shows that label as **Finviz · {group}**. Finnhub industry on the company block is secondary (**Finnhub · {industry}**). Yahoo sector/industry and `WATCHLIST_GROUPS` are used only when the snapshot has no row for that ticker.
 
 #### Reliability (measured 2026-10-05, live)
 
-- Snapshot `server/data/finviz-group-members.json`: `generatedAt` **2026-09-30**, **144** groups, **1859** unique tickers, filters price &gt; $5 and average volume &gt; 750K. The file contains mega-caps.
-- Live top 12 by 3-month performance that day were mostly oil, gold, shipping, and software — about **272** unique members. Of **145** scan ideas, about **55** were in the top 12 and about **90** were outside it (NVDA, AMD, SMCI, MU, AAPL, GOOGL, and similar). A pure top-12 universe drops mega-cap tech when those industries are not leading. The supplement puts those liquid names back when they are in the snapshot.
-- Render: the Finviz screener returns **403**. The groups page answers. Membership refresh is manual and about weekly (`npm run build:groups`). Render cannot rebuild the snapshot.
+- Snapshot `server/data/finviz-group-members.json`: `generatedAt` **2026-09-30**, **144** groups, **1859** unique tickers, filters price &gt; $5 and average volume &gt; 750K.
+- Universe is **only** members of the current top 12. Mega-cap names (NVDA, AMD, and similar) appear only when their Finviz industry is in that period's top 12. Ranking is the live Finviz groups page; membership is the snapshot.
+- Default period is **1M**. Changing 1D/1W/1M/3M/6M rebuilds the universe for that window and rescans. The groups panel uses the same default when `qm-groups-period` is unset.
+- Render: the Finviz screener returns **403**. The groups page answers. The intended refresh is a weekly GitHub Actions job on Mondays at **06:00 UTC**: run `npm run build:groups`, commit `server/data/finviz-group-members.json` when Finviz is reachable, and **exit 0** on HTTP 403. That workflow file cannot ship until a token with the `workflow` scope pushes it. Until then, run `npm run build:groups` weekly from a host that can reach Finviz and commit `server/data/finviz-group-members.json`. Render cannot rebuild the snapshot.
 
 ### Stage 1 fallback — Yahoo EquityQuery screener
 
@@ -139,7 +138,7 @@ The ideas table has an **Ext50** column, the detail panel a chip **Ext. 50SMA: +
 
 Results are written to `data/scan-cache.json` (gitignored). Default staleness **45 minutes** (`SCAN_CACHE_STALE_MS`).
 
-Payloads are stamped with `SCAN_CACHE_SCHEMA` (`server/scanCache.ts`). Schema 6 discards scans from before the Range Breakout gate change. Each idea now stores `rangeBreakoutDetail` (ADR%, above the 50 SMA, prior leg, 5-session range/ADR, higher lows, which higher-low rule fired, and whether all five gates passed). Schema 5 had discarded scans from before `extensionAdr50` (ADR multiples from the 50-day SMA). Schema 4 had discarded scans from before the ADR-relative surfer detail and the tight-consolidation 50/200 SMA fields. Catalyst fields are not stored in this file; they are merged onto the HTTP response from a separate cache. Schema 3 had added the first strict surfer / tight fields. Schema 2 had discarded scans from before the 1D-change fix: Yahoo `chartPreviousClose` on a 1-year chart is the close before that range, not the prior session, so those files stored a wrong `dayPct`. The next start throws an older file out and runs a fresh scan.
+Payloads are stamped with `SCAN_CACHE_SCHEMA` (`server/scanCache.ts`). Schema 7 discards scans from before the leading-groups universe dropped the liquid list and defaulted to 1-month ranking. Schema 6 had discarded scans from before the Range Breakout gate change. Each idea now stores `rangeBreakoutDetail` (ADR%, above the 50 SMA, prior leg, 5-session range/ADR, higher lows, which higher-low rule fired, and whether all five gates passed). Schema 5 had discarded scans from before `extensionAdr50` (ADR multiples from the 50-day SMA). Schema 4 had discarded scans from before the ADR-relative surfer detail and the tight-consolidation 50/200 SMA fields. Catalyst fields are not stored in this file; they are merged onto the HTTP response from a separate cache. Schema 3 had added the first strict surfer / tight fields. Schema 2 had discarded scans from before the 1D-change fix: Yahoo `chartPreviousClose` on a 1-year chart is the close before that range, not the prior session, so those files stored a wrong `dayPct`. The next start throws an older file out and runs a fresh scan.
 
 ### API
 
@@ -172,11 +171,12 @@ The panel (**Leading groups · Finviz live**) reads `GET /api/groups`. The serve
 
 `fetchedAt` is when Finviz was fetched, or when the fallback ranking was computed. The UI polls about every 5 minutes and keeps the last good payload if a request fails. It shows **Finviz**, an amber **Fallback: internal ranking**, and/or an amber **stale** badge, plus local `updated HH:MM`.
 
-**Period.** A segmented control in the header (`1D | 1W | 1M | 3M | 6M`, default **3M**) is stored in `localStorage` key `qm-groups-period`. The selected period:
+**Period.** A segmented control in the header (`1D | 1W | 1M | 3M | 6M`, default **1M** when `qm-groups-period` is unset) is stored in `localStorage` key `qm-groups-period`. The selected period:
 
 - re-ranks the table client-side (that period's performance descending; ties break toward the next-longer period, then the other Finviz performance fields; missing numbers sort last)
 - highlights that period's column when the column exists (1W has no column)
 - chooses which performance window ranks leaders and the group drill-down
+- rebuilds the Stage-1 scan universe to members of the new top 12 (snapshot membership) and rescans, then the default filter bar still applies (including min DolVol $30M)
 - resets the column sort to that period, descending
 
 | Period | Finviz `o=` |
@@ -199,7 +199,13 @@ The panel (**Leading groups · Finviz live**) reads `GET /api/groups`. The serve
 
 ### Membership snapshot
 
-Render's IPs receive **HTTP 403** from `finviz.com/screener.ashx`. The groups page still answers from Render and stays the source of industry performance (1D / 1W / 1M / 3M / 6M columns). Membership is a file built where the screener answers, then read at request time. The build does not use a proxy, a cookie, or a browser, and it does not require Finviz Elite. There is no GitHub Action for this refresh: the available token cannot write workflows, and Finviz was not verified from GitHub runners. Refresh it by hand.
+Render's IPs receive **HTTP 403** from `finviz.com/screener.ashx`. The groups page still answers from Render and stays the source of industry performance (1D / 1W / 1M / 3M / 6M columns). Membership is a file built where the screener answers, then read at request time. The build does not use a proxy, a cookie, or a browser, and it does not require Finviz Elite.
+
+**Intended weekly Actions job.** A workflow at `.github/workflows/refresh-finviz-groups.yml` should run every Monday at **06:00 UTC** (GitHub may start a schedule a few minutes late). It checks out the default branch, runs `npm run build:groups`, and when Finviz is reachable and `server/data/finviz-group-members.json` changed, commits **only** that JSON and pushes it to the default branch (fast-forward, no `--force`). An unchanged file skips the commit. On HTTP **403** the job prints a notice, **exits 0**, and leaves the snapshot unchanged. The same exit 0 applies when the runner is otherwise blocked (429, 503, a Cloudflare challenge, or it cannot connect). A green run can still mean the file was not refreshed.
+
+**The workflow file cannot ship yet.** A token without the `workflow` scope cannot add or update `.github/workflows/`. The token for this branch is in that state, so the YAML is not in the tree. The Monday schedule does not run until a token with the `workflow` scope pushes that file onto the default branch.
+
+**Fallback.** Until that file lands, about weekly, on a home machine or any other host where `finviz.com/screener.ashx` answers:
 
 ```bash
 npm run build:groups
@@ -207,9 +213,11 @@ npm run build:groups
 
 That runs `scripts/buildGroupMembers.ts` (esbuild, then node). It reads industry slugs and names from the live groups page, then for each slug walks `screener.ashx?v=141` with `f=ind_<slug>,sh_price_o5,sh_avgvol_o750`, pages `r=1`, `r=21`, `r=41`, … until a page has fewer than 20 rows, and stops after 15 pages. The same polite queue as the groups fetch is used (concurrency 2, ≥400 ms gap, desktop Chrome User-Agent, 10 s timeout). A failed page is retried at most twice. A 403, 429, 503, or challenge page aborts the run. The destination `server/data/finviz-group-members.json` is replaced only after every group succeeds (temp file, then rename). An empty Finviz screen (`result_count` 0 and no table) is stored as zero tickers.
 
-The file shape is `{ version: 1, source: "finviz", sourceNote, generatedAt, filters: { minPrice: 5, minAvgVolume: 750000 }, groups: { [slug]: { name, tickers, companies?, count } } }`. Commit the file with the app. Render cannot rebuild it.
+Commit `server/data/finviz-group-members.json` and push it to the default branch. Render's build command does not run this script.
 
-**When to refresh.** About weekly. Industry membership drifts slowly. The header and the group banner show `Membership: snapshot YYYY-MM-DD`. Older than **14 days** adds an amber **stale** tag. Leaders still compute from a stale file; the tag is the reminder. A slug that Finviz adds after the snapshot returns `not in membership snapshot; run npm run build:groups` on that entry (leaders) or as the stocks error. A missing or invalid file returns `Membership snapshot missing` / `Membership snapshot invalid` the same way. Nothing is filled in with a guess.
+The file shape is `{ version: 1, source: "finviz", sourceNote, generatedAt, filters: { minPrice: 5, minAvgVolume: 750000 }, groups: { [slug]: { name, tickers, companies?, count } } }`. Commit the JSON with the app. After a token with the `workflow` scope has pushed the workflow file, that job can commit the same JSON when its runner can reach Finviz. Render cannot rebuild it.
+
+**When to refresh.** About weekly, with the fallback above until the Actions file is on the default branch. Industry membership drifts slowly. The header and the group banner show `Membership: snapshot YYYY-MM-DD`. Older than **14 days** adds an amber **stale** tag. Leaders still compute from a stale file; the tag is the reminder. A slug that Finviz adds after the snapshot returns `not in membership snapshot; run npm run build:groups` on that entry (leaders) or as the stocks error. A missing or invalid file returns `Membership snapshot missing` / `Membership snapshot invalid` the same way. Nothing is filled in with a guess.
 
 **Period math.** For each snapshot member the server loads one daily-bar snapshot (`fetchSymbolSnapshot`: Yahoo chart, then Finnhub, then Stooq). That one fetch fills every period, so changing 1D / 1W / 1M / 3M / 6M does not fetch again. The quote cache lives about **15 minutes** (a failed symbol about **60 seconds**) and in-flight loads share one call.
 
@@ -279,7 +287,7 @@ On Render's free tier a cold instance has an empty quote cache and the dyno may 
 - The screener parser (snapshot build, and the optional live path) maps columns by header text. A missing expected header fails the parse. The build walks every page until a short page or 15 pages. Request-time leaders do not call the screener unless `FINVIZ_SCREENER_LIVE=1`.
 - "In the scan" is membership in the cached full scan, which is also above the 50-day SMA. It is not a fresh 200-SMA check of every snapshot ticker outside that cache.
 - Group drill-down prices every snapshot member of that one group, then scores the top 20. Names already in the scan cache skip the scorer. Provider keys are optional; Yahoo is tried first. A cold group can take a while.
-- The membership file goes stale as industries change. Refresh with `npm run build:groups` about weekly. See **Membership snapshot**.
+- The membership file goes stale as industries change. The intended Monday **06:00 UTC** Actions job (`npm run build:groups`, commit the JSON when Finviz is reachable, exit 0 on 403) is not in the repo: a token with the `workflow` scope has to push `.github/workflows/` first. Until then, run `npm run build:groups` weekly on a host that can reach Finviz and commit `server/data/finviz-group-members.json`. See **Membership snapshot**.
 - The 1W period ranks and fetches leaders, but it has no table column.
 
 ## Ticker detail panel
@@ -415,7 +423,7 @@ Use only for local UI work. Default when unset: **`live`**.
 | `src/lib/setupStage.ts` | watching / coiled / triggering |
 | `src/lib/userWatchlistStore.ts` | Manual watchlist localStorage (`qm.userWatchlist.v2`) |
 | `server/yahooScreener.ts` | Stage-1 Yahoo EquityQuery client (crumb + pagination). Fallback when leading groups cannot be built |
-| `server/leadingGroupsUniverse.ts` | Default Stage-1 universe: top-12 Finviz groups plus the liquid supplement |
+| `server/leadingGroupsUniverse.ts` | Default Stage-1 universe: members of the top-12 Finviz groups for the selected period |
 | `server/scanEngine.ts` | Stage-1→1.5→2 orchestration + cache writer |
 | `server/scanCache.ts` | `data/scan-cache.json` load/save + scan lock |
 | `server/marketProxy.ts` | Cascade + TTL cache + Vite middleware (`/api/market/*` including bars/news/profile/quote) |
@@ -437,7 +445,7 @@ Use only for local UI work. Default when unset: **`live`**.
 | `server/groupLeaders.ts` | `GET /api/groups/leaders` from the snapshot |
 | `server/groupStocks.ts` | Group drill-down: snapshot top 20 + `scoreTickers`, 12-minute cache |
 | `server/groupWarmup.ts` | Background warm-up of the top 25 groups |
-| `server/data/finviz-group-members.json` | Committed membership snapshot (`npm run build:groups`) |
+| `server/data/finviz-group-members.json` | Committed membership snapshot. Refresh with weekly `npm run build:groups` until a `workflow`-scoped token can push the Monday 06:00 UTC Actions job |
 | `scripts/buildGroupMembers.ts` | Builds that file from a host that can reach Finviz |
 | `server/fixtures/finviz-screener-performance-sample.html` | Trimmed real screener table used by parser tests |
 | `src/lib/groupPeriod.ts` | Period → Finviz order, slug checks, leader-count definition |
@@ -449,7 +457,7 @@ Use only for local UI work. Default when unset: **`live`**.
 
 ## How to extend / tune the scan
 
-1. **Liquidity / price** — Stage 1 is the top 12 Finviz groups (3-month rank) union `LEADING_SCAN_SUPPLEMENT_TICKERS` when those tickers are in the membership snapshot. `LEADING_SCAN_SUPPLEMENT=0` disables the supplement. `SCAN_STAGE1_CAP` (default 800) caps the list and keeps top-group members ahead of supplement-only names. The Yahoo fallback still uses env `SCAN_MIN_AVG_VOL` (default 750000) and `SCAN_MIN_PRICE` (default 5). The client Min DolVol filter defaults to $30M on a normal scan and $0 in group view. It does not change the server universe.
+1. **Liquidity / price** — Stage 1 is the members of the top 12 Finviz groups for the selected period (default **1M**, `LEADING_GROUPS_PERIOD`). `SCAN_STAGE1_CAP` (default 800) caps the list. The Yahoo fallback still uses env `SCAN_MIN_AVG_VOL` (default 750000) and `SCAN_MIN_PRICE` (default 5). The client Min DolVol filter defaults to $30M on a normal scan and $0 in group view. It does not change the server universe.
 2. **Stage 1.5 SMA** — `SMA_QUOTE_BATCH` (default 20), `SMA_QUOTE_GAP_MS` (default 120), `SMA_QUOTE_CACHE_TTL_MS` (default 5m). Always requires above 200 **and** above 50.
 3. **Staleness** — `SCAN_CACHE_STALE_MS` (default 45m).
 4. **Emergency list** — edit `SCAN_UNIVERSE` in `src/data/watchlist.ts` only as a last-resort fallback.

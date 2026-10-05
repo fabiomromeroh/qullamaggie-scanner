@@ -1,47 +1,17 @@
 /**
- * Default Stage-1 universe: members of the top Finviz industry groups,
- * plus a liquid supplement that is already in the membership snapshot.
- * The groups page is ranked with the same `rankGroups` helper as the panel.
- * Membership comes from server/data/finviz-group-members.json (manual refresh).
+ * Default Stage-1 universe: members of the top Finviz industry groups
+ * for the selected period. The groups page is ranked with the same
+ * `rankGroups` helper as the panel. Membership comes from
+ * server/data/finviz-group-members.json (manual refresh).
  */
 import type { GroupPeriod, IndustryGroup, LeadingGroupsMeta } from '../src/types/index.ts'
-import { rankGroups } from '../src/lib/groupPeriod.ts'
+import { DEFAULT_GROUP_PERIOD, rankGroups } from '../src/lib/groupPeriod.ts'
 import { loadMembershipSnapshot, type MembershipGroup, type MembershipSnapshot } from './groupMembers.ts'
 import type { ScreenerHit } from './yahooScreener.ts'
 
 export const LEADING_GROUPS_COUNT = 12
-export const LEADING_GROUPS_PERIOD: GroupPeriod = '3m'
+export const LEADING_GROUPS_PERIOD: GroupPeriod = DEFAULT_GROUP_PERIOD
 export const LEADING_STAGE1_SOURCE = 'leading-groups-top12'
-
-/**
- * Mega-caps and other liquid names the pure top-12 list drops when their
- * industries are not leading. Added only when the snapshot contains them.
- * `LEADING_SCAN_SUPPLEMENT=0` disables this list.
- */
-export const LEADING_SCAN_SUPPLEMENT_TICKERS = [
-  'NVDA',
-  'AMD',
-  'AVGO',
-  'MU',
-  'SMCI',
-  'AAPL',
-  'MSFT',
-  'AMZN',
-  'META',
-  'GOOGL',
-  'GOOG',
-  'TSLA',
-  'PLTR',
-  'ARM',
-  'TSM',
-  'NFLX',
-  'CRM',
-  'ORCL',
-  'COST',
-  'JPM',
-  'V',
-  'MA',
-] as const
 
 export interface IdeaGroupLabel {
   groupId: string
@@ -53,7 +23,7 @@ export interface LeadingUniverseOk {
   ok: true
   hits: ScreenerHit[]
   meta: LeadingGroupsMeta
-  /** Top-group members, before supplement-only names. Used so the cap keeps them. */
+  /** Unique members of the selected top groups, before the Stage-1 cap. */
   leadingSymbols: Set<string>
   lookup: (symbol: string) => IdeaGroupLabel | null
 }
@@ -68,9 +38,7 @@ export type LeadingUniverseResult = LeadingUniverseOk | LeadingUniverseErr
 export interface UniverseOptions {
   count?: number
   period?: GroupPeriod
-  supplementEnabled?: boolean
-  supplementTickers?: readonly string[]
-  /** When set, drop supplement names before top-group members. */
+  /** When set, keep only the first `cap` symbols (group rank order). */
   cap?: number
 }
 
@@ -79,11 +47,6 @@ interface MembershipHit {
   name: string
   rank: number | null
   company?: string
-}
-
-/** `LEADING_SCAN_SUPPLEMENT=0` disables the supplement. Unset keeps it on. */
-export function supplementScanEnabled(raw = process.env.LEADING_SCAN_SUPPLEMENT): boolean {
-  return (raw ?? '').trim() !== '0'
 }
 
 function groupSlug(group: IndustryGroup): string {
@@ -152,27 +115,12 @@ function toHit(symbol: string, company: string | undefined): ScreenerHit {
     : { symbol, quoteType: 'EQUITY' }
 }
 
-/**
- * Keep top-group members ahead of every other symbol when `cap` is smaller
- * than the list. Relative order inside each side is unchanged.
- */
-export function capUniverse<T extends { symbol: string }>(
-  items: readonly T[],
-  cap: number,
-  leadingSymbols: ReadonlySet<string>,
-): T[] {
+/** Keep the first `cap` items. Relative order is unchanged. */
+export function capUniverse<T>(items: readonly T[], cap: number): T[] {
   if (!Number.isFinite(cap) || cap < 0) return [...items]
   const limit = Math.floor(cap)
   if (items.length <= limit) return [...items]
-  if (leadingSymbols.size === 0) return items.slice(0, limit)
-  const leading: T[] = []
-  const rest: T[] = []
-  for (const item of items) {
-    if (leadingSymbols.has(item.symbol.toUpperCase())) leading.push(item)
-    else rest.push(item)
-  }
-  if (leading.length >= limit) return leading.slice(0, limit)
-  return [...leading, ...rest.slice(0, limit - leading.length)]
+  return items.slice(0, limit)
 }
 
 export function universeFromGroups(
@@ -188,8 +136,6 @@ export function universeFromGroups(
   }
   const period = options.period ?? LEADING_GROUPS_PERIOD
   const count = options.count ?? LEADING_GROUPS_COUNT
-  const supplementEnabled = options.supplementEnabled ?? true
-  const supplementTickers = options.supplementTickers ?? LEADING_SCAN_SUPPLEMENT_TICKERS
 
   const ranked = rankGroups(response.groups, period)
   const top = ranked.slice(0, Math.max(0, count))
@@ -226,25 +172,11 @@ export function universeFromGroups(
     }
   }
 
-  if (supplementEnabled) {
-    for (const raw of supplementTickers) {
-      const symbol = raw.trim().toUpperCase()
-      if (!symbol || seen.has(symbol) || !index.has(symbol)) continue
-      seen.add(symbol)
-      const label = preferMembershipHit(index.get(symbol) ?? [], topSlugs)
-      ordered.push(toHit(symbol, label?.company))
-    }
-  }
-
   if (!ordered.length) {
     return { ok: false, error: 'leading-groups universe empty' }
   }
 
-  const hits = options.cap == null ? ordered : capUniverse(ordered, options.cap, leadingSymbols)
-  let supplementCount = 0
-  for (const hit of hits) {
-    if (!leadingSymbols.has(hit.symbol.toUpperCase())) supplementCount += 1
-  }
+  const hits = options.cap == null ? ordered : capUniverse(ordered, options.cap)
 
   const lookup = (symbol: string): IdeaGroupLabel | null => {
     const hitsFor = index.get(symbol.trim().toUpperCase())
@@ -267,9 +199,7 @@ export function universeFromGroups(
       period,
       groups: metaGroups,
       symbolCount: hits.length,
-      supplementCount,
       snapshotGeneratedAt: snapshot.generatedAt,
-      supplementEnabled,
     },
   }
 }
@@ -287,8 +217,5 @@ export async function buildLeadingGroupsUniverse(
   }
   const loaded = loadMembershipSnapshot()
   if (!loaded.ok) return { ok: false, error: loaded.error }
-  return universeFromGroups(response, loaded.snapshot, {
-    ...options,
-    supplementEnabled: options.supplementEnabled ?? supplementScanEnabled(),
-  })
+  return universeFromGroups(response, loaded.snapshot, options)
 }

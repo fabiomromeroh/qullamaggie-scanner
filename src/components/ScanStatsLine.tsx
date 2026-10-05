@@ -1,3 +1,4 @@
+import { GROUP_PERIODS } from '../lib/groupPeriod'
 import type { DashboardData } from '../types'
 import { MetricTip } from './MetricTip'
 
@@ -28,7 +29,9 @@ export function ScanStatsLine({ data }: { data: DashboardData }) {
         <>
           <span aria-hidden>·</span>
           <MetricTip id="leadingGroupsUniverse">
-            top{data.leadingGroupsMeta.groups.length} +{data.leadingGroupsMeta.supplementCount}
+            top{data.leadingGroupsMeta.groups.length} ·{' '}
+            {GROUP_PERIODS[data.leadingGroupsMeta.period]?.label ??
+              data.leadingGroupsMeta.period.toUpperCase()}
           </MetricTip>
         </>
       ) : null}

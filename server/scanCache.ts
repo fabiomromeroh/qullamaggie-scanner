@@ -29,8 +29,9 @@ import type { DashboardData, LeadingGroupsMeta } from '../src/types/index.ts'
  * v6: Range Breakout gates are ADR%, above the 50 SMA, priorRunPct, range/ADR,
  * and higher lows. Ideas store rangeBreakoutDetail. The previous
  * distance-from-high and relative-volume gates for that label are retired.
+ * v7: Stage 1 is only the selected-period top-12 Finviz groups (default 1m).
  */
-export const SCAN_CACHE_SCHEMA = 6
+export const SCAN_CACHE_SCHEMA = 7
 
 export interface ScanCacheMeta {
   schemaVersion?: number

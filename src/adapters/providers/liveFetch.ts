@@ -171,10 +171,13 @@ export async function fetchDashboardCache(): Promise<DashboardCacheResult> {
   return { kind: 'ready', body }
 }
 
-/** Ask server to refresh the scan in the background. */
-export async function requestScanRefresh(): Promise<unknown> {
-  const res = await fetch('/api/market/scan/refresh', { method: 'POST' })
-  return res.json()
+/** Ask server to refresh the scan for a groups period (`1d` / `1w` / `1m` / `3m` / `6m`). */
+export async function requestScanRefresh(
+  period?: string,
+): Promise<{ started?: boolean; status?: string }> {
+  const query = period ? `?period=${encodeURIComponent(period)}` : ''
+  const res = await fetch(`/api/market/scan/refresh${query}`, { method: 'POST' })
+  return (await res.json()) as { started?: boolean; status?: string }
 }
 
 /** Poll scan status (scanning flag, cache age, stage-1 counts). */

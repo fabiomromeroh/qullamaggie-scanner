@@ -1,11 +1,11 @@
 /**
  * Three-stage US liquid equity scan.
- * Stage 1: top-12 Finviz leading groups plus a liquid supplement.
+ * Stage 1: members of the top-12 Finviz leading groups for the selected period.
  *          Yahoo screener if that universe cannot be built.
  * Stage 1.5: cheap Yahoo quote SMA prefilter (above 200 AND above 50).
  * Stage 2: deep Kyle/Qullamaggie metrics on survivors (Yahoo-first cascade).
  */
-import type { IndustryGroup, LeadingGroupsMeta, TradingIdea } from '../src/types/index.ts'
+import type { GroupPeriod, IndustryGroup, LeadingGroupsMeta, TradingIdea } from '../src/types/index.ts'
 import {
   applyEarningsToIdea,
   computeIdeaMetrics,
@@ -28,6 +28,7 @@ import {
   type ScreenerHit,
 } from './yahooScreener.ts'
 import {
+  LEADING_GROUPS_PERIOD,
   LEADING_STAGE1_SOURCE,
   buildLeadingGroupsUniverse,
   type IdeaGroupLabel,
@@ -259,7 +260,9 @@ export function buildDynamicGroups(ideas: TradingIdea[]): IndustryGroup[] {
   return groups
 }
 
-export async function runFullScan(): Promise<ScanCachePayload> {
+export async function runFullScan(
+  period: GroupPeriod = LEADING_GROUPS_PERIOD,
+): Promise<ScanCachePayload> {
   const t0 = Date.now()
   const errors: string[] = []
   let emergencyFallback = false
@@ -275,7 +278,7 @@ export async function runFullScan(): Promise<ScanCachePayload> {
   let leadingGroupsMeta: LeadingGroupsMeta | null = null
   let lookup: ((symbol: string) => IdeaGroupLabel | null) | null = null
   try {
-    const built = await buildLeadingGroupsUniverse({ cap: STAGE1_CAP })
+    const built = await buildLeadingGroupsUniverse({ cap: STAGE1_CAP, period })
     if (!built.ok) throw new Error(built.error)
     if (built.hits.length < 20) {
       throw new Error(`leading-groups universe too thin (${built.hits.length})`)
@@ -289,8 +292,6 @@ export async function runFullScan(): Promise<ScanCachePayload> {
       period: built.meta.period,
       leadingGroupCount: built.meta.groups.length,
       symbolCount: built.meta.symbolCount,
-      supplementCount: built.meta.supplementCount,
-      supplementEnabled: built.meta.supplementEnabled,
       snapshotGeneratedAt: built.meta.snapshotGeneratedAt,
       stage1Cap: STAGE1_CAP,
     }
@@ -445,25 +446,34 @@ export async function runFullScan(): Promise<ScanCachePayload> {
   return payload
 }
 
+let desiredScanPeriod: GroupPeriod = LEADING_GROUPS_PERIOD
+
 export async function triggerScan(
   reason: string,
+  period?: GroupPeriod,
 ): Promise<{ started: boolean; status: string }> {
+  if (period) desiredScanPeriod = period
   if (!beginScanLock()) {
     return { started: false, status: 'already-scanning' }
   }
-  console.log(JSON.stringify({ scan: 'start', reason }))
+  console.log(JSON.stringify({ scan: 'start', reason, period: desiredScanPeriod }))
   try {
-    const result = await runFullScan()
+    let result: ScanCachePayload
+    for (;;) {
+      const periodNow = desiredScanPeriod
+      result = await runFullScan(periodNow)
+      if (desiredScanPeriod === periodNow) break
+    }
     console.log(
       JSON.stringify({
         scan: 'done',
         reason,
+        period: result.meta.leadingGroupsMeta?.period ?? period,
         stage1: result.meta.stage1Count,
         stage15: result.meta.stage15Count,
         hits: result.scanHitCount,
         source: result.meta.stage1Source,
         leadingGroups: result.meta.leadingGroupsMeta?.groups.length ?? 0,
-        supplement: result.meta.leadingGroupsMeta?.supplementCount ?? 0,
         ms: result.meta.scanDurationMs,
         emergencyFallback: result.meta.emergencyFallback,
       }),

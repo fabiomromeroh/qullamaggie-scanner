@@ -29,6 +29,7 @@ import {
   TIGHT_DAYS_PROXY,
 } from './metrics'
 import {
+  DEFAULT_GROUP_PERIOD,
   FALLBACK_LEADER_NEAR_HIGH_PCT,
   FINVIZ_GROUPS_CACHE_MS,
   GROUP_PERIODS,
@@ -231,7 +232,7 @@ function groupColumn(period: GroupPeriod): MetricDef {
     meta.label,
     `Group ${meta.label} performance.`,
     `Finviz groups page field ${FINVIZ_PERF[period]}. Screener order token is ${meta.order}. The internal fallback writes this field as ${FALLBACK_PERF[period]}. Leader and drill-down member returns use ${member}.`,
-    `Selecting ${meta.label} re-ranks with rankGroups (this field descending, then ${meta.tieBreak.join(', ')}), saves localStorage qm-groups-period, and reloads leaders plus an open drill-down. Finviz week/month/quarter/half windows are about 5/20/65/130 sessions, so member figures (${PERIOD_SESSIONS['1w']}/${PERIOD_SESSIONS['1m']}/${PERIOD_SESSIONS['3m']}/${PERIOD_SESSIONS['6m']}) can differ by a few points. 1W has no table column.`,
+    `Selecting ${meta.label} re-ranks with rankGroups (this field descending, then ${meta.tieBreak.join(', ')}), saves localStorage qm-groups-period, rebuilds the Stage-1 universe from the new top 12 snapshot members, and rescans. It also reloads leaders plus an open drill-down. Finviz week/month/quarter/half windows are about 5/20/65/130 sessions, so member figures (${PERIOD_SESSIONS['1w']}/${PERIOD_SESSIONS['1m']}/${PERIOD_SESSIONS['3m']}/${PERIOD_SESSIONS['6m']}) can differ by a few points. 1W has no table column.`,
   )
 }
 
@@ -269,7 +270,7 @@ export const METRIC_DEFS = {
   ideaGroup: d(
     'Finviz group',
     'Finviz industry on the idea.',
-    'The scan sets groupId and groupName from the membership snapshot. A ticker in more than one group uses the current top-12 group with the best 3-month rank. The detail header prefixes this label with Finviz. Yahoo sector/industry and WATCHLIST_GROUPS are used only when the snapshot has no row. This is not the Finviz groups-table rank.',
+    'The scan sets groupId and groupName from the membership snapshot. A ticker in more than one group uses the current top-12 group with the best rank on the selected period. The detail header prefixes this label with Finviz. Yahoo sector/industry and WATCHLIST_GROUPS are used only when the snapshot has no row. This is not the Finviz groups-table rank.',
   ),
   price: d(
     'Price',
@@ -693,7 +694,7 @@ export const METRIC_DEFS = {
   groupPeriodControl: d(
     'Period',
     'Which window ranks groups and leaders.',
-    `The segments are ${GROUP_PERIODS['1d'].label}, ${GROUP_PERIODS['1w'].label}, ${GROUP_PERIODS['1m'].label}, ${GROUP_PERIODS['3m'].label}, and ${GROUP_PERIODS['6m'].label}. The choice is stored in localStorage qm-groups-period (default 3M). It re-ranks the table, highlights the matching column when one exists, and reloads leaders and an open drill-down for that window.`,
+    `The segments are ${GROUP_PERIODS['1d'].label}, ${GROUP_PERIODS['1w'].label}, ${GROUP_PERIODS['1m'].label}, ${GROUP_PERIODS['3m'].label}, and ${GROUP_PERIODS['6m'].label}. The choice is stored in localStorage qm-groups-period (default ${GROUP_PERIODS[DEFAULT_GROUP_PERIOD].label} when the key is missing). It re-ranks the table, highlights the matching column when one exists, reloads leaders and an open drill-down, and rebuilds the Stage-1 universe from the new top 12 then rescans.`,
   ),
   groupReset: d(
     'Reset group',
@@ -729,17 +730,17 @@ export const METRIC_DEFS = {
   scanUniverse: d(
     'Scan size',
     'How many symbols the run started with.',
-    `scanUniverseSize is the Stage 1 list length after the cap. The default universe is the top 12 Finviz industry groups by 3-month performance, plus liquid supplement tickers that are in the membership snapshot. If that build fails, Stage 1 asks Yahoo for US equities (quote type EQUITY) on NMS, NYQ, NGM, and NCM, price above the default ${SCAN_MIN_PRICE_DEFAULT}, average 3-month volume at least the default ${SCAN_MIN_AVG_VOL_DEFAULT}, page size ${SCAN_STAGE1_PAGE_SIZE}, cap default ${SCAN_STAGE1_CAP_DEFAULT}. The same cap applies to the leading-groups list. Top-group members are kept ahead of supplement-only names. Env overrides of the Yahoo price, volume, and cap are applied on the server and are not shown here.`,
+    `scanUniverseSize is the Stage 1 list length after the cap. The default universe is the members of the top 12 Finviz industry groups for the selected period (default ${GROUP_PERIODS[DEFAULT_GROUP_PERIOD].label}). If that build fails, Stage 1 asks Yahoo for US equities (quote type EQUITY) on NMS, NYQ, NGM, and NCM, price above the default ${SCAN_MIN_PRICE_DEFAULT}, average 3-month volume at least the default ${SCAN_MIN_AVG_VOL_DEFAULT}, page size ${SCAN_STAGE1_PAGE_SIZE}, cap default ${SCAN_STAGE1_CAP_DEFAULT}. The same cap applies to the leading-groups list. Env overrides of the Yahoo price, volume, and cap are applied on the server and are not shown here.`,
   ),
   stage1Universe: d(
     'Stage 1 universe',
     'Names before the SMA prefilter.',
-    `stage1Count is the leading-groups list (top 12 Finviz industries by 3-month performance, union the liquid supplement that is in the membership snapshot) or, when that build fails, the Yahoo screener (or the predefined-screen fallback, or the emergency fixed list). Yahoo fallback uses price above the default ${SCAN_MIN_PRICE_DEFAULT}, average volume at least the default ${SCAN_MIN_AVG_VOL_DEFAULT}, cap ${SCAN_STAGE1_CAP_DEFAULT}. The cap also applies to the leading-groups list, and top-group members are kept ahead of supplement-only names.`,
+    `stage1Count is the leading-groups list (members of the top 12 Finviz industries for the selected period, default ${GROUP_PERIODS[DEFAULT_GROUP_PERIOD].label}) or, when that build fails, the Yahoo screener (or the predefined-screen fallback, or the emergency fixed list). Yahoo fallback uses price above the default ${SCAN_MIN_PRICE_DEFAULT}, average volume at least the default ${SCAN_MIN_AVG_VOL_DEFAULT}, cap ${SCAN_STAGE1_CAP_DEFAULT}. The cap also applies to the leading-groups list.`,
   ),
   leadingGroupsUniverse: d(
     'Leading groups',
     'Top Finviz groups in this scan.',
-    'leadingGroupsMeta lists the groups taken for Stage 1 (default 12, ranked by 3-month performance), each group\'s snapshot member count, symbolCount after the cap, supplementCount (names added only by the liquid list), snapshotGeneratedAt, and whether the supplement was enabled. stage1Source leading-groups-top12 means this list was the universe. LEADING_SCAN_SUPPLEMENT=0 leaves the supplement off. Null means Stage 1 used Yahoo or the emergency list.',
+    `leadingGroupsMeta lists the groups taken for Stage 1 (default 12, ranked by the selected period, default ${GROUP_PERIODS[DEFAULT_GROUP_PERIOD].label}), each group's snapshot member count, symbolCount after the cap, snapshotGeneratedAt, and period. Changing the groups period rebuilds this list from the new top 12 and rescans. stage1Source leading-groups-top12 means this list was the universe. Null means Stage 1 used Yahoo or the emergency list.`,
   ),
   stage15Sma: d(
     'Stage 1.5 SMA',

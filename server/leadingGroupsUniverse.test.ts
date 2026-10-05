@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { IndustryGroup } from '../src/types/index.ts'
+import { DEFAULT_GROUP_PERIOD } from '../src/lib/groupPeriod.ts'
 import { loadMembershipSnapshot, type MembershipSnapshot } from './groupMembers.ts'
 import {
   LEADING_GROUPS_COUNT,
-  LEADING_SCAN_SUPPLEMENT_TICKERS,
+  LEADING_GROUPS_PERIOD,
   capUniverse,
-  supplementScanEnabled,
   universeFromGroups,
 } from './leadingGroupsUniverse.ts'
 
@@ -50,90 +50,103 @@ function snapshot(
   }
 }
 
-test('supplement env 0 disables and anything else stays on', () => {
-  assert.equal(LEADING_GROUPS_COUNT, 12)
-  assert.equal(supplementScanEnabled(undefined), true)
-  assert.equal(supplementScanEnabled(''), true)
-  assert.equal(supplementScanEnabled('1'), true)
-  assert.equal(supplementScanEnabled('0'), false)
-  assert.equal(supplementScanEnabled(' 0 '), false)
-  assert.ok(LEADING_SCAN_SUPPLEMENT_TICKERS.includes('NVDA'))
-  assert.ok(LEADING_SCAN_SUPPLEMENT_TICKERS.includes('AMD'))
+const fixtureGroups = [
+  group('oil', 'Oil & Gas', 40, 1),
+  group('software', 'Software', 5, 20),
+  group('gold', 'Gold', 30, 2),
+]
+
+const fixtureSnapshot = snapshot({
+  oil: { name: 'Oil & Gas', tickers: ['XOM', 'CVX', 'NVDA'], companies: { NVDA: 'NVIDIA' } },
+  software: { name: 'Software', tickers: ['NVDA', 'CRWD'], companies: { NVDA: 'NVIDIA Corp' } },
+  gold: { name: 'Gold', tickers: ['NEM'] },
+  retail: { name: 'Retail', tickers: ['AAPL', 'COST'], companies: { AAPL: 'Apple' } },
 })
 
-test('top groups by 3m union the supplement, deduped, with top-12 group names', () => {
-  const groups = [
-    group('oil', 'Oil & Gas', 40, 1),
-    group('software', 'Software', 5, 20),
-    group('gold', 'Gold', 30, 1),
-  ]
-  const file = snapshot({
-    oil: { name: 'Oil & Gas', tickers: ['XOM', 'CVX', 'NVDA'], companies: { NVDA: 'NVIDIA' } },
-    software: { name: 'Software', tickers: ['NVDA', 'CRWD'], companies: { NVDA: 'NVIDIA Corp' } },
-    gold: { name: 'Gold', tickers: ['NEM'] },
-    retail: { name: 'Retail', tickers: ['AAPL', 'COST'], companies: { AAPL: 'Apple' } },
-  })
-  const built = universeFromGroups({ source: 'finviz', groups }, file, {
-    count: 2,
-    supplementTickers: ['AAPL', 'MSFT', 'NVDA', 'COST'],
-  })
+test('default period is 1m and count is 12', () => {
+  assert.equal(LEADING_GROUPS_COUNT, 12)
+  assert.equal(LEADING_GROUPS_PERIOD, '1m')
+  assert.equal(DEFAULT_GROUP_PERIOD, '1m')
+})
+
+test('top groups for the default period are snapshot members only', () => {
+  const built = universeFromGroups(
+    { source: 'finviz', groups: fixtureGroups },
+    fixtureSnapshot,
+    { count: 2 },
+  )
   assert.equal(built.ok, true)
   if (!built.ok) return
+  assert.equal(built.meta.period, '1m')
   assert.deepEqual(
     built.hits.map((hit) => hit.symbol),
-    ['XOM', 'CVX', 'NVDA', 'NEM', 'AAPL', 'COST'],
+    ['NVDA', 'CRWD', 'NEM'],
   )
-  assert.equal(built.meta.symbolCount, 6)
-  assert.equal(built.meta.supplementCount, 2)
-  assert.equal(built.meta.snapshotGeneratedAt, '2026-09-30T18:02:02.126Z')
-  assert.equal(built.meta.groups.length, 2)
-  assert.equal(built.meta.groups[0]?.slug, 'oil')
-  assert.equal(built.meta.groups[0]?.rank, 1)
-  assert.equal(built.lookup('NVDA')?.groupId, 'oil')
-  assert.equal(built.lookup('NVDA')?.groupName, 'Oil & Gas')
-  assert.equal(built.lookup('AAPL')?.groupId, 'retail')
-  assert.equal(built.lookup('AAPL')?.groupName, 'Retail')
-  assert.equal(built.lookup('MSFT'), null)
-  assert.equal(built.hits.find((hit) => hit.symbol === 'AAPL')?.shortName, 'Apple')
-
-  const off = universeFromGroups({ source: 'finviz', groups }, file, {
-    count: 2,
-    supplementEnabled: false,
-    supplementTickers: ['AAPL', 'COST'],
-  })
-  assert.equal(off.ok, true)
-  if (!off.ok) return
   assert.deepEqual(
-    off.hits.map((hit) => hit.symbol),
+    built.meta.groups.map((row) => row.slug),
+    ['software', 'gold'],
+  )
+  assert.equal(built.meta.symbolCount, 3)
+  assert.equal(built.meta.snapshotGeneratedAt, '2026-09-30T18:02:02.126Z')
+  assert.equal(built.lookup('NVDA')?.groupId, 'software')
+  assert.equal(built.lookup('NVDA')?.groupName, 'Software')
+  assert.equal(built.lookup('CRWD')?.groupName, 'Software')
+  assert.equal(built.hits.some((hit) => hit.symbol === 'AAPL'), false)
+  assert.equal(built.lookup('MSFT'), null)
+})
+
+test('universe follows 1m vs 3m ranking of the same groups', () => {
+  const oneMonth = universeFromGroups(
+    { source: 'finviz', groups: fixtureGroups },
+    fixtureSnapshot,
+    { count: 2, period: '1m' },
+  )
+  const threeMonth = universeFromGroups(
+    { source: 'finviz', groups: fixtureGroups },
+    fixtureSnapshot,
+    { count: 2, period: '3m' },
+  )
+  assert.equal(oneMonth.ok, true)
+  assert.equal(threeMonth.ok, true)
+  if (!oneMonth.ok || !threeMonth.ok) return
+
+  assert.equal(oneMonth.meta.period, '1m')
+  assert.deepEqual(
+    oneMonth.meta.groups.map((row) => row.slug),
+    ['software', 'gold'],
+  )
+  assert.deepEqual(
+    oneMonth.hits.map((hit) => hit.symbol),
+    ['NVDA', 'CRWD', 'NEM'],
+  )
+
+  assert.equal(threeMonth.meta.period, '3m')
+  assert.deepEqual(
+    threeMonth.meta.groups.map((row) => row.slug),
+    ['oil', 'gold'],
+  )
+  assert.deepEqual(
+    threeMonth.hits.map((hit) => hit.symbol),
     ['XOM', 'CVX', 'NVDA', 'NEM'],
   )
-  assert.equal(off.meta.supplementCount, 0)
-  assert.equal(off.meta.supplementEnabled, false)
+  assert.equal(threeMonth.lookup('NVDA')?.groupId, 'oil')
+  assert.equal(threeMonth.lookup('NVDA')?.groupName, 'Oil & Gas')
+  assert.equal(oneMonth.lookup('NVDA')?.groupId, 'software')
 })
 
-test('cap keeps leading members ahead of supplement-only names', () => {
-  const items = [
-    { symbol: 'SUP1' },
-    { symbol: 'LEAD1' },
-    { symbol: 'SUP2' },
-    { symbol: 'LEAD2' },
-  ]
-  const leading = new Set(['LEAD1', 'LEAD2'])
+test('cap truncates group-rank order', () => {
+  const items = [{ symbol: 'A' }, { symbol: 'B' }, { symbol: 'C' }]
   assert.deepEqual(
-    capUniverse(items, 2, leading).map((item) => item.symbol),
-    ['LEAD1', 'LEAD2'],
+    capUniverse(items, 2).map((item) => item.symbol),
+    ['A', 'B'],
   )
   assert.deepEqual(
-    capUniverse(items, 3, leading).map((item) => item.symbol),
-    ['LEAD1', 'LEAD2', 'SUP1'],
-  )
-  assert.deepEqual(
-    capUniverse(items, 10, leading).map((item) => item.symbol),
-    ['SUP1', 'LEAD1', 'SUP2', 'LEAD2'],
+    capUniverse(items, 10).map((item) => item.symbol),
+    ['A', 'B', 'C'],
   )
 })
 
-test('non-finviz groups and an empty union fail closed', () => {
+test('non-finviz groups and an empty universe fail closed', () => {
   const file = snapshot({ oil: { name: 'Oil', tickers: ['XOM'] } })
   const fallback = universeFromGroups(
     { source: 'fallback', groups: [group('oil', 'Oil', 10)] },
@@ -143,13 +156,13 @@ test('non-finviz groups and an empty union fail closed', () => {
   const empty = universeFromGroups(
     { source: 'finviz', groups: [group('missing', 'Missing', 10)] },
     file,
-    { count: 1, supplementEnabled: false },
+    { count: 1 },
   )
   assert.equal(empty.ok, false)
   if (!empty.ok) assert.match(empty.error, /empty/)
 })
 
-test('committed snapshot supplies NVDA and AMD only through the supplement when their groups are not leading', () => {
+test('NVDA and AMD appear only when their snapshot group is in the top 12', () => {
   const loaded = loadMembershipSnapshot()
   assert.equal(loaded.ok, true)
   if (!loaded.ok) return
@@ -159,30 +172,41 @@ test('committed snapshot supplies NVDA and AMD only through the supplement when 
   }
   assert.equal(present.has('NVDA'), true)
   assert.equal(present.has('AMD'), true)
+  assert.equal(loaded.snapshot.groups.semiconductors != null, true)
   assert.equal(loaded.snapshot.generatedAt.startsWith('2026-09-30'), true)
 
-  const built = universeFromGroups(
-    {
-      source: 'finviz',
-      groups: [group('not-a-real-slug', 'Nope', 99)],
-    },
-    loaded.snapshot,
-    { count: 1, supplementEnabled: true },
-  )
-  assert.equal(built.ok, true)
-  if (!built.ok) return
-  const symbols = new Set(built.hits.map((hit) => hit.symbol))
-  assert.equal(symbols.has('NVDA'), true)
-  assert.equal(symbols.has('AMD'), true)
-  assert.equal(built.lookup('NVDA')?.groupId === 'not-a-real-slug', false)
-  assert.ok(built.lookup('NVDA')?.groupName)
-  assert.equal(built.meta.supplementCount, built.hits.length)
-  assert.ok(built.meta.supplementCount <= LEADING_SCAN_SUPPLEMENT_TICKERS.length)
+  const otherSlug = Object.keys(loaded.snapshot.groups).find((slug) => slug !== 'semiconductors')
+  assert.ok(otherSlug)
+  const other = loaded.snapshot.groups[otherSlug!]!
 
   const off = universeFromGroups(
-    { source: 'finviz', groups: [group('not-a-real-slug', 'Nope', 99)] },
+    {
+      source: 'finviz',
+      groups: [group(otherSlug!, other.name, 99, 99)],
+    },
     loaded.snapshot,
-    { count: 1, supplementEnabled: false },
+    { count: 1, period: '1m' },
   )
-  assert.equal(off.ok, false)
+  assert.equal(off.ok, true)
+  if (!off.ok) return
+  const offSymbols = new Set(off.hits.map((hit) => hit.symbol))
+  assert.equal(offSymbols.has('NVDA'), false)
+  assert.equal(offSymbols.has('AMD'), false)
+  assert.equal(off.lookup('NVDA')?.groupId === otherSlug, false)
+
+  const on = universeFromGroups(
+    {
+      source: 'finviz',
+      groups: [group('semiconductors', 'Semiconductors', 1, 50)],
+    },
+    loaded.snapshot,
+    { count: 1, period: '1m' },
+  )
+  assert.equal(on.ok, true)
+  if (!on.ok) return
+  const onSymbols = new Set(on.hits.map((hit) => hit.symbol))
+  assert.equal(onSymbols.has('NVDA'), true)
+  assert.equal(onSymbols.has('AMD'), true)
+  assert.equal(on.lookup('NVDA')?.groupId, 'semiconductors')
+  assert.equal(on.meta.period, '1m')
 })
