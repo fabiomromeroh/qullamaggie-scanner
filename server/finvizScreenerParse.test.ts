@@ -4,9 +4,11 @@ import { resolve } from 'node:path'
 import { test } from 'node:test'
 import {
   countGroupLeaders,
+  DEFAULT_GROUP_PERIOD,
   finvizLiquidityTokens,
   isGroupPeriod,
   isGroupSlug,
+  parseGroupPeriod,
   parseSlugList,
   periodOrder,
   GROUP_PERIODS,
@@ -174,8 +176,14 @@ test('period order, slug validation, liquidity tokens, and leader count', () => 
   assert.equal(periodOrder('3m'), '-perf13w')
   assert.equal(periodOrder('6m'), '-perf26w')
   assert.equal(GROUP_PERIODS['3m'].label, '3M')
+  assert.equal(DEFAULT_GROUP_PERIOD, '1m')
+  assert.equal(GROUP_PERIODS[DEFAULT_GROUP_PERIOD].label, '1M')
   assert.equal(isGroupPeriod('3m'), true)
   assert.equal(isGroupPeriod('1y'), false)
+  assert.equal(parseGroupPeriod('1M'), '1m')
+  assert.equal(parseGroupPeriod(' 3m '), '3m')
+  assert.equal(parseGroupPeriod('1y'), null)
+  assert.equal(parseGroupPeriod(null), null)
   assert.equal(isGroupSlug('oilgasrefiningmarketing'), true)
   assert.equal(isGroupSlug('OilGas'), false)
   assert.equal(isGroupSlug('bad-slug'), false)

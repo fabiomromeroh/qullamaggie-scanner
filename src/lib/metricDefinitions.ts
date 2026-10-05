@@ -29,6 +29,7 @@ import {
   TIGHT_DAYS_PROXY,
 } from './metrics'
 import {
+  DEFAULT_GROUP_PERIOD,
   FALLBACK_LEADER_NEAR_HIGH_PCT,
   FINVIZ_GROUPS_CACHE_MS,
   GROUP_PERIODS,
@@ -37,7 +38,7 @@ import {
 } from './groupPeriod'
 import { LEADER_POOL_SIZE, PERIOD_SESSIONS } from './memberPerf'
 import { SCAN_MIN_AVG_VOL_DEFAULT, SCAN_MIN_PRICE_DEFAULT, SCAN_STAGE1_CAP_DEFAULT, SCAN_STAGE1_PAGE_SIZE } from './scanDefaults'
-import { DEFAULT_FILTERS, MAX_EXTENSION_ADR50_PRESETS, NEAR_HIGHS_PRESETS } from '../types'
+import { DEFAULT_FILTERS, DEFAULT_MIN_AVG_DOLLAR_VOL, MAX_EXTENSION_ADR50_PRESETS, NEAR_HIGHS_PRESETS } from '../types'
 import {
   EXTENSION_ADR50_FORMULA,
   EXTENSION_ADR50_FORMULA_EQUIV,
@@ -233,7 +234,7 @@ function groupColumn(period: GroupPeriod): MetricDef {
     meta.label,
     `Group ${meta.label} performance.`,
     `Finviz groups page field ${FINVIZ_PERF[period]}. Screener order token is ${meta.order}. The internal fallback writes this field as ${FALLBACK_PERF[period]}. Leader and drill-down member returns use ${member}.`,
-    `Selecting ${meta.label} re-ranks with rankGroups (this field descending, then ${meta.tieBreak.join(', ')}), saves localStorage qm-groups-period, and reloads leaders plus an open drill-down. Finviz week/month/quarter/half windows are about 5/20/65/130 sessions, so member figures (${PERIOD_SESSIONS['1w']}/${PERIOD_SESSIONS['1m']}/${PERIOD_SESSIONS['3m']}/${PERIOD_SESSIONS['6m']}) can differ by a few points. 1W has no table column.`,
+    `Selecting ${meta.label} re-ranks with rankGroups (this field descending, then ${meta.tieBreak.join(', ')}), saves localStorage qm-groups-period, rebuilds the Stage-1 universe from the new top 12 snapshot members, and rescans. It also reloads leaders plus an open drill-down. Finviz week/month/quarter/half windows are about 5/20/65/130 sessions, so member figures (${PERIOD_SESSIONS['1w']}/${PERIOD_SESSIONS['1m']}/${PERIOD_SESSIONS['3m']}/${PERIOD_SESSIONS['6m']}) can differ by a few points. 1W has no table column.`,
   )
 }
 
@@ -269,9 +270,9 @@ export const METRIC_DEFS = {
     'Quote long or short name when the feed sent one, otherwise the name stored with the universe entry.',
   ),
   ideaGroup: d(
-    'Group',
-    'Industry label on the idea.',
-    'Yahoo sector/industry when the scan resolved one, otherwise the static WATCHLIST_GROUPS name for a known ticker. This is the idea\'s group, not the Finviz groups-table rank.',
+    'Finviz group',
+    'Finviz industry on the idea.',
+    'The scan sets groupId and groupName from the membership snapshot. A ticker in more than one group uses the current top-12 group with the best rank on the selected period. The detail header prefixes this label with Finviz. Yahoo sector/industry and WATCHLIST_GROUPS are used only when the snapshot has no row. This is not the Finviz groups-table rank.',
   ),
   price: d(
     'Price',
@@ -420,7 +421,12 @@ export const METRIC_DEFS = {
   ),
   tightDays: d('Tight days', 'Sessions that were quiet or pinned to a short SMA.', tightDaysHow(), 'The cell prints tightDays/baseLengthDays. The number after the slash is base length.'),
   baseLengthDays: d('Base length', 'Trailing streak of narrow-range days.', baseLengthHow()),
-  dolVol: d('DolVol', 'Average dollar volume.', dolHow()),
+  dolVol: d(
+    'DolVol',
+    'Average dollar volume.',
+    dolHow(),
+    `The Min DolVol box compares this average with minAvgDollarVol. A normal scan starts at $${DEFAULT_MIN_AVG_DOLLAR_VOL / 1_000_000}M. Group view starts at $0.`,
+  ),
   setupType: d(
     'Setup type',
     'Episodic Pivot, Range Breakout, or Continuation.',
@@ -547,6 +553,12 @@ export const METRIC_DEFS = {
     `${rvolHow()} passesFilters drops the row when rvol < minRvol.`,
     `A blank or non-numeric input is stored as ${DEFAULT_FILTERS.minRvol}, which hides nothing. Finviz uses about a 3-month average, so this RVOL will not match Finviz.`,
   ),
+  filterMinDollarVol: d(
+    'Min DolVol',
+    'Hide names under an average dollar-volume floor.',
+    `${dolHow()} passesFilters drops the row when that average is a finite number below minAvgDollarVol. A missing average is kept.`,
+    `The box is millions of dollars. Default on a normal scan is $${DEFAULT_MIN_AVG_DOLLAR_VOL / 1_000_000}M (${DEFAULT_MIN_AVG_DOLLAR_VOL} dollars). Group view defaults to $0, which hides nothing. A blank input is stored as 0. migrateStoredFilters fills a missing value with the normal-scan default.`,
+  ),
   filterMaxPctFromHigh: d(
     'Near highs ≤',
     'Hide names farther than T percent under the 52-week high.',
@@ -572,12 +584,12 @@ export const METRIC_DEFS = {
   filterShowAll: d(
     'Show all group members',
     'Drop the group-view gates, including below the 200-day SMA.',
-    'applyShowAllGroup replaces group filters with every stage, every setup type, every earnings status, Above 200 DMA off, SMA and surfer and tight requirements off, min RVOL 0, Near highs ≤ Any, max ADR extension from 50 SMA Any, A+ only off, catalyst off, and search cleared. Scan filters are left as they are.',
+    'applyShowAllGroup replaces group filters with every stage, every setup type, every earnings status, Above 200 DMA off, SMA and surfer and tight requirements off, min RVOL 0, min dollar volume $0, Near highs ≤ Any, max ADR extension from 50 SMA Any, A+ only off, catalyst off, and search cleared. Scan filters are left as they are.',
   ),
   filterActiveCount: d(
     'Active filters',
     'How many controls differ from the baseline.',
-    'countActiveFilters increments once per field that differs from the baseline: search, min RVOL, near highs, max ADR extension from 50 SMA, group, setup types, stages, each SMA / surfer / tight / Above 200 DMA flag, earnings statuses, A+ only, and catalyst. The baseline is the normal defaults, or the group-view baseline while a group is open. Above 200 DMA counts when it is off against a baseline that has it on.',
+    'countActiveFilters increments once per field that differs from the baseline: search, min RVOL, min dollar volume, near highs, max ADR extension from 50 SMA, group, setup types, stages, each SMA / surfer / tight / Above 200 DMA flag, earnings statuses, A+ only, and catalyst. The baseline is the normal defaults, or the group-view baseline while a group is open. Above 200 DMA counts when it is off against a baseline that has it on.',
   ),
   watchlistPin: d(
     'Pin',
@@ -684,7 +696,7 @@ export const METRIC_DEFS = {
   groupPeriodControl: d(
     'Period',
     'Which window ranks groups and leaders.',
-    `The segments are ${GROUP_PERIODS['1d'].label}, ${GROUP_PERIODS['1w'].label}, ${GROUP_PERIODS['1m'].label}, ${GROUP_PERIODS['3m'].label}, and ${GROUP_PERIODS['6m'].label}. The choice is stored in localStorage qm-groups-period (default 3M). It re-ranks the table, highlights the matching column when one exists, and reloads leaders and an open drill-down for that window.`,
+    `The segments are ${GROUP_PERIODS['1d'].label}, ${GROUP_PERIODS['1w'].label}, ${GROUP_PERIODS['1m'].label}, ${GROUP_PERIODS['3m'].label}, and ${GROUP_PERIODS['6m'].label}. The choice is stored in localStorage qm-groups-period (default ${GROUP_PERIODS[DEFAULT_GROUP_PERIOD].label} when the key is missing). It re-ranks the table, highlights the matching column when one exists, reloads leaders and an open drill-down, and rebuilds the Stage-1 universe from the new top 12 then rescans.`,
   ),
   groupReset: d(
     'Reset group',
@@ -720,12 +732,17 @@ export const METRIC_DEFS = {
   scanUniverse: d(
     'Scan size',
     'How many symbols the run started with.',
-    `scanUniverseSize is the Stage 1 list length after the cap. Stage 1 asks Yahoo for US equities (quote type EQUITY) on NMS, NYQ, NGM, and NCM, price above the default ${SCAN_MIN_PRICE_DEFAULT}, average 3-month volume at least the default ${SCAN_MIN_AVG_VOL_DEFAULT}, page size ${SCAN_STAGE1_PAGE_SIZE}, cap default ${SCAN_STAGE1_CAP_DEFAULT}. Env overrides of those three numbers are applied on the server and are not shown here.`,
+    `scanUniverseSize is the Stage 1 list length after the cap. The default universe is the members of the top 12 Finviz industry groups for the selected period (default ${GROUP_PERIODS[DEFAULT_GROUP_PERIOD].label}). If that build fails, Stage 1 asks Yahoo for US equities (quote type EQUITY) on NMS, NYQ, NGM, and NCM, price above the default ${SCAN_MIN_PRICE_DEFAULT}, average 3-month volume at least the default ${SCAN_MIN_AVG_VOL_DEFAULT}, page size ${SCAN_STAGE1_PAGE_SIZE}, cap default ${SCAN_STAGE1_CAP_DEFAULT}. The same cap applies to the leading-groups list. Env overrides of the Yahoo price, volume, and cap are applied on the server and are not shown here.`,
   ),
   stage1Universe: d(
     'Stage 1 universe',
-    'Liquid names returned before the SMA prefilter.',
-    `stage1Count is the equity list from the Yahoo screener (or the predefined-screen fallback, or the emergency fixed list). Same price, volume, exchange, and cap rules as the scan size. Defaults when env is unset: price > ${SCAN_MIN_PRICE_DEFAULT}, average volume >= ${SCAN_MIN_AVG_VOL_DEFAULT}, cap ${SCAN_STAGE1_CAP_DEFAULT}.`,
+    'Names before the SMA prefilter.',
+    `stage1Count is the leading-groups list (members of the top 12 Finviz industries for the selected period, default ${GROUP_PERIODS[DEFAULT_GROUP_PERIOD].label}) or, when that build fails, the Yahoo screener (or the predefined-screen fallback, or the emergency fixed list). Yahoo fallback uses price above the default ${SCAN_MIN_PRICE_DEFAULT}, average volume at least the default ${SCAN_MIN_AVG_VOL_DEFAULT}, cap ${SCAN_STAGE1_CAP_DEFAULT}. The cap also applies to the leading-groups list.`,
+  ),
+  leadingGroupsUniverse: d(
+    'Leading groups',
+    'Top Finviz groups in this scan.',
+    `leadingGroupsMeta lists the groups taken for Stage 1 (default 12, ranked by the selected period, default ${GROUP_PERIODS[DEFAULT_GROUP_PERIOD].label}), each group's snapshot member count, symbolCount after the cap, snapshotGeneratedAt, and period. Changing the groups period rebuilds this list from the new top 12 and rescans. stage1Source leading-groups-top12 means this list was the universe. Null means Stage 1 used Yahoo or the emergency list.`,
   ),
   stage15Sma: d(
     'Stage 1.5 SMA',
@@ -826,9 +843,9 @@ export const METRIC_DEFS = {
     'profile2 marketCapitalization is in millions of USD. The server multiplies by 1,000,000 and the client formats the dollars with T, B, M, or K (one decimal above one thousand).',
   ),
   profileIndustry: d(
-    'Industry',
-    'Finnhub industry label.',
-    'finnhubIndustry from profile2, when the profile request returned one. It is not the Finviz group slug.',
+    'Finnhub industry',
+    'Secondary industry label from Finnhub.',
+    'finnhubIndustry from profile2, prefixed Finnhub on the company block. It is secondary to the Finviz group on the idea and is not the Finviz group slug.',
   ),
   profileExchange: d(
     'Exchange',

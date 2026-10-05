@@ -232,6 +232,31 @@ export function FiltersBar({
           />
         </label>
         <label
+          {...metricTipAttrs('filterMinDollarVol')}
+          className="flex cursor-help flex-col gap-0.5 text-[10px] text-terminal-dim"
+        >
+          Min DolVol
+          <span className="flex items-center gap-1">
+            <span>$</span>
+            <input
+              type="number"
+              min={0}
+              step={1}
+              value={Number.isFinite(filters.minAvgDollarVol) ? Math.round(filters.minAvgDollarVol / 1_000_000) : 0}
+              aria-label="Min DolVol"
+              onChange={(e) => {
+                const raw = e.target.value.trim()
+                const millions = raw === '' ? 0 : Number(raw)
+                const next =
+                  Number.isFinite(millions) && millions > 0 ? Math.round(millions * 1_000_000) : 0
+                onChange({ ...filters, minAvgDollarVol: next })
+              }}
+              className="w-16 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1 font-mono text-xs text-terminal-fg outline-none focus:border-terminal-blue sm:w-20"
+            />
+            <span>M</span>
+          </span>
+        </label>
+        <label
           {...metricTipAttrs('filterMaxPctFromHigh')}
           className="flex cursor-help flex-col gap-0.5 text-[10px] text-terminal-dim"
         >

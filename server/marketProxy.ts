@@ -15,6 +15,7 @@ import { getBarsForSymbol } from './marketBars.ts'
 import { getQuoteForSymbol } from './marketQuote.ts'
 import { matchMarketSymbolRoute, parseMarketSymbol } from './marketSymbol.ts'
 import { getScanRuntimeStatus, loadScanCache } from './scanCache.ts'
+import { DEFAULT_GROUP_PERIOD, parseGroupPeriod } from '../src/lib/groupPeriod.ts'
 import { kickScanOnBoot, triggerScan } from './scanEngine.ts'
 import { fetchTickerNews } from './tickerNews.ts'
 import { mergeCatalystIntoIdeas, scheduleCatalystEnrichment } from './catalystService.ts'
@@ -1133,6 +1134,7 @@ if (url.pathname === '/api/market/dashboard') {
             ideas: merged.ideas,
             catalystMeta: merged.meta,
             stage1Source: meta?.stage1Source,
+            leadingGroupsMeta: meta?.leadingGroupsMeta ?? null,
             stage1Count: meta?.stage1Count,
             stage15Count: meta?.stage15Count,
             shortlistCount: meta?.shortlistCount,
@@ -1159,7 +1161,18 @@ if (url.pathname === '/api/market/dashboard') {
           url.pathname === '/api/market/scan/refresh/') &&
         (req.method === 'POST' || req.method === 'GET')
       ) {
-        const result = await triggerScan('client-refresh')
+        const rawPeriod = url.searchParams.get('period')
+        let period = DEFAULT_GROUP_PERIOD
+        if (rawPeriod != null && rawPeriod.trim()) {
+          const parsed = parseGroupPeriod(rawPeriod)
+          if (!parsed) {
+            res.statusCode = 400
+            res.end(JSON.stringify({ error: 'period must be one of 1d, 1w, 1m, 3m, 6m' }))
+            return
+          }
+          period = parsed
+        }
+        const result = await triggerScan('client-refresh', period)
         res.statusCode =
           result.started && result.status !== 'already-scanning' ? 202 : 200
         res.end(JSON.stringify({ ...result, statusDetail: getScanRuntimeStatus() }))

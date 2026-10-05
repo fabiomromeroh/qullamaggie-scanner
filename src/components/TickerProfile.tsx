@@ -104,7 +104,7 @@ export function TickerProfile({ symbol }: { symbol: string }) {
       <div className="rounded border border-terminal-border bg-terminal-bg px-3 py-2 text-sm">
         <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-terminal-muted">
           {facts!.industry ? (
-            <MetricTip id="profileIndustry">{facts!.industry}</MetricTip>
+            <MetricTip id="profileIndustry">Finnhub · {facts!.industry}</MetricTip>
           ) : null}
           {facts!.exchange ? (
             <MetricTip id="profileExchange">{facts!.exchange}</MetricTip>

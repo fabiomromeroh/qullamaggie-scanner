@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { loadDashboardData } from '../adapters/marketData'
-import { fetchScanStatus } from '../adapters/providers/liveFetch'
+import { fetchScanStatus, requestScanRefresh } from '../adapters/providers/liveFetch'
 import {
   applyClearGroup,
   applyFilterChange,
@@ -9,7 +9,7 @@ import {
   cloneIdeaFilters,
   matchesFilters,
 } from '../lib/ideaFilters'
-import { GROUP_PERIODS, isGroupPeriod, isGroupSlug } from '../lib/groupPeriod'
+import { DEFAULT_GROUP_PERIOD, GROUP_PERIODS, isGroupPeriod, isGroupSlug } from '../lib/groupPeriod'
 import { selectGroupViewRows } from '../lib/groupView'
 import { stageSortRank } from '../lib/setupStage'
 import type {
@@ -23,6 +23,7 @@ import { useGroups } from './useGroups'
 import { useUserWatchlist } from './useUserWatchlist'
 
 const GROUPS_PERIOD_KEY = 'qm-groups-period'
+const PERIOD_SCAN_DEBOUNCE_MS = 400
 
 function readStoredPeriod(): GroupPeriod {
   try {
@@ -31,7 +32,7 @@ function readStoredPeriod(): GroupPeriod {
   } catch {
     /* ignore */
   }
-  return '3m'
+  return DEFAULT_GROUP_PERIOD
 }
 
 function errorText(value: unknown, status: number): string {
@@ -92,50 +93,70 @@ export function useDashboard() {
   const userWatchlist = useUserWatchlist()
   const { payload: groupsPayload, loading: groupsFetchLoading } = useGroups()
   const pollStartedAt = useRef<number | null>(null)
-  const reloadRef = useRef<(opts?: { refreshScan?: boolean; soft?: boolean }) => Promise<void>>(
-    async () => undefined,
-  )
+  const periodRef = useRef<GroupPeriod>(period)
+  const modeRef = useRef<'live' | 'demo'>(mode)
+  const periodRefreshTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const reloadRef = useRef<
+    (opts?: { refreshScan?: boolean; soft?: boolean; period?: GroupPeriod }) => Promise<void>
+  >(async () => undefined)
 
-  const reload = useCallback(async (opts?: { refreshScan?: boolean; soft?: boolean }) => {
-    if (!opts?.soft) setLoading(true)
-    if (!opts?.soft) setError(null)
-    // Initial page load reads cache only. Explicit Refresh asks the server to rescan.
-    if (opts?.refreshScan) {
-      try {
-        await fetch('/api/market/scan/refresh', { method: 'POST' })
-        await new Promise((r) => setTimeout(r, 300))
-      } catch {
-        // Ignore trigger errors — cache read below reports the real problem.
+  const reload = useCallback(
+    async (opts?: { refreshScan?: boolean; soft?: boolean; period?: GroupPeriod }) => {
+      if (opts?.refreshScan && periodRefreshTimer.current) {
+        clearTimeout(periodRefreshTimer.current)
+        periodRefreshTimer.current = null
       }
-    }
-    const result = await loadDashboardData()
-    setMode(result.mode)
-    if (result.ok) {
-      setData(result.data)
-      setError(null)
-      setScanning(false)
-      setScanMessage(null)
-      pollStartedAt.current = null
-    } else if (result.scanning) {
-      // Cold start: do not treat as fatal LIVE ERROR — poll until cache is ready.
-      setData(null)
-      setError(null)
-      setScanning(true)
-      setScanMessage(result.error || 'Scanning US market…')
-      setSelectedTicker(null)
-      if (pollStartedAt.current == null) {
-        pollStartedAt.current = Date.now()
+      if (!opts?.soft) setLoading(true)
+      if (!opts?.soft) setError(null)
+      // Initial page load reads cache only. Explicit Refresh asks the server to rescan.
+      if (opts?.refreshScan) {
+        const scanPeriod = opts.period ?? periodRef.current
+        const periodLabel = GROUP_PERIODS[scanPeriod].label
+        setScanning(true)
+        setScanMessage(`Scanning ${periodLabel} leading groups…`)
+        if (pollStartedAt.current == null) pollStartedAt.current = Date.now()
+        try {
+          const body = await requestScanRefresh(scanPeriod)
+          if (body?.status === 'already-scanning') {
+            if (!opts?.soft) setLoading(false)
+            return
+          }
+          await new Promise((r) => setTimeout(r, 300))
+        } catch {
+          // Ignore trigger errors — cache read below reports the real problem.
+        }
       }
-    } else {
-      setData(null)
-      setError(result.error)
-      setScanning(false)
-      setScanMessage(null)
-      pollStartedAt.current = null
-      setSelectedTicker(null)
-    }
-    if (!opts?.soft) setLoading(false)
-  }, [])
+      const result = await loadDashboardData()
+      modeRef.current = result.mode
+      setMode(result.mode)
+      if (result.ok) {
+        setData(result.data)
+        setError(null)
+        setScanning(false)
+        setScanMessage(null)
+        pollStartedAt.current = null
+      } else if (result.scanning) {
+        // Cold start: do not treat as fatal LIVE ERROR — poll until cache is ready.
+        setData(null)
+        setError(null)
+        setScanning(true)
+        setScanMessage(result.error || 'Scanning US market…')
+        setSelectedTicker(null)
+        if (pollStartedAt.current == null) {
+          pollStartedAt.current = Date.now()
+        }
+      } else {
+        setData(null)
+        setError(result.error)
+        setScanning(false)
+        setScanMessage(null)
+        pollStartedAt.current = null
+        setSelectedTicker(null)
+      }
+      if (!opts?.soft) setLoading(false)
+    },
+    [],
+  )
 
   reloadRef.current = reload
 
@@ -400,11 +421,29 @@ export function useDashboard() {
   }, [catalystPending, catalystAttempt, groupViewActive])
 
   const setPeriod = useCallback((next: GroupPeriod) => {
+    if (next === periodRef.current) return
+    periodRef.current = next
     setPeriodState(next)
     try {
       localStorage.setItem(GROUPS_PERIOD_KEY, next)
     } catch {
       /* ignore */
+    }
+    if (modeRef.current === 'demo') return
+    if (periodRefreshTimer.current) clearTimeout(periodRefreshTimer.current)
+    const periodLabel = GROUP_PERIODS[next].label
+    setScanning(true)
+    setScanMessage(`Rebuilding universe for ${periodLabel}…`)
+    if (pollStartedAt.current == null) pollStartedAt.current = Date.now()
+    periodRefreshTimer.current = setTimeout(() => {
+      periodRefreshTimer.current = null
+      void reloadRef.current({ refreshScan: true, period: next })
+    }, PERIOD_SCAN_DEBOUNCE_MS)
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      if (periodRefreshTimer.current) clearTimeout(periodRefreshTimer.current)
     }
   }, [])
 

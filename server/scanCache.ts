@@ -14,7 +14,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { dirname, resolve } from 'node:path'
-import type { DashboardData } from '../src/types/index.ts'
+import type { DashboardData, LeadingGroupsMeta } from '../src/types/index.ts'
 
 /**
  * Bump when cached idea math changes so old files are not served as fresh.
@@ -29,12 +29,15 @@ import type { DashboardData } from '../src/types/index.ts'
  * v6: Range Breakout gates are ADR%, above the 50 SMA, priorRunPct, range/ADR,
  * and higher lows. Ideas store rangeBreakoutDetail. The previous
  * distance-from-high and relative-volume gates for that label are retired.
+ * v7: Stage 1 is only the selected-period top-12 Finviz groups (default 1m).
  */
-export const SCAN_CACHE_SCHEMA = 6
+export const SCAN_CACHE_SCHEMA = 7
 
 export interface ScanCacheMeta {
   schemaVersion?: number
   stage1Source: string
+  /** Top-12 Finviz universe. Null when Stage 1 fell back to Yahoo or the emergency list. */
+  leadingGroupsMeta?: LeadingGroupsMeta | null
   stage1Count: number
   /** Survivors after Stage 1.5 SMA prefilter (above 200 AND above 50). */
   stage15Count: number

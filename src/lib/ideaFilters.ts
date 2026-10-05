@@ -49,6 +49,10 @@ export interface FilterableIdea {
   surfer50?: boolean
   tightConsolidation?: boolean
   rvol: number
+  /** Average dollar volume. Missing is kept when a floor is set. */
+  avgDollarVol?: number
+  /** Alias of avgDollarVol. Used when avgDollarVol is absent. */
+  dollarVolume?: number
   pctFrom52wHigh: number
   /**
    * ADR multiples from the 50 SMA. Missing/null is treated as unknown and
@@ -86,6 +90,7 @@ export function requireAbove200On(filters: { requireAbove200?: boolean } | null 
 export function cloneIdeaFilters(filters: IdeaFilters): IdeaFilters {
   return {
     minRvol: filters.minRvol,
+    minAvgDollarVol: filters.minAvgDollarVol,
     maxPctFromHigh: filters.maxPctFromHigh ?? null,
     maxExtensionAdr50: filters.maxExtensionAdr50 ?? null,
     setupTypes: [...(filters.setupTypes ?? [])],
@@ -122,6 +127,7 @@ export function showAllGroupFilters(): IdeaFilters {
     requireSurfer50: false,
     requireTight: false,
     minRvol: 0,
+    minAvgDollarVol: 0,
     maxPctFromHigh: null,
     maxExtensionAdr50: null,
     aPlusOnly: false,
@@ -156,6 +162,7 @@ export function countActiveFilters(
   let n = 0
   if ((filters.search ?? '').trim() !== (baseline.search ?? '').trim()) n += 1
   if (filters.minRvol !== baseline.minRvol) n += 1
+  if (filters.minAvgDollarVol !== baseline.minAvgDollarVol) n += 1
   if ((filters.maxPctFromHigh ?? null) !== (baseline.maxPctFromHigh ?? null)) n += 1
   if ((filters.maxExtensionAdr50 ?? null) !== (baseline.maxExtensionAdr50 ?? null)) n += 1
   if ((filters.groupId ?? null) !== (baseline.groupId ?? null)) n += 1
@@ -246,6 +253,7 @@ export function migrateStoredFilters(raw: unknown): IdeaFilters {
   const src = raw as Record<string, unknown>
   return {
     minRvol: pickNum(src.minRvol, base.minRvol),
+    minAvgDollarVol: Math.max(0, pickNum(src.minAvgDollarVol, base.minAvgDollarVol)),
     maxPctFromHigh: migrateMaxPctFromHigh(src.maxPctFromHigh),
     maxExtensionAdr50: pickNumOrNull(src.maxExtensionAdr50, base.maxExtensionAdr50),
     setupTypes: pickList(src.setupTypes, ALL_SETUP_TYPES, base.setupTypes),
@@ -321,6 +329,15 @@ export function passesFilters(
   if (f.requireTight && !idea.tightConsolidation) return false
   if (f.stages?.length && !f.stages.includes(idea.setupStage)) return false
   if (typeof f.minRvol === 'number' && idea.rvol < f.minRvol) return false
+  if (
+    typeof f.minAvgDollarVol === 'number' &&
+    Number.isFinite(f.minAvgDollarVol) &&
+    f.minAvgDollarVol > 0
+  ) {
+    const raw = idea.avgDollarVol ?? idea.dollarVolume
+    const dol = typeof raw === 'number' && Number.isFinite(raw) ? raw : null
+    if (dol != null && dol < f.minAvgDollarVol) return false
+  }
   const pct = typeof idea.pctFrom52wHigh === 'number' ? idea.pctFrom52wHigh : 0
   const distance = Math.abs(Math.min(0, pct))
   // Near highs: null is Any (no filter). A print above the high has distance 0.

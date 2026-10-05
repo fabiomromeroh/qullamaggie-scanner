@@ -92,6 +92,29 @@ export interface GroupsResponse {
 /** Leading-groups period. Drives rank, Finviz `o=`, and drill-down. */
 export type GroupPeriod = '1d' | '1w' | '1m' | '3m' | '6m'
 
+/** One Finviz industry inside the default Stage-1 universe. */
+export interface LeadingGroupRef {
+  slug: string
+  name: string
+  /** 1-based rank on the selected period (default 1-month). */
+  rank: number
+  /** Unique snapshot members of this group. */
+  memberCount: number
+  perf3m: number | null
+}
+
+/**
+ * On the scan cache and `GET /api/market/dashboard` when Stage 1 used the
+ * top Finviz groups. `null` when that build failed and Yahoo ran instead.
+ */
+export interface LeadingGroupsMeta {
+  period: GroupPeriod
+  groups: LeadingGroupRef[]
+  /** Symbols scanned after the Stage-1 cap. */
+  symbolCount: number
+  snapshotGeneratedAt: string | null
+}
+
 /**
  * One stock in a group's leader pool (top 20 snapshot members by the
  * selected period, or the live screener page when that option is on).
@@ -395,8 +418,13 @@ export interface DashboardData {
   scanFailCount?: number
   /** Excluded solely for failing 200 SMA. */
   scanBelow200Count?: number
-  /** Stage-1 universe source label (yahoo-screener / predefined / emergency). */
+  /** Stage-1 universe source (`leading-groups-top12`, Yahoo, or emergency). */
   stage1Source?: string
+  /**
+   * Top Finviz groups used as the Stage-1 universe.
+   * `null` when that build failed and the Yahoo path ran.
+   */
+  leadingGroupsMeta?: LeadingGroupsMeta | null
   /** Stage-1 ticker count before SMA prefilter. */
   stage1Count?: number
   /** Stage 1.5 survivors (above 200 SMA AND above 50 SMA via Yahoo quotes). */
@@ -431,6 +459,13 @@ export type MaxExtensionAdr50Preset = (typeof MAX_EXTENSION_ADR50_PRESETS)[numbe
 
 export interface IdeaFilters {
   minRvol: number
+  /**
+   * Hide names whose average dollar volume (close × volume over the prior
+   * 20 sessions, excluding the latest bar) is below this many dollars.
+   * `0` hides nothing. A missing average on the row is kept.
+   * Normal scan default is {@link DEFAULT_MIN_AVG_DOLLAR_VOL}. Group view is 0.
+   */
+  minAvgDollarVol: number
   /**
    * Hide names whose distance under the 52-week high is above this percent.
    * Distance is abs(min(0, pctFrom52wHigh)); a print above the high counts as 0.
@@ -482,8 +517,13 @@ export const ALL_SETUP_TYPES: SetupType[] = [
 
 export const ALL_EARNINGS_STATUSES: EarningsStatus[] = ['clear', 'alert', 'avoid']
 
+/** Normal-scan floor for average dollar volume (20 sessions of close × volume). */
+export const DEFAULT_MIN_AVG_DOLLAR_VOL = 30_000_000
+
 export const DEFAULT_FILTERS: IdeaFilters = {
   minRvol: 0,
+  /** $30M. Group view overrides this to 0. */
+  minAvgDollarVol: DEFAULT_MIN_AVG_DOLLAR_VOL,
   maxPctFromHigh: null,
   maxExtensionAdr50: null,
   setupTypes: [...ALL_SETUP_TYPES],
@@ -510,6 +550,8 @@ export const DEFAULT_FILTERS: IdeaFilters = {
  */
 export const GROUP_VIEW_DEFAULT_FILTERS: IdeaFilters = {
   ...DEFAULT_FILTERS,
+  /** No dollar-volume floor while a group is open. */
+  minAvgDollarVol: 0,
   requireAbove200: true,
   requireSma50: false,
   requireSma10: false,

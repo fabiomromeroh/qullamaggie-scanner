@@ -60,9 +60,28 @@ If the key is missing or Finnhub errors/rate-limits, the proxy falls through the
 
 Three-stage **server-side** scan (Stage 1 → Stage 1.5 SMA → Stage 2). The browser never walks thousands of symbols on page load — it only reads `GET /api/market/dashboard` (file cache).
 
-### Stage 1 — Yahoo EquityQuery screener (universe)
+### Stage 1 — top Finviz groups (default universe)
 
-Unofficial Yahoo Finance screener POST (`/v1/finance/screener`) with cookie + crumb, paginated at ≤250 rows.
+The default scan universe is **only** the members of the **top 12** Finviz industry groups for the selected period (default **1M**). `server/leadingGroupsUniverse.ts` loads the same groups page as `GET /api/groups`, ranks with `rankGroups` (`LEADING_GROUPS_PERIOD` **1m** unless the refresh request passes another period), takes `LEADING_GROUPS_COUNT` (12), and takes tickers from `server/data/finviz-group-members.json` for those 12 groups only. Changing the groups period selector (1D/1W/1M/3M/6M) re-ranks live Finviz groups, rebuilds that universe from the new top 12 (snapshot membership), and rescans (`POST /api/market/scan/refresh?period=1m`). **Refresh** does the same with the current selected period. `stage1Source` is `leading-groups-top12`.
+
+`GET /api/market/dashboard` exposes `leadingGroupsMeta`: `groups` (slug, name, rank, snapshot member count, 3-month performance), `symbolCount` (symbols scanned after `SCAN_STAGE1_CAP`), `snapshotGeneratedAt`, and `period`. The stats line shows `topN · 1M` (the scan period) when that object is present.
+
+`SCAN_STAGE1_CAP` (default 800) still applies.
+
+If the groups payload is not Finviz, the snapshot is missing or invalid, or the universe has fewer than 20 symbols, Stage 1 falls back to the Yahoo screener below. `stage1Source` is then that Yahoo path (`yahoo-screener` or `yahoo-predefined-fallback`), and `leadingGroupsMeta` is null. A Yahoo list that is also too thin still uses the emergency `SCAN_UNIVERSE` (`emergency-fallback-universe`).
+
+Idea `groupId` / `groupName` come from the membership snapshot. A ticker in more than one group uses the current top-12 group with the best rank on the selected period. The detail header shows that label as **Finviz · {group}**. Finnhub industry on the company block is secondary (**Finnhub · {industry}**). Yahoo sector/industry and `WATCHLIST_GROUPS` are used only when the snapshot has no row for that ticker.
+
+#### Reliability (measured 2026-10-05, live)
+
+- Snapshot `server/data/finviz-group-members.json`: `generatedAt` **2026-09-30**, **144** groups, **1859** unique tickers, filters price &gt; $5 and average volume &gt; 750K.
+- Universe is **only** members of the current top 12. Mega-cap names (NVDA, AMD, and similar) appear only when their Finviz industry is in that period's top 12. Ranking is the live Finviz groups page; membership is the snapshot.
+- Default period is **1M**. Changing 1D/1W/1M/3M/6M rebuilds the universe for that window and rescans. The groups panel uses the same default when `qm-groups-period` is unset.
+- Render: the Finviz screener returns **403**. The groups page answers. The intended refresh is a weekly GitHub Actions job on Mondays at **06:00 UTC**: run `npm run build:groups`, commit `server/data/finviz-group-members.json` when Finviz is reachable, and **exit 0** on HTTP 403. That workflow file cannot ship until a token with the `workflow` scope pushes it. Until then, run `npm run build:groups` weekly from a host that can reach Finviz and commit `server/data/finviz-group-members.json`. Render cannot rebuild the snapshot.
+
+### Stage 1 fallback — Yahoo EquityQuery screener
+
+Unofficial Yahoo Finance screener POST (`/v1/finance/screener`) with cookie + crumb, paginated at ≤250 rows. Used only when the leading-groups universe cannot be built.
 
 | Filter | Value | Notes |
 |--------|-------|--------|
@@ -100,7 +119,7 @@ For each Stage-1.5 survivor (Yahoo-first cascade: Yahoo → Finnhub → Stooq):
 1. Daily bars → Kyle / Qullamaggie proxies (`computeIdeaMetrics`)
 2. Hard gate: **above daily 200 SMA** (recomputed from bars) or excluded
 3. Earnings overlay (Finnhub calendar → Nasdaq)
-4. Industry labels from Yahoo sector/industry (static `WATCHLIST_GROUPS` when the ticker is known). Those labels feed idea `groupId` / `groupName` and the internal group fallback. The Group Strength panel itself uses live Finviz groups (`GET /api/groups`).
+4. Industry labels from the Finviz membership snapshot (the current top-12 group when the ticker is in one). Yahoo sector/industry and static `WATCHLIST_GROUPS` remain the fallback when the snapshot has no row. Those labels feed idea `groupId` / `groupName` and the internal group fallback. The Group Strength panel itself uses live Finviz groups (`GET /api/groups`). The detail header shows the Finviz group; Finnhub industry on the company block is secondary.
 5. QQQ regime from live bars
 
 **ADR extension from the 50 SMA** (`extensionAdr50` on every idea, scan and group drill-down):
@@ -119,7 +138,7 @@ The ideas table has an **Ext50** column, the detail panel a chip **Ext. 50SMA: +
 
 Results are written to `data/scan-cache.json` (gitignored). Default staleness **45 minutes** (`SCAN_CACHE_STALE_MS`).
 
-Payloads are stamped with `SCAN_CACHE_SCHEMA` (`server/scanCache.ts`). Schema 6 discards scans from before the Range Breakout gate change. Each idea now stores `rangeBreakoutDetail` (ADR%, above the 50 SMA, prior leg, 5-session range/ADR, higher lows, which higher-low rule fired, and whether all five gates passed). Schema 5 had discarded scans from before `extensionAdr50` (ADR multiples from the 50-day SMA). Schema 4 had discarded scans from before the ADR-relative surfer detail and the tight-consolidation 50/200 SMA fields. Catalyst fields are not stored in this file; they are merged onto the HTTP response from a separate cache. Schema 3 had added the first strict surfer / tight fields. Schema 2 had discarded scans from before the 1D-change fix: Yahoo `chartPreviousClose` on a 1-year chart is the close before that range, not the prior session, so those files stored a wrong `dayPct`. The next start throws an older file out and runs a fresh scan.
+Payloads are stamped with `SCAN_CACHE_SCHEMA` (`server/scanCache.ts`). Schema 7 discards scans from before the leading-groups universe dropped the liquid list and defaulted to 1-month ranking. Schema 6 had discarded scans from before the Range Breakout gate change. Each idea now stores `rangeBreakoutDetail` (ADR%, above the 50 SMA, prior leg, 5-session range/ADR, higher lows, which higher-low rule fired, and whether all five gates passed). Schema 5 had discarded scans from before `extensionAdr50` (ADR multiples from the 50-day SMA). Schema 4 had discarded scans from before the ADR-relative surfer detail and the tight-consolidation 50/200 SMA fields. Catalyst fields are not stored in this file; they are merged onto the HTTP response from a separate cache. Schema 3 had added the first strict surfer / tight fields. Schema 2 had discarded scans from before the 1D-change fix: Yahoo `chartPreviousClose` on a 1-year chart is the close before that range, not the prior session, so those files stored a wrong `dayPct`. The next start throws an older file out and runs a fresh scan.
 
 ### API
 
@@ -152,11 +171,12 @@ The panel (**Leading groups · Finviz live**) reads `GET /api/groups`. The serve
 
 `fetchedAt` is when Finviz was fetched, or when the fallback ranking was computed. The UI polls about every 5 minutes and keeps the last good payload if a request fails. It shows **Finviz**, an amber **Fallback: internal ranking**, and/or an amber **stale** badge, plus local `updated HH:MM`.
 
-**Period.** A segmented control in the header (`1D | 1W | 1M | 3M | 6M`, default **3M**) is stored in `localStorage` key `qm-groups-period`. The selected period:
+**Period.** A segmented control in the header (`1D | 1W | 1M | 3M | 6M`, default **1M** when `qm-groups-period` is unset) is stored in `localStorage` key `qm-groups-period`. The selected period:
 
 - re-ranks the table client-side (that period's performance descending; ties break toward the next-longer period, then the other Finviz performance fields; missing numbers sort last)
 - highlights that period's column when the column exists (1W has no column)
 - chooses which performance window ranks leaders and the group drill-down
+- rebuilds the Stage-1 scan universe to members of the new top 12 (snapshot membership) and rescans, then the default filter bar still applies (including min DolVol $30M)
 - resets the column sort to that period, descending
 
 | Period | Finviz `o=` |
@@ -179,7 +199,13 @@ The panel (**Leading groups · Finviz live**) reads `GET /api/groups`. The serve
 
 ### Membership snapshot
 
-Render's IPs receive **HTTP 403** from `finviz.com/screener.ashx`. The groups page still answers from Render and stays the source of industry performance (1D / 1W / 1M / 3M / 6M columns). Membership is a file built where the screener answers, then read at request time. The build does not use a proxy, a cookie, or a browser, and it does not require Finviz Elite. There is no GitHub Action for this refresh: the available token cannot write workflows, and Finviz was not verified from GitHub runners. Refresh it by hand.
+Render's IPs receive **HTTP 403** from `finviz.com/screener.ashx`. The groups page still answers from Render and stays the source of industry performance (1D / 1W / 1M / 3M / 6M columns). Membership is a file built where the screener answers, then read at request time. The build does not use a proxy, a cookie, or a browser, and it does not require Finviz Elite.
+
+**Intended weekly Actions job.** A workflow at `.github/workflows/refresh-finviz-groups.yml` should run every Monday at **06:00 UTC** (GitHub may start a schedule a few minutes late). It checks out the default branch, runs `npm run build:groups`, and when Finviz is reachable and `server/data/finviz-group-members.json` changed, commits **only** that JSON and pushes it to the default branch (fast-forward, no `--force`). An unchanged file skips the commit. On HTTP **403** the job prints a notice, **exits 0**, and leaves the snapshot unchanged. The same exit 0 applies when the runner is otherwise blocked (429, 503, a Cloudflare challenge, or it cannot connect). A green run can still mean the file was not refreshed.
+
+**The workflow file cannot ship yet.** A token without the `workflow` scope cannot add or update `.github/workflows/`. The token for this branch is in that state, so the YAML is not in the tree. The Monday schedule does not run until a token with the `workflow` scope pushes that file onto the default branch.
+
+**Fallback.** Until that file lands, about weekly, on a home machine or any other host where `finviz.com/screener.ashx` answers:
 
 ```bash
 npm run build:groups
@@ -187,9 +213,11 @@ npm run build:groups
 
 That runs `scripts/buildGroupMembers.ts` (esbuild, then node). It reads industry slugs and names from the live groups page, then for each slug walks `screener.ashx?v=141` with `f=ind_<slug>,sh_price_o5,sh_avgvol_o750`, pages `r=1`, `r=21`, `r=41`, … until a page has fewer than 20 rows, and stops after 15 pages. The same polite queue as the groups fetch is used (concurrency 2, ≥400 ms gap, desktop Chrome User-Agent, 10 s timeout). A failed page is retried at most twice. A 403, 429, 503, or challenge page aborts the run. The destination `server/data/finviz-group-members.json` is replaced only after every group succeeds (temp file, then rename). An empty Finviz screen (`result_count` 0 and no table) is stored as zero tickers.
 
-The file shape is `{ version: 1, source: "finviz", sourceNote, generatedAt, filters: { minPrice: 5, minAvgVolume: 750000 }, groups: { [slug]: { name, tickers, companies?, count } } }`. Commit the file with the app. Render cannot rebuild it.
+Commit `server/data/finviz-group-members.json` and push it to the default branch. Render's build command does not run this script.
 
-**When to refresh.** About weekly. Industry membership drifts slowly. The header and the group banner show `Membership: snapshot YYYY-MM-DD`. Older than **14 days** adds an amber **stale** tag. Leaders still compute from a stale file; the tag is the reminder. A slug that Finviz adds after the snapshot returns `not in membership snapshot; run npm run build:groups` on that entry (leaders) or as the stocks error. A missing or invalid file returns `Membership snapshot missing` / `Membership snapshot invalid` the same way. Nothing is filled in with a guess.
+The file shape is `{ version: 1, source: "finviz", sourceNote, generatedAt, filters: { minPrice: 5, minAvgVolume: 750000 }, groups: { [slug]: { name, tickers, companies?, count } } }`. Commit the JSON with the app. After a token with the `workflow` scope has pushed the workflow file, that job can commit the same JSON when its runner can reach Finviz. Render cannot rebuild it.
+
+**When to refresh.** About weekly, with the fallback above until the Actions file is on the default branch. Industry membership drifts slowly. The header and the group banner show `Membership: snapshot YYYY-MM-DD`. Older than **14 days** adds an amber **stale** tag. Leaders still compute from a stale file; the tag is the reminder. A slug that Finviz adds after the snapshot returns `not in membership snapshot; run npm run build:groups` on that entry (leaders) or as the stocks error. A missing or invalid file returns `Membership snapshot missing` / `Membership snapshot invalid` the same way. Nothing is filled in with a guess.
 
 **Period math.** For each snapshot member the server loads one daily-bar snapshot (`fetchSymbolSnapshot`: Yahoo chart, then Finnhub, then Stooq). That one fetch fills every period, so changing 1D / 1W / 1M / 3M / 6M does not fetch again. The quote cache lives about **15 minutes** (a failed symbol about **60 seconds**) and in-flight loads share one call.
 
@@ -259,7 +287,7 @@ On Render's free tier a cold instance has an empty quote cache and the dyno may 
 - The screener parser (snapshot build, and the optional live path) maps columns by header text. A missing expected header fails the parse. The build walks every page until a short page or 15 pages. Request-time leaders do not call the screener unless `FINVIZ_SCREENER_LIVE=1`.
 - "In the scan" is membership in the cached full scan, which is also above the 50-day SMA. It is not a fresh 200-SMA check of every snapshot ticker outside that cache.
 - Group drill-down prices every snapshot member of that one group, then scores the top 20. Names already in the scan cache skip the scorer. Provider keys are optional; Yahoo is tried first. A cold group can take a while.
-- The membership file goes stale as industries change. Refresh with `npm run build:groups` about weekly. See **Membership snapshot**.
+- The membership file goes stale as industries change. The intended Monday **06:00 UTC** Actions job (`npm run build:groups`, commit the JSON when Finviz is reachable, exit 0 on 403) is not in the repo: a token with the `workflow` scope has to push `.github/workflows/` first. Until then, run `npm run build:groups` weekly on a host that can reach Finviz and commit `server/data/finviz-group-members.json`. See **Membership snapshot**.
 - The 1W period ranks and fetches leaders, but it has no table column.
 
 ## Ticker detail panel
@@ -322,7 +350,7 @@ Filter bar order (the same chips in the normal scan and in group view; only the 
 
 1. **Search** — ticker / name text.
 2. **Group** — selected industry (`groupId`), with a clear control when one is set.
-3. **Numeric** — Min RVOL, Near highs ≤, Max ADR extension from 50 SMA.
+3. **Numeric** — Min RVOL, Min DolVol, Near highs ≤, Max ADR extension from 50 SMA.
 4. **Above** — Above 10 SMA, Above 20 SMA, Above 50 SMA, Above 200 DMA (`requireSma10` / `requireSma20` / `requireSma50` / `requireAbove200`). "Above 50 SMA" is the old Require 50 SMA control; the field name is still `requireSma50`.
 5. **Surfer (ADR-based)** — 10MA Surfer, 20MA Surfer, 50MA Surfer. Chip text does not repeat a strict suffix; the tooltip states the ADR-relative rule.
 6. **Tight consolidation** — its own chip, not inside the surfer group.
@@ -333,13 +361,15 @@ Filter bar order (the same chips in the normal scan and in group view; only the 
 
 **Near highs ≤** (same select in the normal scan and in group view; one control, field `maxPctFromHigh`): presets **Any | 5% | 8% | 10% | 15% | 20%**. Select only. Default **Any** (`null`) applies no distance filter. Distance is `abs(min(0, pctFrom52wHigh))`, so a print above the 52-week high counts as 0. A selected preset T hides ideas whose distance is greater than T. The previous free-number input on this same field defaulted to 100, which hid nothing; `migrateStoredFilters` maps 100 and any value ≥ 100 to Any, keeps 5, 8, 10, 15, and 20, and snaps every other finite number to the nearest preset (the lower preset when two are equally close).
 
-**Normal scan baseline** (`DEFAULT_FILTERS`): Above 200 DMA on, stages coiled + triggering, Above 50 SMA on, Above 10/20 SMA off, surfer chips off, Tight consolidation off, min RVOL 0, Near highs ≤ **Any** (no filter), max ADR extension from 50 SMA **Any** (no filter), all setup types, all earnings statuses, A+ only off, Has catalyst off, search empty. With Above 200 DMA on, the table matches the old hard gate that dropped every `aboveSma200: false` row before the other checks.
+**Min DolVol** (`minAvgDollarVol`): the FiltersBar control is millions of dollars. It compares `avgDollarVol`, the mean of close × volume over the prior **20** sessions, excluding the latest bar (`BAR_WINDOWS.dolVolSessions`). Normal scan default is **$30M** (`DEFAULT_MIN_AVG_DOLLAR_VOL` = 30_000_000). Group view default is **$0** (no floor). `passesFilters` hides a row when that average is a finite number below the floor. A missing average is kept. `migrateStoredFilters` fills a missing or non-numeric value with $30M and clamps a negative number to 0. A blank input is stored as 0.
 
-**Group-view baseline** (`GROUP_VIEW_DEFAULT_FILTERS`): the same values except stages are all three (`watching`, `coiled`, `triggering`) and Above 50 SMA, Above 10/20 SMA, the surfer chips, and Tight consolidation are off. Above 200 DMA stays on. Near highs ≤ and Max ADR extension from 50 SMA stay **Any**. While a group is selected the filter bar shows and edits this state. The normal scan filters are left alone, so they come back when the group is cleared. Changing the group, or pressing **Reset** on the filter bar, returns the group-view state to that baseline. Filter-bar **Reset** also restores the normal scan filters to `DEFAULT_FILTERS` and keeps the selected group. The group-panel **Reset** (next to the period control, and in the results banner) clears the group and brings those scan filters back. It does not start a new scan.
+**Normal scan baseline** (`DEFAULT_FILTERS`): Above 200 DMA on, stages coiled + triggering, Above 50 SMA on, Above 10/20 SMA off, surfer chips off, Tight consolidation off, min RVOL 0, Min DolVol **$30M**, Near highs ≤ **Any** (no filter), max ADR extension from 50 SMA **Any** (no filter), all setup types, all earnings statuses, A+ only off, Has catalyst off, search empty. With Above 200 DMA on, the table matches the old hard gate that dropped every `aboveSma200: false` row before the other checks.
+
+**Group-view baseline** (`GROUP_VIEW_DEFAULT_FILTERS`): the same values except stages are all three (`watching`, `coiled`, `triggering`), Min DolVol is **$0**, and Above 50 SMA, Above 10/20 SMA, the surfer chips, and Tight consolidation are off. Above 200 DMA stays on. Near highs ≤ and Max ADR extension from 50 SMA stay **Any**. While a group is selected the filter bar shows and edits this state. The normal scan filters are left alone, so they come back when the group is cleared. Changing the group, or pressing **Reset** on the filter bar, returns the group-view state to that baseline. Filter-bar **Reset** also restores the normal scan filters to `DEFAULT_FILTERS` and keeps the selected group. The group-panel **Reset** (next to the period control, and in the results banner) clears the group and brings those scan filters back. It does not start a new scan.
 
 Every control applies as soon as it is pressed, including when the value equals a baseline. Re-enabling coiled + triggering, turning Above 50 SMA back on, or selecting every setup type hides or shows rows immediately. PR #5's rule (ignore a group filter that still equals the scanner default) is gone, which is why those controls used to look dead in group view.
 
-The banner `Showing N of M group stocks (filters hiding K)` counts every row the active group filters remove, including Above 200 DMA. A group whose members include below-200 names therefore opens as, for example, `Showing 18 of 20 group stocks (filters hiding 2)`. **Show all (incl. below 200 DMA)** turns Above 200 DMA off and sets every other group filter to its most permissive value (all stages, no SMA requirement, min RVOL 0, Near highs ≤ Any, max ADR extension from 50 SMA Any, all setup types, all earnings statuses, A+ only off, catalyst off, search cleared) so the full member list is shown. The Above 200 DMA chip toggles that gate by itself. Rows that are shown below the 200-day SMA keep the **Below 200** stage badge, the `<200` trend badge, and the `Below 200MA` characteristic. TradingView copy and the shown count use the rows on screen. Order stays the selected period's performance descending, nulls last, ticker ascending on a tie.
+The banner `Showing N of M group stocks (filters hiding K)` counts every row the active group filters remove, including Above 200 DMA. A group whose members include below-200 names therefore opens as, for example, `Showing 18 of 20 group stocks (filters hiding 2)`. **Show all (incl. below 200 DMA)** turns Above 200 DMA off and sets every other group filter to its most permissive value (all stages, no SMA requirement, min RVOL 0, min dollar volume $0, Near highs ≤ Any, max ADR extension from 50 SMA Any, all setup types, all earnings statuses, A+ only off, catalyst off, search cleared) so the full member list is shown. The Above 200 DMA chip toggles that gate by itself. Rows that are shown below the 200-day SMA keep the **Below 200** stage badge, the `<200` trend badge, and the `Below 200MA` characteristic. TradingView copy and the shown count use the rows on screen. Order stays the selected period's performance descending, nulls last, ticker ascending on a tie.
 
 The normal scan prefilters below-200 names server-side; toggle off only reveals names present in the payload, group view includes them. Stage 1.5 drops below-200 and below-50 names before deep scoring, and this change does not alter that server scan. Names that do reach the normal payload with `aboveSma200: false` are still subject to the other chips (they are staged `watching`, and Above 50 SMA is on by default). Filter values are not written to localStorage. If a stored filter object has no `requireAbove200`, it is read as on (`migrateStoredFilters`) and does not throw. `hasCatalyst` and the surfer flags migrate as booleans and do not throw. A missing `maxExtensionAdr50` is read as `null` (Any). A missing `maxPctFromHigh`, a stored 100, or any value ≥ 100 is read as `null` (Any). Exact near-highs presets 5, 8, 10, 15, and 20 are kept; other finite numbers snap to the nearest preset.
 
@@ -402,7 +432,8 @@ Use only for local UI work. Default when unset: **`live`**.
 | `src/lib/tightConsolidation.ts` | Tight consolidation (`TIGHT_CONFIG`) |
 | `src/lib/setupStage.ts` | watching / coiled / triggering |
 | `src/lib/userWatchlistStore.ts` | Manual watchlist localStorage (`qm.userWatchlist.v2`) |
-| `server/yahooScreener.ts` | Stage-1 Yahoo EquityQuery client (crumb + pagination) |
+| `server/yahooScreener.ts` | Stage-1 Yahoo EquityQuery client (crumb + pagination). Fallback when leading groups cannot be built |
+| `server/leadingGroupsUniverse.ts` | Default Stage-1 universe: members of the top-12 Finviz groups for the selected period |
 | `server/scanEngine.ts` | Stage-1→1.5→2 orchestration + cache writer |
 | `server/scanCache.ts` | `data/scan-cache.json` load/save + scan lock |
 | `server/marketProxy.ts` | Cascade + TTL cache + Vite middleware (`/api/market/*` including bars/news/profile/quote) |
@@ -425,7 +456,7 @@ Use only for local UI work. Default when unset: **`live`**.
 | `server/groupLeaders.ts` | `GET /api/groups/leaders` from the snapshot |
 | `server/groupStocks.ts` | Group drill-down: snapshot top 20 + `scoreTickers`, 12-minute cache |
 | `server/groupWarmup.ts` | Background warm-up of the top 25 groups |
-| `server/data/finviz-group-members.json` | Committed membership snapshot (`npm run build:groups`) |
+| `server/data/finviz-group-members.json` | Committed membership snapshot. Refresh with weekly `npm run build:groups` until a `workflow`-scoped token can push the Monday 06:00 UTC Actions job |
 | `scripts/buildGroupMembers.ts` | Builds that file from a host that can reach Finviz |
 | `server/fixtures/finviz-screener-performance-sample.html` | Trimmed real screener table used by parser tests |
 | `src/lib/groupPeriod.ts` | Period → Finviz order, slug checks, leader-count definition |
@@ -437,7 +468,7 @@ Use only for local UI work. Default when unset: **`live`**.
 
 ## How to extend / tune the scan
 
-1. **Liquidity / price** — env `SCAN_MIN_AVG_VOL` (default 750000), `SCAN_MIN_PRICE` (default 5), `SCAN_STAGE1_CAP` (default 800).
+1. **Liquidity / price** — Stage 1 is the members of the top 12 Finviz groups for the selected period (default **1M**, `LEADING_GROUPS_PERIOD`). `SCAN_STAGE1_CAP` (default 800) caps the list. The Yahoo fallback still uses env `SCAN_MIN_AVG_VOL` (default 750000) and `SCAN_MIN_PRICE` (default 5). The client Min DolVol filter defaults to $30M on a normal scan and $0 in group view. It does not change the server universe.
 2. **Stage 1.5 SMA** — `SMA_QUOTE_BATCH` (default 20), `SMA_QUOTE_GAP_MS` (default 120), `SMA_QUOTE_CACHE_TTL_MS` (default 5m). Always requires above 200 **and** above 50.
 3. **Staleness** — `SCAN_CACHE_STALE_MS` (default 45m).
 4. **Emergency list** — edit `SCAN_UNIVERSE` in `src/data/watchlist.ts` only as a last-resort fallback.
@@ -454,7 +485,7 @@ Use only for local UI work. Default when unset: **`live`**.
 | **Group 1D / 1W / 1M / 3M / 6M** | Finviz industry performance (3M = 13-week, 6M = 26-week). The panel ranks by the selected period. 1W is on the tooltip, not its own column. Fallback: average of scan members' returns in that internal group |
 | **Leaders `N/D`** | Of the top 20 snapshot members with a computed selected-period performance (price &gt; $5 and avg volume &gt; 750K when the snapshot was built), how many are &gt; 0 and also sit in the current scan cache |
 | **earningsDate / daysToEarnings / earningsStatus** | Next earnings from Finnhub calendar (Nasdaq fallback); `avoid` = same/next trading day (hard fail for entry / not A+); `alert` ≈ 2 trading days; `clear` otherwise |
-| **DolVol / Avg $ volume** | 20-day average of close × volume |
+| **DolVol / Avg $ volume** | 20-session average of close × volume, excluding the latest bar. Normal-scan filter default $30M. Group view default $0 |
 | **SMA200 / SMA50 / SMA20 / SMA10** | Simple moving averages of daily closes |
 | **aboveSma200** | **Above 200 DMA** filter (default on). Price above the daily 200-SMA, or the name is not a valid setup. The normal scan also drops these names in Stage 1.5 before the payload is built |
 | **aboveSma50** | Soft preference; filter **Above 50 SMA** (`requireSma50`) defaults **ON** |
