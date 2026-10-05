@@ -14,7 +14,13 @@ import {
   type UTCTimestamp,
 } from 'lightweight-charts'
 import { smaSeries, toCandles, toVolume, type OhlcvBar } from '../lib/chartData'
-import { SMA_PERIODS } from '../lib/metrics'
+import {
+  extensionAdr50Tone,
+  extensionAdrFrom50,
+  formatExtensionAdr50,
+  roundExtensionAdr50,
+} from '../lib/extensionAdr'
+import { BAR_WINDOWS, SMA_PERIODS, smaClose } from '../lib/metrics'
 import { metricTipAttrs } from '../lib/metricDefinitions'
 import { fmtPct, fmtPrice, pctClass } from '../utils/format'
 import { MetricTip } from './MetricTip'
@@ -34,6 +40,10 @@ interface Props {
   name?: string
   price?: number | null
   dayPct?: number | null
+  /** Stored ADR extension from the 50 SMA. Used when present; otherwise recomputed from bars. */
+  extensionAdr50?: number | null
+  adrPct?: number | null
+  sma50?: number | null
 }
 
 const SMA_META = [
@@ -90,11 +100,71 @@ function isAbort(err: unknown): boolean {
   return err instanceof Error && err.name === 'AbortError'
 }
 
+function adrPctFromChartBars(bars: OhlcvBar[]): number | null {
+  const lookback = bars.slice(-(BAR_WINDOWS.adrSessions + 1), -1)
+  if (!lookback.length) return null
+  let sum = 0
+  for (const bar of lookback) {
+    sum += bar.c > 0 ? ((bar.h - bar.l) / bar.c) * 100 : 0
+  }
+  return sum / lookback.length
+}
+
+/**
+ * Prefer the idea field when it is a finite number (including 0).
+ * Otherwise recompute from bars + ADR so a missing payload still shows a value.
+ */
+function resolveChartExtensionAdr50(opts: {
+  stored?: number | null
+  price?: number | null
+  sma50?: number | null
+  adrPct?: number | null
+  bars: OhlcvBar[]
+  barsMatch: boolean
+}): number | null {
+  if (typeof opts.stored === 'number' && Number.isFinite(opts.stored)) return opts.stored
+  if (!opts.barsMatch || opts.bars.length === 0) return null
+  const last = opts.bars[opts.bars.length - 1]
+  const price =
+    opts.price != null && Number.isFinite(opts.price) && opts.price > 0
+      ? opts.price
+      : last && Number.isFinite(last.c)
+        ? last.c
+        : null
+  const sma50 =
+    opts.sma50 != null && Number.isFinite(opts.sma50)
+      ? opts.sma50
+      : smaClose(opts.bars.map((b) => b.c), SMA_PERIODS.sma50)
+  const adrPct =
+    opts.adrPct != null && Number.isFinite(opts.adrPct) && opts.adrPct > 0
+      ? opts.adrPct
+      : adrPctFromChartBars(opts.bars)
+  if (price == null || sma50 == null || adrPct == null) return null
+  return roundExtensionAdr50(extensionAdrFrom50(price, sma50, adrPct))
+}
+
+function ext50ChartChipClass(value: number | null): string {
+  const tone = extensionAdr50Tone(value)
+  const base = 'min-h-10 rounded-full border px-3 text-[11px] font-mono'
+  if (tone === 'green') return `${base} border-terminal-green/40 bg-terminal-green/15 text-terminal-green`
+  if (tone === 'amber') return `${base} border-terminal-amber/40 bg-terminal-amber-dim text-terminal-amber`
+  if (tone === 'red') return `${base} border-terminal-red/40 bg-terminal-red-dim text-terminal-red`
+  return `${base} border-terminal-border text-terminal-dim`
+}
+
 /**
  * Daily candlestick chart that fills its parent. Previous bars stay on screen
  * while a newer symbol loads. Responses from an older request are ignored.
  */
-export default function DailyChartPanel({ symbol, name, price, dayPct }: Props) {
+export default function DailyChartPanel({
+  symbol,
+  name,
+  price,
+  dayPct,
+  extensionAdr50,
+  adrPct,
+  sma50,
+}: Props) {
   const [enabled, setEnabled] = useState<Record<SmaN, boolean>>({
     [SMA_PERIODS.sma10]: false,
     [SMA_PERIODS.sma20]: true,
@@ -127,6 +197,18 @@ export default function DailyChartPanel({ symbol, name, price, dayPct }: Props) 
   const lastHover = useMemo(() => hoverFromLastBar(bars, enabled), [bars, enabled])
   const liveCrosshair = crosshair && crosshair.token === barsToken ? crosshair.hover : null
   const hover = barsMatch && !showError ? (liveCrosshair ?? lastHover) : null
+  const chartExtensionAdr50 = useMemo(
+    () =>
+      resolveChartExtensionAdr50({
+        stored: extensionAdr50,
+        price,
+        sma50,
+        adrPct,
+        bars,
+        barsMatch,
+      }),
+    [extensionAdr50, price, sma50, adrPct, bars, barsMatch],
+  )
 
   if (symbol !== activeSymbol) {
     setActiveSymbol(symbol)
@@ -413,6 +495,13 @@ export default function DailyChartPanel({ symbol, name, price, dayPct }: Props) 
               </button>
             )
           })}
+          <MetricTip
+            id="extensionAdr50"
+            extra={`${formatExtensionAdr50(chartExtensionAdr50)} ADR from the 50 SMA`}
+            className={ext50ChartChipClass(chartExtensionAdr50)}
+          >
+            Ext. 50SMA {formatExtensionAdr50(chartExtensionAdr50)} ADR
+          </MetricTip>
         </div>
       </header>
 

@@ -7,6 +7,7 @@ import type {
   StDirection,
   TradingIdea,
 } from '../types'
+import { extensionAdrFrom50, roundExtensionAdr50 } from './extensionAdr'
 import { resolvePrevClose } from './prevClose'
 import { setupStageHeuristic } from './setupStage'
 import { compactSurferDetail, evaluateSurfer } from './surfer'
@@ -243,6 +244,19 @@ export function classifyEarningsProximity(
 export function smaClose(closes: number[], period: number): number | null {
   if (closes.length < period || period <= 0) return null
   return avg(closes.slice(-period))
+}
+
+/**
+ * Mean of (high − low) / close × 100 over the prior `sessions` bars,
+ * excluding the latest bar. A non-positive close contributes 0.
+ * Empty lookback yields 0 (same as the previous inline average).
+ */
+export function adrPctFromBars(
+  bars: DailyBar[],
+  sessions = BAR_WINDOWS.adrSessions,
+): number {
+  const lookback = bars.slice(-(sessions + 1), -1)
+  return avg(lookback.map((b) => (b.c > 0 ? ((b.h - b.l) / b.c) * 100 : 0)))
 }
 
 /**
@@ -491,10 +505,7 @@ export function computeIdeaMetrics(
   const avgVol20 = avg(lookbackVol.map((b) => b.v))
   const rvol = avgVol20 > 0 ? last.v / avgVol20 : 0
 
-  const lookbackAdr = bars.slice(-(BAR_WINDOWS.adrSessions + 1), -1)
-  const adrPct = avg(
-    lookbackAdr.map((b) => (b.c > 0 ? ((b.h - b.l) / b.c) * 100 : 0)),
-  )
+  const adrPct = adrPctFromBars(bars)
 
   const yearBars = bars.slice(-BAR_WINDOWS.high52Sessions)
   const high52 = Math.max(...yearBars.map((b) => b.h))
@@ -513,6 +524,7 @@ export function computeIdeaMetrics(
   const aboveSma10 = price > sma10
   const pctAboveSma200 = pctChange(sma200, price)
   const pctAboveSma50 = pctChange(sma50, price)
+  const extensionAdr50 = roundExtensionAdr50(extensionAdrFrom50(price, sma50, adrPct))
 
   const closeAt = (offset: number): number => {
     const idx = bars.length - 1 - offset
@@ -605,6 +617,7 @@ export function computeIdeaMetrics(
     aboveSma50,
     pctAboveSma200: round2(pctAboveSma200),
     pctAboveSma50: round2(pctAboveSma50),
+    extensionAdr50,
     setupType,
     catalyst,
     isAPlus,

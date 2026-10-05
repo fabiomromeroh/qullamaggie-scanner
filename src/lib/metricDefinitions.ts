@@ -36,7 +36,13 @@ import {
 } from './groupPeriod'
 import { LEADER_POOL_SIZE, PERIOD_SESSIONS } from './memberPerf'
 import { SCAN_MIN_AVG_VOL_DEFAULT, SCAN_MIN_PRICE_DEFAULT, SCAN_STAGE1_CAP_DEFAULT, SCAN_STAGE1_PAGE_SIZE } from './scanDefaults'
-import { DEFAULT_FILTERS } from '../types'
+import { DEFAULT_FILTERS, MAX_EXTENSION_ADR50_PRESETS } from '../types'
+import {
+  EXTENSION_ADR50_FORMULA,
+  EXTENSION_ADR50_FORMULA_EQUIV,
+  EXTENSION_ADR50_MODEST,
+  EXTENSION_ADR50_STRETCHED,
+} from './extensionAdr'
 import type { GroupPeriod } from '../types'
 
 export interface MetricDef {
@@ -107,6 +113,24 @@ function rvolHow(): string {
 function adrHow(): string {
   const n = BAR_WINDOWS.adrSessions
   return `Mean of (high − low) / close × 100 over the prior ${n} sessions, excluding the latest bar. A non-positive close contributes 0.`
+}
+
+function extensionAdr50How(): string {
+  const n = BAR_WINDOWS.adrSessions
+  return `Canonical: ${EXTENSION_ADR50_FORMULA}. Equivalent: ${EXTENSION_ADR50_FORMULA_EQUIV}. ADR% is the mean of (high − low) / close × 100 over the prior ${n} sessions, excluding the latest bar. Positive means extended above the 50 SMA; negative means below; zero when price equals the 50 SMA. Null when price ≤ 0, sma50 is missing or non-finite, or adrPct ≤ 0 (UI shows —). Stored on the idea rounded to 2 decimals.`
+}
+
+function extensionAdr50FilterHow(): string {
+  return `${extensionAdr50How()} When a threshold T is selected, rows with a known extensionAdr50 > T are hidden. Ideas with extensionAdr50 == null (unknown) are kept. Names below the 50 SMA (negative extension) always pass.`
+}
+
+function extensionAdr50PresetNote(): string {
+  const presets = MAX_EXTENSION_ADR50_PRESETS.map((t, i) =>
+    i === 0 ? `< ${t} ADR` : `< ${t}`,
+  ).join(' | ')
+  const def = DEFAULT_FILTERS.maxExtensionAdr50
+  const defaultText = def == null ? 'Any (no filter)' : `< ${def}`
+  return `Presets: Any (no filter) | ${presets}. Default: ${defaultText} so first load is unchanged.`
 }
 
 function highHow(): string {
@@ -288,6 +312,12 @@ export const METRIC_DEFS = {
     'vs 50 SMA',
     'Percent the price sits above or below SMA50.',
     smaHow(SMA_PERIODS.sma50),
+  ),
+  extensionAdr50: d(
+    'Ext. 50SMA',
+    'How many ADRs the price sits above the 50-day SMA.',
+    extensionAdr50How(),
+    `This is the ADR-multiple form. TradingIdea.pctAboveSma50 stays (price / SMA50 − 1) × 100 and is not divided by ADR% to produce this field. Colour: green at or below ${EXTENSION_ADR50_MODEST} ADR (including negative), amber through ${EXTENSION_ADR50_STRETCHED}, red above that.`,
   ),
   sma200: d('SMA200', '200-session average of closes.', smaHow(SMA_PERIODS.sma200)),
   sma50: d('SMA50', '50-session average of closes.', smaHow(SMA_PERIODS.sma50)),
@@ -472,6 +502,12 @@ export const METRIC_DEFS = {
     `${highHow()} The filter distance is the absolute value of min(0, pctFrom52wHigh), so a print above the high counts as 0. Rows with distance > maxPctFromHigh are hidden.`,
     `The box default is ${DEFAULT_FILTERS.maxPctFromHigh}.`,
   ),
+  filterMaxExtensionAdr50: d(
+    'Max ADR extension from 50 SMA',
+    'Hide names stretched more than T ADRs above the 50-day SMA.',
+    extensionAdr50FilterHow(),
+    extensionAdr50PresetNote(),
+  ),
   filterGroup: d(
     'Group filter',
     'Keep one industry, or all of them.',
@@ -485,12 +521,12 @@ export const METRIC_DEFS = {
   filterShowAll: d(
     'Show all group members',
     'Drop the group-view gates, including below the 200-day SMA.',
-    'applyShowAllGroup replaces group filters with every stage, every setup type, every earnings status, Above 200 DMA off, SMA and surfer and tight requirements off, min RVOL 0, max percent from high 100, A+ only off, catalyst off, and search cleared. Scan filters are left as they are.',
+    'applyShowAllGroup replaces group filters with every stage, every setup type, every earnings status, Above 200 DMA off, SMA and surfer and tight requirements off, min RVOL 0, max percent from high 100, max ADR extension from 50 SMA Any, A+ only off, catalyst off, and search cleared. Scan filters are left as they are.',
   ),
   filterActiveCount: d(
     'Active filters',
     'How many controls differ from the baseline.',
-    'countActiveFilters increments once per field that differs from the baseline: search, min RVOL, max % from high, group, setup types, stages, each SMA / surfer / tight / Above 200 DMA flag, earnings statuses, A+ only, and catalyst. The baseline is the normal defaults, or the group-view baseline while a group is open. Above 200 DMA counts when it is off against a baseline that has it on.',
+    'countActiveFilters increments once per field that differs from the baseline: search, min RVOL, max % from high, max ADR extension from 50 SMA, group, setup types, stages, each SMA / surfer / tight / Above 200 DMA flag, earnings statuses, A+ only, and catalyst. The baseline is the normal defaults, or the group-view baseline while a group is open. Above 200 DMA counts when it is off against a baseline that has it on.',
   ),
   watchlistPin: d(
     'Pin',

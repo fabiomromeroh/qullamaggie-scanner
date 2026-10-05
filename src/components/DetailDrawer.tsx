@@ -1,5 +1,9 @@
 import type { ReactNode } from 'react'
 import { Pin, PinOff } from 'lucide-react'
+import {
+  extensionAdr50Tone,
+  formatExtensionAdr50,
+} from '../lib/extensionAdr'
 import { metricTipAttrs, type MetricId } from '../lib/metricDefinitions'
 import type { TradingIdea } from '../types'
 import { stageLabel } from '../lib/setupStage'
@@ -20,6 +24,15 @@ interface Props {
 
 function passFail(ok: boolean): string {
   return ok ? 'pass' : 'fail'
+}
+
+function ext50ChipClass(value: number | null): string {
+  const tone = extensionAdr50Tone(value)
+  const base = 'rounded border px-1.5 py-0.5 text-[10px] font-mono'
+  if (tone === 'green') return `${base} border-terminal-green/30 bg-terminal-green/15 text-terminal-green`
+  if (tone === 'amber') return `${base} border-terminal-amber/40 bg-terminal-amber-dim text-terminal-amber`
+  if (tone === 'red') return `${base} border-terminal-red/40 bg-terminal-red-dim text-terminal-red`
+  return `${base} border-terminal-border text-terminal-dim`
 }
 
 function MetricCell({ id, label, value }: { id: MetricId; label: string; value: string }) {
@@ -271,6 +284,13 @@ export function DetailDrawer({ idea, source = 'live', isPinned, onTogglePin }: P
                 above 50 SMA
               </MetricTip>
             )}
+            <MetricTip
+              id="extensionAdr50"
+              extra={`${formatExtensionAdr50(idea.extensionAdr50)} ADR · price ${fmtPrice(idea.price)} · SMA50 ${fmtPrice(idea.sma50)} · ADR% ${idea.adrPct.toFixed(1)}`}
+              className={ext50ChipClass(idea.extensionAdr50)}
+            >
+              Ext. 50SMA: {formatExtensionAdr50(idea.extensionAdr50)} ADR
+            </MetricTip>
             {source === 'demo' && (
               <span className="rounded bg-terminal-amber-dim px-1.5 py-0.5 text-[10px] font-mono text-terminal-amber">
                 DEMO
@@ -368,6 +388,11 @@ export function DetailDrawer({ idea, source = 'live', isPinned, onTogglePin }: P
           </MetricTip>
           <MetricCell id="pctAboveSma200" label="vs 200 SMA" value={fmtPct(idea.pctAboveSma200)} />
           <MetricCell id="pctAboveSma50" label="vs 50 SMA" value={fmtPct(idea.pctAboveSma50)} />
+          <MetricCell
+            id="extensionAdr50"
+            label="Ext. 50SMA"
+            value={`${formatExtensionAdr50(idea.extensionAdr50)} ADR`}
+          />
           <MetricCell id="sma200" label="SMA200" value={fmtPrice(idea.sma200)} />
           <MetricCell id="priorRunPct" label="Prior run%" value={fmtPct(idea.priorRunPct, 0)} />
           <MetricCell id="tightDays" label="Tight days" value={String(idea.tightDays)} />

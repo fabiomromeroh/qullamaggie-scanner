@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import type { CatalystMeta, EarningsStatus, IdeaFilters, IndustryGroup, SetupStage, SetupType } from '../types'
-import { ALL_EARNINGS_STATUSES, ALL_SETUP_TYPES, DEFAULT_FILTERS } from '../types'
+import { ALL_EARNINGS_STATUSES, ALL_SETUP_TYPES, DEFAULT_FILTERS, MAX_EXTENSION_ADR50_PRESETS } from '../types'
 import {
   ABOVE_200_DMA_LABEL,
   ABOVE_200_DMA_TOOLTIP,
@@ -246,6 +246,30 @@ export function FiltersBar({
             onChange={(e) => onChange({ ...filters, maxPctFromHigh: Number(e.target.value) || 0 })}
             className="w-20 rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1 font-mono text-xs text-terminal-fg outline-none focus:border-terminal-blue sm:w-24"
           />
+        </label>
+        <label
+          {...metricTipAttrs('filterMaxExtensionAdr50')}
+          className="flex cursor-help flex-col gap-0.5 text-[10px] text-terminal-dim"
+        >
+          Max ADR extension from 50 SMA
+          <select
+            value={filters.maxExtensionAdr50 ?? ''}
+            aria-label="Max ADR extension from 50 SMA"
+            onChange={(e) =>
+              onChange({
+                ...filters,
+                maxExtensionAdr50: e.target.value === '' ? null : Number(e.target.value),
+              })
+            }
+            className="min-h-8 min-w-[120px] rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1 text-[10px] text-terminal-fg outline-none focus:border-terminal-blue"
+          >
+            <option value="">Any</option>
+            {MAX_EXTENSION_ADR50_PRESETS.map((t) => (
+              <option key={t} value={t}>
+                {t === 5 ? `< ${t} ADR` : `< ${t}`}
+              </option>
+            ))}
+          </select>
         </label>
       </FilterGroup>
 

@@ -49,6 +49,11 @@ export interface FilterableIdea {
   tightConsolidation?: boolean
   rvol: number
   pctFrom52wHigh: number
+  /**
+   * ADR multiples from the 50 SMA. Missing/null is treated as unknown and
+   * kept when a max-extension threshold is set.
+   */
+  extensionAdr50?: number | null
   setupType: SetupType
   isAPlus: boolean
   earningsStatus: EarningsStatus
@@ -81,6 +86,7 @@ export function cloneIdeaFilters(filters: IdeaFilters): IdeaFilters {
   return {
     minRvol: filters.minRvol,
     maxPctFromHigh: filters.maxPctFromHigh,
+    maxExtensionAdr50: filters.maxExtensionAdr50 ?? null,
     setupTypes: [...(filters.setupTypes ?? [])],
     aPlusOnly: filters.aPlusOnly,
     hasCatalyst: filters.hasCatalyst,
@@ -116,6 +122,7 @@ export function showAllGroupFilters(): IdeaFilters {
     requireTight: false,
     minRvol: 0,
     maxPctFromHigh: 100,
+    maxExtensionAdr50: null,
     aPlusOnly: false,
     hasCatalyst: false,
     search: '',
@@ -149,6 +156,7 @@ export function countActiveFilters(
   if ((filters.search ?? '').trim() !== (baseline.search ?? '').trim()) n += 1
   if (filters.minRvol !== baseline.minRvol) n += 1
   if (filters.maxPctFromHigh !== baseline.maxPctFromHigh) n += 1
+  if ((filters.maxExtensionAdr50 ?? null) !== (baseline.maxExtensionAdr50 ?? null)) n += 1
   if ((filters.groupId ?? null) !== (baseline.groupId ?? null)) n += 1
   if (!sameMembers(filters.setupTypes, baseline.setupTypes)) n += 1
   if (!sameMembers(filters.stages, baseline.stages)) n += 1
@@ -196,6 +204,12 @@ function pickNum(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback
 }
 
+function pickNumOrNull(value: unknown, fallback: number | null): number | null {
+  if (value === null) return null
+  if (typeof value === 'number' && Number.isFinite(value)) return value
+  return fallback
+}
+
 /**
  * Filters are not stored in localStorage. This still accepts an older object
  * (for example one read from storage later) that has no `requireAbove200` and
@@ -209,6 +223,7 @@ export function migrateStoredFilters(raw: unknown): IdeaFilters {
   return {
     minRvol: pickNum(src.minRvol, base.minRvol),
     maxPctFromHigh: pickNum(src.maxPctFromHigh, base.maxPctFromHigh),
+    maxExtensionAdr50: pickNumOrNull(src.maxExtensionAdr50, base.maxExtensionAdr50),
     setupTypes: pickList(src.setupTypes, ALL_SETUP_TYPES, base.setupTypes),
     aPlusOnly: pickBool(src.aPlusOnly, base.aPlusOnly),
     hasCatalyst: pickBool(src.hasCatalyst, base.hasCatalyst),
@@ -285,6 +300,12 @@ export function passesFilters(
   const pct = typeof idea.pctFrom52wHigh === 'number' ? idea.pctFrom52wHigh : 0
   const distance = Math.abs(Math.min(0, pct))
   if (typeof f.maxPctFromHigh === 'number' && distance > f.maxPctFromHigh) return false
+  // Max ADR extension from 50 SMA: exclude known values strictly above T.
+  // Unknown (null/missing/non-finite) is kept. Negative (below the 50 SMA) always passes.
+  if (typeof f.maxExtensionAdr50 === 'number' && Number.isFinite(f.maxExtensionAdr50)) {
+    const ext = idea.extensionAdr50
+    if (typeof ext === 'number' && Number.isFinite(ext) && ext > f.maxExtensionAdr50) return false
+  }
   if (f.setupTypes && !f.setupTypes.includes(idea.setupType)) return false
   if (f.aPlusOnly && !idea.isAPlus) return false
   if (f.earningsStatuses?.length && !f.earningsStatuses.includes(idea.earningsStatus)) return false

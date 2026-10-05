@@ -49,6 +49,7 @@ function idea(partial: Partial<TradingIdea>): TradingIdea {
     aboveSma50: true,
     pctAboveSma200: 1,
     pctAboveSma50: 1,
+    extensionAdr50: 0.3,
     setupType: 'Continuation',
     catalyst: null,
     isAPlus: false,

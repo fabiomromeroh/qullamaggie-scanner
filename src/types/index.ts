@@ -209,6 +209,14 @@ export interface TradingIdea {
   pctAboveSma200: number
   /** (price / SMA50 − 1) × 100 */
   pctAboveSma50: number
+  /**
+   * ADR multiples above (positive) or below (negative) the 50-day SMA.
+   * Canonical: (price - sma50) / (price * (adrPct / 100)).
+   * Equivalent: pctAboveSma50 / adrPct when pctAboveSma50 = ((price - sma50) / price) * 100.
+   * That price-relative percent is not this field's `pctAboveSma50` (SMA50 in the denominator).
+   * Null when price ≤ 0, sma50 is missing/non-finite, or adrPct ≤ 0. Rounded to 2 decimals.
+   */
+  extensionAdr50: number | null
   setupType: SetupType
   /**
    * Display string for the top catalyst headline. The scan stores null;
@@ -387,9 +395,21 @@ export interface DashboardData {
 }
 
 
+/** Max ADR extension from 50 SMA presets. `null` on the filter is Any (no filter). */
+export const MAX_EXTENSION_ADR50_PRESETS = [5, 4, 3, 2, 1] as const
+
+export type MaxExtensionAdr50Preset = (typeof MAX_EXTENSION_ADR50_PRESETS)[number]
+
 export interface IdeaFilters {
   minRvol: number
   maxPctFromHigh: number
+  /**
+   * Hide names whose ADR extension from the 50 SMA is above this threshold.
+   * `null` is Any (no filter). When T is set, rows with extensionAdr50 != null
+   * AND extensionAdr50 > T are excluded. Null/unknown extensions are kept.
+   * Negative extensions (below the 50 SMA) always pass.
+   */
+  maxExtensionAdr50: number | null
   setupTypes: SetupType[]
   aPlusOnly: boolean
   hasCatalyst: boolean
@@ -431,6 +451,7 @@ export const ALL_EARNINGS_STATUSES: EarningsStatus[] = ['clear', 'alert', 'avoid
 export const DEFAULT_FILTERS: IdeaFilters = {
   minRvol: 0,
   maxPctFromHigh: 100,
+  maxExtensionAdr50: null,
   setupTypes: [...ALL_SETUP_TYPES],
   aPlusOnly: false,
   hasCatalyst: false,

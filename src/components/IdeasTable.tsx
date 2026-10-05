@@ -3,6 +3,7 @@ import { Pin, PinOff } from 'lucide-react'
 import type { CharacteristicTag, EarningsStatus, SetupStage, TradingIdea } from '../types'
 import { SHOW_ALL_GROUP_LABEL } from '../lib/ideaFilters'
 import { groupViewFilterNote } from '../lib/groupView'
+import { extensionAdr50Class, formatExtensionAdr50 } from '../lib/extensionAdr'
 import { KYLE_SCORE_CONFIG, NEAR_ATH_PCT } from '../lib/metrics'
 import { metricTipAttrs } from '../lib/metricDefinitions'
 import { stageLabel } from '../lib/setupStage'
@@ -25,6 +26,7 @@ const DEFAULT_IDEAS_COLS: Record<string, number> = {
   dayPct: 56,
   rvol: 52,
   adr: 52,
+  ext50: 52,
   hi52: 64,
   trend: 88,
   surfer: 72,
@@ -466,6 +468,13 @@ function IdeaCard({
           ADR {idea.adrPct.toFixed(1)}%
         </MetricTip>
         <MetricTip
+          id="extensionAdr50"
+          extra={`${formatExtensionAdr50(idea.extensionAdr50)} ADR from 50 SMA`}
+          className={`font-mono ${extensionAdr50Class(idea.extensionAdr50)}`}
+        >
+          Ext {formatExtensionAdr50(idea.extensionAdr50)}
+        </MetricTip>
+        <MetricTip
           id="pctFrom52wHigh"
           className={`font-mono ${
             Math.abs(idea.pctFrom52wHigh) <= NEAR_ATH_PCT ? 'text-terminal-green' : 'text-terminal-muted'
@@ -742,6 +751,14 @@ export function IdeasTable({
                 <MetricTip id="adrPct">ADR%</MetricTip>
               </ResizableTh>
               <ResizableTh
+                colKey="ext50"
+                width={widthOf('ext50')}
+                onResize={resizeColumn}
+                className="text-right"
+              >
+                <MetricTip id="extensionAdr50">Ext50</MetricTip>
+              </ResizableTh>
+              <ResizableTh
                 colKey="hi52"
                 width={widthOf('hi52')}
                 onResize={resizeColumn}
@@ -913,6 +930,16 @@ export function IdeasTable({
                   </td>
                   <td className="hidden overflow-hidden px-2 py-1.5 text-right font-mono text-terminal-fg lg:table-cell">
                     <MetricTip id="adrPct">{idea.adrPct.toFixed(1)}%</MetricTip>
+                  </td>
+                  <td
+                    className={`overflow-hidden px-2 py-1.5 text-right font-mono ${extensionAdr50Class(idea.extensionAdr50)}`}
+                  >
+                    <MetricTip
+                      id="extensionAdr50"
+                      extra={`${formatExtensionAdr50(idea.extensionAdr50)} ADR from 50 SMA`}
+                    >
+                      {formatExtensionAdr50(idea.extensionAdr50)}
+                    </MetricTip>
                   </td>
                   <td
                     className={`hidden overflow-hidden px-2 py-1.5 text-right font-mono lg:table-cell ${

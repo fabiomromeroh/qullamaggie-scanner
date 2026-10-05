@@ -4,6 +4,7 @@
  * Never used as a silent fallback for live failures.
  */
 import type { CharacteristicTag, DashboardData, IndustryGroup, TradingIdea, SparkPoint } from '../types'
+import { extensionAdrFrom50, roundExtensionAdr50 } from '../lib/extensionAdr'
 import { deriveCharacteristics, kyleScoreHeuristic } from '../lib/metrics'
 import { setupStageHeuristic } from '../lib/setupStage'
 
@@ -138,7 +139,7 @@ type DemoIdeaSeed = Omit<
   | 'baseLengthDays' | 'dollarVolume' | 'kyleScore' | 'characteristics' | 'setupStage'
   | 'perf6M' | 'earningsDate' | 'daysToEarnings' | 'earningsStatus'
   | 'surfer10' | 'surfer20' | 'surfer50' | 'surferDetail'
-  | 'tightConsolidation' | 'tightDetail'
+  | 'tightConsolidation' | 'tightDetail' | 'extensionAdr50'
 >
 
 function enrichKyleDemo(idea: DemoIdeaSeed): TradingIdea {
@@ -207,6 +208,7 @@ function enrichKyleDemo(idea: DemoIdeaSeed): TradingIdea {
   return {
     ...idea,
     isAPlus: isAPlusFinal,
+    extensionAdr50: roundExtensionAdr50(extensionAdrFrom50(idea.price, idea.sma50, idea.adrPct)),
     sma10: Math.round(idea.price * 0.98 * 100) / 100,
     sma20: Math.round(idea.price * 0.96 * 100) / 100,
     aboveSma10,

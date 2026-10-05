@@ -25,8 +25,9 @@ import type { DashboardData } from '../src/types/index.ts'
  * v4: surfer detail is ADR-relative distance (no touch counts) and tight
  * consolidation requires price above the 50 and 200 SMAs. Catalyst fields
  * are not written into this file; they are merged onto the HTTP response.
+ * v5: idea payload adds extensionAdr50 (ADR multiples from the 50 SMA).
  */
-export const SCAN_CACHE_SCHEMA = 4
+export const SCAN_CACHE_SCHEMA = 5
 
 export interface ScanCacheMeta {
   schemaVersion?: number

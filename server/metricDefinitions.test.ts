@@ -28,6 +28,11 @@ import {
   tightRuleText,
   type MetricId,
 } from '../src/lib/metricDefinitions.ts'
+import {
+  EXTENSION_ADR50_FORMULA,
+  EXTENSION_ADR50_FORMULA_EQUIV,
+} from '../src/lib/extensionAdr.ts'
+import { DEFAULT_FILTERS, MAX_EXTENSION_ADR50_PRESETS } from '../src/types/index.ts'
 import { STAGE_CONFIG, setupStageHeuristic } from '../src/lib/setupStage.ts'
 import { CATALYST_CATEGORIES, CATALYST_WINDOW_HOURS } from '../src/lib/catalyst.ts'
 import { SURFER_CONFIG } from '../src/lib/surfer.ts'
@@ -231,6 +236,14 @@ test('tooltip text is built from the live scanner constants', () => {
 
   includes('rvol', `${BAR_WINDOWS.rvolSessions}`)
   includes('adrPct', `${BAR_WINDOWS.adrSessions}`)
+  includes('extensionAdr50', EXTENSION_ADR50_FORMULA)
+  includes('extensionAdr50', EXTENSION_ADR50_FORMULA_EQUIV)
+  includes('extensionAdr50', `${BAR_WINDOWS.adrSessions}`)
+  includes('filterMaxExtensionAdr50', EXTENSION_ADR50_FORMULA)
+  includes('filterMaxExtensionAdr50', `${BAR_WINDOWS.adrSessions}`)
+  includes('filterMaxExtensionAdr50', `${MAX_EXTENSION_ADR50_PRESETS[0]}`)
+  includes('filterMaxExtensionAdr50', 'Any')
+  assert.equal(DEFAULT_FILTERS.maxExtensionAdr50, null)
   includes('dolVol', `${BAR_WINDOWS.dolVolSessions}`)
   includes('pctFrom52wHigh', `${BAR_WINDOWS.high52Sessions}`)
   includes('perf1m', `${BAR_WINDOWS.perf1mSessions}`)
