@@ -324,6 +324,30 @@ export interface TradingIdea {
     aboveSma200: boolean
     failedReasons?: string[]
   }
+  /**
+   * Range Breakout gate values from the same pass as setupType.
+   * `passed` means all five gates passed. Episodic Pivot is still applied
+   * first, so `passed` can be true when setupType is Episodic Pivot.
+   */
+  rangeBreakoutDetail?: RangeBreakoutDetail
+}
+
+/** Which higher-low check passed. Half-window wins when both pass. */
+export type HigherLowsRule = 'half' | 'swing'
+
+/** Stored on the idea so the detail panel can show each Range Breakout gate. */
+export interface RangeBreakoutDetail {
+  adrPct: number
+  aboveSma50: boolean
+  priorRunPct: number
+  /** (max high − min low) / latest close × 100 over recentRangeSessions. Null if it cannot be computed. */
+  recentRangePct: number | null
+  /** recentRangePct / adrPct. Null when ADR% is not positive. Rounded to 2 decimals; the gate uses this value. */
+  rangeOverAdr: number | null
+  hasHigherLows: boolean
+  /** `half` when the floor rose, else `swing` when the staircase rose, else null. */
+  higherLowsRule: HigherLowsRule | null
+  passed: boolean
 }
 
 /** One MA on `surferDetail`. Mirrors src/lib/surfer.ts without importing it (cycle). */

@@ -6,6 +6,7 @@ import {
 } from '../lib/extensionAdr'
 import { metricTipAttrs, type MetricId } from '../lib/metricDefinitions'
 import type { TradingIdea } from '../types'
+import { RANGE_BREAKOUT_CONFIG } from '../lib/metrics'
 import { stageLabel } from '../lib/setupStage'
 import { formatSurferDistance, SURFER_CONFIG } from '../lib/surfer'
 import { TIGHT_CONFIG } from '../lib/tightConsolidation'
@@ -202,6 +203,80 @@ function TightDetailSection({ idea }: { idea: TradingIdea }) {
         </MetricTip>
         <MetricTip id="tightAboveSma200" extra={rows[6]!.hint} className={tightCardClass}>
           {tightRowBody(rows[6]!)}
+        </MetricTip>
+      </div>
+    </section>
+  )
+}
+
+function gateCardClass(ok: boolean): string {
+  const tone = ok ? 'border-terminal-green/40' : 'border-terminal-red/40'
+  return `block rounded border ${tone} bg-terminal-bg px-2 py-2`
+}
+
+function gateStatusClass(ok: boolean): string {
+  return ok ? 'text-terminal-green' : 'text-terminal-red'
+}
+
+function gateBody(label: string, value: string, ok: boolean): ReactNode {
+  return (
+    <>
+      <div className="text-[9px] uppercase tracking-wide text-terminal-dim">{label}</div>
+      <div className={`mt-0.5 font-mono text-xs ${gateStatusClass(ok)}`}>{value}</div>
+      <div className={`text-[10px] ${gateStatusClass(ok)}`}>{ok ? 'pass' : 'fail'}</div>
+    </>
+  )
+}
+
+function RangeBreakoutGatesSection({ idea }: { idea: TradingIdea }) {
+  const d = idea.rangeBreakoutDetail
+  if (!d) return null
+  const c = RANGE_BREAKOUT_CONFIG
+  const adrOk = d.adrPct >= c.adrMinPct
+  const aboveOk = d.aboveSma50 === true
+  const priorOk = d.priorRunPct >= c.priorLegMinPct
+  const rangeOk = d.rangeOverAdr != null && d.rangeOverAdr <= c.rangeOverAdrMax
+  const lowsOk = d.hasHigherLows === true
+  const ruleLabel =
+    d.higherLowsRule === 'half' ? 'half-window' : d.higherLowsRule === 'swing' ? 'swing lows' : 'neither'
+  const headline = d.passed
+    ? idea.setupType === 'Episodic Pivot'
+      ? 'All five gates pass. Episodic Pivot is checked first, so the label stays Episodic Pivot.'
+      : 'All five gates pass.'
+    : 'Not every gate passes.'
+  return (
+    <section>
+      <h3 className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-terminal-dim">
+        <MetricTip id="setupRangeBreakout">Range Breakout gates</MetricTip>
+      </h3>
+      <p className="mb-2 text-[11px] text-terminal-dim">{headline}</p>
+      <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+        <MetricTip id="rangeBreakoutAdr" extra={`≥ ${c.adrMinPct}`} className={gateCardClass(adrOk)}>
+          {gateBody('ADR%', `${d.adrPct.toFixed(1)}%`, adrOk)}
+        </MetricTip>
+        <MetricTip
+          id="rangeBreakoutAbove50"
+          extra="price above the 50-day SMA"
+          className={gateCardClass(aboveOk)}
+        >
+          {gateBody('Above 50 SMA', d.aboveSma50 ? 'yes' : 'no', aboveOk)}
+        </MetricTip>
+        <MetricTip
+          id="rangeBreakoutPriorLeg"
+          extra={`≥ ${c.priorLegMinPct}% via priorRunPct`}
+          className={gateCardClass(priorOk)}
+        >
+          {gateBody('Prior leg%', fmtPct(d.priorRunPct, 0), priorOk)}
+        </MetricTip>
+        <MetricTip
+          id="rangeBreakoutRangeAdr"
+          extra={`≤ ${c.rangeOverAdrMax} over ${c.recentRangeSessions} sessions`}
+          className={gateCardClass(rangeOk)}
+        >
+          {gateBody('Range/ADR', d.rangeOverAdr == null ? '—' : d.rangeOverAdr.toFixed(2), rangeOk)}
+        </MetricTip>
+        <MetricTip id="rangeBreakoutHigherLows" extra={ruleLabel} className={gateCardClass(lowsOk)}>
+          {gateBody('Higher lows', lowsOk ? `yes · ${ruleLabel}` : 'no', lowsOk)}
         </MetricTip>
       </div>
     </section>
@@ -423,6 +498,7 @@ export function DetailDrawer({ idea, source = 'live', isPinned, onTogglePin }: P
 
         <SurferDetailSection idea={idea} />
         <TightDetailSection idea={idea} />
+        <RangeBreakoutGatesSection idea={idea} />
 
         <section>
           <h3 className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-terminal-dim">

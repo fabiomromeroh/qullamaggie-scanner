@@ -26,8 +26,11 @@ import type { DashboardData } from '../src/types/index.ts'
  * consolidation requires price above the 50 and 200 SMAs. Catalyst fields
  * are not written into this file; they are merged onto the HTTP response.
  * v5: idea payload adds extensionAdr50 (ADR multiples from the 50 SMA).
+ * v6: Range Breakout gates are ADR%, above the 50 SMA, priorRunPct, range/ADR,
+ * and higher lows. Ideas store rangeBreakoutDetail. The previous
+ * distance-from-high and relative-volume gates for that label are retired.
  */
-export const SCAN_CACHE_SCHEMA = 5
+export const SCAN_CACHE_SCHEMA = 6
 
 export interface ScanCacheMeta {
   schemaVersion?: number
