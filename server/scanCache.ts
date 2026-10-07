@@ -14,7 +14,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { dirname, resolve } from 'node:path'
-import type { DashboardData, LeadingGroupsMeta } from '../src/types/index.ts'
+import type { DashboardData, IntradayRvolMeta, LeadingGroupsMeta } from '../src/types/index.ts'
 
 /**
  * Bump when cached idea math changes so old files are not served as fresh.
@@ -36,8 +36,11 @@ import type { DashboardData, LeadingGroupsMeta } from '../src/types/index.ts'
  * v9: isA also requires Range Breakout and tight consolidation. Ideas store
  * isAPlusPlus (A+ and a base of at least LONG_BASE_MIN_SESSIONS). isAPlus
  * and isAPlusPlus are recomputed when catalyst fields are merged.
+ * v10: effective rvol is time-of-day when the scan computed it, else the
+ * prior-10 daily ratio. Ideas store rvol20, rvolDaily10, rvolTod, rvolSource.
+ * meta.intradayRvol counts that pass.
  */
-export const SCAN_CACHE_SCHEMA = 9
+export const SCAN_CACHE_SCHEMA = 10
 
 export interface ScanCacheMeta {
   schemaVersion?: number
@@ -57,6 +60,8 @@ export interface ScanCacheMeta {
   scanDurationMs: number
   errors: string[]
   emergencyFallback: boolean
+  /** Present on schema 10 scans. Absent when the pass did not run. */
+  intradayRvol?: IntradayRvolMeta
 }
 
 export type ScanCachePayload = DashboardData & {

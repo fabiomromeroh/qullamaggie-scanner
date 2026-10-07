@@ -216,7 +216,20 @@ export interface TradingIdea {
   groupName: string
   price: number
   dayPct: number
+  /**
+   * Effective relative volume. Time-of-day RVOL when `rvolSource` is `tod`,
+   * otherwise the 10-day daily fallback (`rvolDaily10`). Filters, kyleScore,
+   * Episodic Pivot, catalyst candidates, and sorting read this field.
+   */
   rvol: number
+  /** Latest daily volume / average of the prior 20 sessions. Not the effective value. */
+  rvol20: number
+  /** Latest daily volume / average of the prior 10 sessions. Daily fallback. */
+  rvolDaily10: number
+  /** Cumulative time-of-day RVOL through the last completed 5-minute slot. Null outside the gate. */
+  rvolTod: number | null
+  /** `tod` when `rvol` is the intraday print; `daily` when it is `rvolDaily10`. */
+  rvolSource: 'tod' | 'daily'
   adrPct: number
   pctFrom52wHigh: number
   perf1M: number
@@ -489,6 +502,16 @@ export interface DashboardData {
   stage15MissingSmaCount?: number
   /** Catalyst lookup coverage for the ideas in this payload. */
   catalystMeta?: CatalystMeta
+  /** Time-of-day RVOL phase from the scan that produced this payload. */
+  intradayRvolMeta?: IntradayRvolMeta
+}
+
+/** Counts from the scan's time-of-day RVOL pass. `daily` includes every non-TOD idea. */
+export interface IntradayRvolMeta {
+  asOf: string
+  tod: number
+  daily: number
+  errors: number
 }
 
 

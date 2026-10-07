@@ -142,6 +142,7 @@ type DemoIdeaSeed = Omit<
   | 'surfer10' | 'surfer20' | 'surfer50' | 'surferDetail'
   | 'tightConsolidation' | 'tightDetail' | 'extensionAdr50'
   | 'isA' | 'isAPlusPlus' | 'rangeBaseScore' | 'rangeBaseDetail'
+  | 'rvol20' | 'rvolDaily10' | 'rvolTod' | 'rvolSource'
 >
 
 function enrichKyleDemo(idea: DemoIdeaSeed): TradingIdea {
@@ -246,6 +247,10 @@ function enrichKyleDemo(idea: DemoIdeaSeed): TradingIdea {
   })
   return {
     ...idea,
+    rvol20: idea.rvol,
+    rvolDaily10: idea.rvol,
+    rvolTod: null,
+    rvolSource: 'daily',
     isA,
     isAPlus,
     isAPlusPlus,

@@ -23,6 +23,7 @@ import {
   kyleScoreHeuristic,
 } from '../src/lib/metrics.ts'
 import { RANGE_BASE_CONFIG } from '../src/lib/rangeBase.ts'
+import { INTRADAY_RVOL_CONFIG } from '../src/lib/rvolTod.ts'
 import {
   METRIC_DEFS,
   aPlusPlusRuleText,
@@ -273,6 +274,18 @@ test('tooltip text is built from the live scanner constants', () => {
   includes('kyleScore', `${KYLE_SCORE_CONFIG.clampMax}`)
 
   includes('rvol', `${BAR_WINDOWS.rvolSessions}`)
+  includes('rvol', `${INTRADAY_RVOL_CONFIG.slotMinutes}`)
+  includes('rvol', `${INTRADAY_RVOL_CONFIG.sessionsBack}`)
+  includes('rvol', `${INTRADAY_RVOL_CONFIG.fullSessionSlots}`)
+  includes('rvol', `${INTRADAY_RVOL_CONFIG.minCompletedSlots}`)
+  includes('rvol', `${INTRADAY_RVOL_CONFIG.dailyFallbackSessions}`)
+  includes('rvol', '09:30')
+  includes('rvol', '16:00')
+  includes('rvol', 'Half-days')
+  includes('rvol', 'rvol20')
+  includes('rvolTod', `${INTRADAY_RVOL_CONFIG.sessionsBack}`)
+  includes('rvolDaily10', `${INTRADAY_RVOL_CONFIG.dailyFallbackSessions}`)
+  includes('rvol20', `${BAR_WINDOWS.rvolSessions}`)
   includes('adrPct', `${BAR_WINDOWS.adrSessions}`)
   includes('extensionAdr50', EXTENSION_ADR50_FORMULA)
   includes('extensionAdr50', EXTENSION_ADR50_FORMULA_EQUIV)
