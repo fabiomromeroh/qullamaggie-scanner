@@ -241,9 +241,9 @@ test('imperfect high within ADR slack still counts as contained', () => {
   assert.ok(detail.containment >= RANGE_BASE_CONFIG.containmentMin)
 })
 
-test('default Ext50 is 5 on the scan and Any in group view', () => {
+test('default Ext50 is 5 on the scan and 4 in group view', () => {
   assert.equal(DEFAULT_FILTERS.maxExtensionAdr50, A_CONFIG.ext50MaxAdr)
-  assert.equal(GROUP_VIEW_DEFAULT_FILTERS.maxExtensionAdr50, null)
+  assert.equal(GROUP_VIEW_DEFAULT_FILTERS.maxExtensionAdr50, 4)
   assert.equal(DEFAULT_FILTERS.requireA, false)
   assert.equal(DEFAULT_FILTERS.requireAPlus, false)
   const row = { extensionAdr50: 5.01, aboveSma50: true, aboveSma200: true, setupStage: 'coiled', setupType: 'Range Breakout', isAPlus: false, isA: true, earningsStatus: 'clear', catalyst: null, rvol: 1, pctFrom52wHigh: -1, aboveSma10: true, aboveSma20: true, ticker: 'AAA', name: 'A', groupName: 'G' } as TradingIdea

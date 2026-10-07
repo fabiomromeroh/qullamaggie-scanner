@@ -149,15 +149,21 @@ function extensionAdr50FilterHow(): string {
   return `${extensionAdr50How()} When a threshold T is selected, rows with a known extensionAdr50 > T are hidden. Ideas with extensionAdr50 == null (unknown) are kept. Names below the 50 SMA (negative extension) always pass.`
 }
 
+function dollarVolFloorM(dollars: number): string {
+  return `$${dollars / 1_000_000}M`
+}
+
+function maxExtensionAdr50Label(t: number | null): string {
+  return t == null ? 'Any (no filter)' : `< ${t} ADR`
+}
+
 function extensionAdr50PresetNote(): string {
   const presets = MAX_EXTENSION_ADR50_PRESETS.map((t, i) =>
     i === 0 ? `< ${t} ADR` : `< ${t}`,
   ).join(' | ')
-  const scan = DEFAULT_FILTERS.maxExtensionAdr50
-  const group = GROUP_VIEW_DEFAULT_FILTERS.maxExtensionAdr50
-  const scanText = scan == null ? 'Any (no filter)' : `< ${scan} ADR`
-  const groupText = group == null ? 'Any (no filter)' : `< ${group} ADR`
-  return `Presets: Any (no filter) | ${presets}. Normal scan default: ${scanText}. Group view default: ${groupText} (left on Any on purpose). A missing stored value migrates to the normal-scan default. Explicit null stays Any.`
+  const scanText = maxExtensionAdr50Label(DEFAULT_FILTERS.maxExtensionAdr50)
+  const groupText = maxExtensionAdr50Label(GROUP_VIEW_DEFAULT_FILTERS.maxExtensionAdr50)
+  return `Presets: Any (no filter) | ${presets}. Normal scan default: ${scanText}. Group view default: ${groupText}. A missing stored value migrates to the normal-scan default. Explicit null stays Any.`
 }
 
 function highHow(): string {
@@ -445,7 +451,7 @@ export const METRIC_DEFS = {
     'DolVol',
     'Average dollar volume.',
     dolHow(),
-    `The Min DolVol box compares this average with minAvgDollarVol. A normal scan starts at $${DEFAULT_MIN_AVG_DOLLAR_VOL / 1_000_000}M. Group view starts at $0.`,
+    `The Min DolVol box compares this average with minAvgDollarVol. A normal scan starts at ${dollarVolFloorM(DEFAULT_MIN_AVG_DOLLAR_VOL)}. Group view starts at ${dollarVolFloorM(GROUP_VIEW_DEFAULT_FILTERS.minAvgDollarVol)}.`,
   ),
   setupType: d(
     'Setup type',
@@ -595,7 +601,7 @@ export const METRIC_DEFS = {
     'Min DolVol',
     'Hide names under an average dollar-volume floor.',
     `${dolHow()} passesFilters drops the row when that average is a finite number below minAvgDollarVol. A missing average is kept.`,
-    `The box is millions of dollars. Default on a normal scan is $${DEFAULT_MIN_AVG_DOLLAR_VOL / 1_000_000}M (${DEFAULT_MIN_AVG_DOLLAR_VOL} dollars). Group view defaults to $0, which hides nothing. A blank input is stored as 0. migrateStoredFilters fills a missing value with the normal-scan default.`,
+    `The box is millions of dollars. Default on a normal scan is ${dollarVolFloorM(DEFAULT_MIN_AVG_DOLLAR_VOL)} (${DEFAULT_MIN_AVG_DOLLAR_VOL} dollars). Group view defaults to ${dollarVolFloorM(GROUP_VIEW_DEFAULT_FILTERS.minAvgDollarVol)} (${GROUP_VIEW_DEFAULT_FILTERS.minAvgDollarVol} dollars). A blank input is stored as 0. migrateStoredFilters fills a missing value with the normal-scan default.`,
   ),
   filterMaxPctFromHigh: d(
     'Near highs ≤',

@@ -74,6 +74,8 @@ test('SCAN_CACHE_SCHEMA is 9 and extensionAdr50 is wired through', () => {
   assert.match(readme, /\(price - sma50\) \/ \(price \* \(adrPct \/ 100\)\)/)
   assert.match(readme, /Max ADR extension from 50 SMA/)
   assert.match(readme, /Any \| < 5 ADR \| < 4 \| < 3 \| < 2 \| < 1/)
+  assert.match(readme, /GROUP_VIEW_MAX_EXTENSION_ADR50/)
+  assert.match(readme, /Group view default \*\*< 4\*\*/)
 })
 
 interface FixtureFile {

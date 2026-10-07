@@ -497,7 +497,7 @@ export const NEAR_HIGHS_PRESETS = [5, 8, 10, 15, 20] as const
 
 export type NearHighsPreset = (typeof NEAR_HIGHS_PRESETS)[number]
 
-/** Max ADR extension from 50 SMA presets. `null` on the filter is Any (no filter). */
+/** Max ADR extension from 50 SMA presets. `null` on the filter is Any (no filter). Includes 4 for the group-view default. */
 export const MAX_EXTENSION_ADR50_PRESETS = [5, 4, 3, 2, 1] as const
 
 export type MaxExtensionAdr50Preset = (typeof MAX_EXTENSION_ADR50_PRESETS)[number]
@@ -508,7 +508,7 @@ export interface IdeaFilters {
    * Hide names whose average dollar volume (close × volume over the prior
    * 20 sessions, excluding the latest bar) is below this many dollars.
    * `0` hides nothing. A missing average on the row is kept.
-   * Normal scan default is {@link DEFAULT_MIN_AVG_DOLLAR_VOL}. Group view is 0.
+   * Normal scan default is {@link DEFAULT_MIN_AVG_DOLLAR_VOL}. Group view uses the same floor.
    */
   minAvgDollarVol: number
   /**
@@ -582,14 +582,17 @@ export const ALL_EARNINGS_STATUSES: EarningsStatus[] = ['clear', 'alert', 'avoid
 /** Normal-scan floor for average dollar volume (20 sessions of close × volume). */
 export const DEFAULT_MIN_AVG_DOLLAR_VOL = 30_000_000
 
+/** Group-view cap on ADR extension from the 50 SMA. Selectable in {@link MAX_EXTENSION_ADR50_PRESETS}. */
+export const GROUP_VIEW_MAX_EXTENSION_ADR50 = 4
+
 export const DEFAULT_FILTERS: IdeaFilters = {
   minRvol: 0,
-  /** $30M. Group view overrides this to 0. */
+  /** $30M. Group view uses the same floor. */
   minAvgDollarVol: DEFAULT_MIN_AVG_DOLLAR_VOL,
   maxPctFromHigh: null,
   /**
    * Hide a known extensionAdr50 above 5. Null extensions stay.
-   * Group view sets this back to null (Any) on purpose.
+   * Group view uses {@link GROUP_VIEW_MAX_EXTENSION_ADR50} instead.
    */
   maxExtensionAdr50: 5,
   /** Episodic Pivot and Continuation start off. Group view keeps every label. */
@@ -615,17 +618,23 @@ export const DEFAULT_FILTERS: IdeaFilters = {
 /**
  * Baseline while a Finviz group is selected.
  * Same gates as {@link DEFAULT_FILTERS} except stage and SMA10/20/50 do not
- * hide members. Above 200 DMA stays on.
+ * hide members. Above 200 DMA stays on. Min DolVol uses
+ * {@link DEFAULT_MIN_AVG_DOLLAR_VOL}. Max ADR extension from 50 SMA is
+ * {@link GROUP_VIEW_MAX_EXTENSION_ADR50}.
+ *
+ * Group-view filters are not persisted (`qm.scanFilters.v2` stores the normal
+ * scan only). Opening or changing a group resets this object via
+ * applyFilterChange, so no storage migration is needed.
  */
 export const GROUP_VIEW_DEFAULT_FILTERS: IdeaFilters = {
   ...DEFAULT_FILTERS,
-  /** No dollar-volume floor while a group is open. */
-  minAvgDollarVol: 0,
+  /** $30M floor, same as {@link DEFAULT_MIN_AVG_DOLLAR_VOL}. */
+  minAvgDollarVol: DEFAULT_MIN_AVG_DOLLAR_VOL,
   /**
-   * Group view stays Any. The normal scan default is 5
-   * (`DEFAULT_FILTERS.maxExtensionAdr50`). Do not inherit that cap here.
+   * Hide a known extensionAdr50 above {@link GROUP_VIEW_MAX_EXTENSION_ADR50}.
+   * Null extensions stay. The normal scan default is 5.
    */
-  maxExtensionAdr50: null,
+  maxExtensionAdr50: GROUP_VIEW_MAX_EXTENSION_ADR50,
   requireA: false,
   requireAPlus: false,
   requireAPlusPlus: false,

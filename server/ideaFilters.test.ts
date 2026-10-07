@@ -33,6 +33,8 @@ import {
   DEFAULT_FILTERS,
   DEFAULT_MIN_AVG_DOLLAR_VOL,
   GROUP_VIEW_DEFAULT_FILTERS,
+  GROUP_VIEW_MAX_EXTENSION_ADR50,
+  MAX_EXTENSION_ADR50_PRESETS,
   NEAR_HIGHS_PRESETS,
   type IdeaFilters,
   type TradingIdea,
@@ -630,7 +632,8 @@ test('migrateStoredFilters fills requireAbove200 and rejects bad shapes', () => 
   assert.equal(BAR_WINDOWS.dolVolSessions, 20)
   assert.equal(DEFAULT_MIN_AVG_DOLLAR_VOL, 30_000_000)
   assert.equal(DEFAULT_FILTERS.minAvgDollarVol, DEFAULT_MIN_AVG_DOLLAR_VOL)
-  assert.equal(GROUP_VIEW_DEFAULT_FILTERS.minAvgDollarVol, 0)
+  assert.equal(GROUP_VIEW_DEFAULT_FILTERS.minAvgDollarVol, DEFAULT_MIN_AVG_DOLLAR_VOL)
+  assert.equal(GROUP_VIEW_DEFAULT_FILTERS.minAvgDollarVol, 30_000_000)
   assert.equal(migrateStoredFilters({}).minAvgDollarVol, DEFAULT_MIN_AVG_DOLLAR_VOL)
   assert.equal(migrateStoredFilters({ minAvgDollarVol: 0 }).minAvgDollarVol, 0)
   assert.equal(migrateStoredFilters({ minAvgDollarVol: Number.NaN }).minAvgDollarVol, DEFAULT_MIN_AVG_DOLLAR_VOL)
@@ -688,6 +691,34 @@ test('active-filter counter and reset include > 200 SMA', () => {
   assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, maxExtensionAdr50: 3 }), 1)
   assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, maxExtensionAdr50: null }), 1)
   assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, maxExtensionAdr50: 5 }), 0)
+  assert.equal(
+    countActiveFilters(
+      { ...GROUP_VIEW_DEFAULT_FILTERS, maxExtensionAdr50: GROUP_VIEW_MAX_EXTENSION_ADR50 },
+      GROUP_VIEW_DEFAULT_FILTERS,
+    ),
+    0,
+  )
+  assert.equal(
+    countActiveFilters(
+      { ...GROUP_VIEW_DEFAULT_FILTERS, maxExtensionAdr50: null },
+      GROUP_VIEW_DEFAULT_FILTERS,
+    ),
+    1,
+  )
+  assert.equal(
+    countActiveFilters(
+      { ...GROUP_VIEW_DEFAULT_FILTERS, minAvgDollarVol: 0 },
+      GROUP_VIEW_DEFAULT_FILTERS,
+    ),
+    1,
+  )
+  assert.equal(
+    countActiveFilters(
+      { ...GROUP_VIEW_DEFAULT_FILTERS, minAvgDollarVol: DEFAULT_MIN_AVG_DOLLAR_VOL },
+      GROUP_VIEW_DEFAULT_FILTERS,
+    ),
+    0,
+  )
   assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, requireA: true }), 1)
   assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, requireAPlus: true }), 1)
   assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, requireAPlusPlus: true }), 1)
@@ -757,7 +788,10 @@ test('active-filter counter and reset include > 200 SMA', () => {
   assert.equal(showAll.maxPctFromHigh, null)
   assert.equal(showAll.maxExtensionAdr50, null)
   assert.equal(DEFAULT_FILTERS.maxExtensionAdr50, 5)
-  assert.equal(GROUP_VIEW_DEFAULT_FILTERS.maxExtensionAdr50, null)
+  assert.equal(GROUP_VIEW_MAX_EXTENSION_ADR50, 4)
+  assert.equal(GROUP_VIEW_DEFAULT_FILTERS.maxExtensionAdr50, GROUP_VIEW_MAX_EXTENSION_ADR50)
+  assert.equal(GROUP_VIEW_DEFAULT_FILTERS.maxExtensionAdr50, 4)
+  assert.ok((MAX_EXTENSION_ADR50_PRESETS as readonly number[]).includes(GROUP_VIEW_MAX_EXTENSION_ADR50))
   assert.equal(showAll.requireA, false)
   assert.equal(showAll.requireAPlus, false)
   assert.equal(showAll.requireAPlusPlus, false)
@@ -770,7 +804,7 @@ test('active-filter counter and reset include > 200 SMA', () => {
   assert.equal(showAll.setupTypes.length, ALL_SETUP_TYPES.length)
   assert.equal(showAll.stages.length, 3)
   assert.equal(showAll.earningsStatuses.length, ALL_EARNINGS_STATUSES.length)
-  assert.equal(countActiveFilters(showAll, GROUP_VIEW_DEFAULT_FILTERS), 1)
+  assert.equal(countActiveFilters(showAll, GROUP_VIEW_DEFAULT_FILTERS), 3)
 })
 
 test('group edits do not clobber scan filters; reset and show-all are separate', () => {
@@ -785,6 +819,10 @@ test('group edits do not clobber scan filters; reset and show-all are separate',
   assert.equal(state.group.requireAbove200, true)
   assert.equal(state.group.requireSma50, false)
   assert.equal(state.group.minRvol, 0)
+  assert.equal(state.group.minAvgDollarVol, DEFAULT_MIN_AVG_DOLLAR_VOL)
+  assert.equal(state.group.minAvgDollarVol, 30_000_000)
+  assert.equal(state.group.maxExtensionAdr50, GROUP_VIEW_MAX_EXTENSION_ADR50)
+  assert.equal(state.group.maxExtensionAdr50, 4)
   assert.deepEqual([...state.group.stages].sort(), ['coiled', 'triggering', 'watching'])
 
   state = applyFilterChange(
@@ -803,6 +841,8 @@ test('group edits do not clobber scan filters; reset and show-all are separate',
   assert.equal(state.scan.minRvol, 2)
   assert.equal(state.group.minRvol, 0)
   assert.equal(state.group.requireAbove200, true)
+  assert.equal(state.group.minAvgDollarVol, 30_000_000)
+  assert.equal(state.group.maxExtensionAdr50, 4)
 
   state = applyShowAllGroup(state)
   assert.equal(state.group.requireAbove200, false)
@@ -823,6 +863,57 @@ test('group edits do not clobber scan filters; reset and show-all are separate',
   assert.equal(state.scan.requireSma50, true)
   assert.equal(state.group.requireAbove200, true)
   assert.equal(state.group.requireSma50, false)
+})
+
+test('group view defaults to $30M Min DolVol and max ADR ext 4', () => {
+  assert.equal(GROUP_VIEW_DEFAULT_FILTERS.minAvgDollarVol, 30_000_000)
+  assert.equal(GROUP_VIEW_DEFAULT_FILTERS.maxExtensionAdr50, 4)
+  assert.equal(GROUP_VIEW_DEFAULT_FILTERS.minAvgDollarVol, DEFAULT_MIN_AVG_DOLLAR_VOL)
+  assert.equal(GROUP_VIEW_DEFAULT_FILTERS.maxExtensionAdr50, GROUP_VIEW_MAX_EXTENSION_ADR50)
+  assert.deepEqual([...MAX_EXTENSION_ADR50_PRESETS], [5, 4, 3, 2, 1])
+
+  const fat = idea({ avgDollarVol: 40_000_000 })
+  assert.equal(
+    passesFilters({ ...fat, extensionAdr50: 4.5 }, GROUP_VIEW_DEFAULT_FILTERS, { groupView: true }),
+    false,
+  )
+  assert.equal(
+    passesFilters({ ...fat, extensionAdr50: 3.9 }, GROUP_VIEW_DEFAULT_FILTERS, { groupView: true }),
+    true,
+  )
+  assert.equal(
+    passesFilters({ ...fat, extensionAdr50: 4 }, GROUP_VIEW_DEFAULT_FILTERS, { groupView: true }),
+    true,
+  )
+  assert.equal(
+    passesFilters(idea({ avgDollarVol: 20_000_000, extensionAdr50: 1 }), GROUP_VIEW_DEFAULT_FILTERS, {
+      groupView: true,
+    }),
+    false,
+  )
+  assert.equal(
+    passesFilters(idea({ avgDollarVol: 40_000_000, extensionAdr50: 1 }), GROUP_VIEW_DEFAULT_FILTERS, {
+      groupView: true,
+    }),
+    true,
+  )
+
+  const opened = applyFilterChange(
+    {
+      scan: cloneIdeaFilters(DEFAULT_FILTERS),
+      group: cloneIdeaFilters({
+        ...GROUP_VIEW_DEFAULT_FILTERS,
+        minAvgDollarVol: 0,
+        maxExtensionAdr50: null,
+        minRvol: 9,
+      }),
+    },
+    { ...DEFAULT_FILTERS, groupId: 'semiconductors' },
+    false,
+  )
+  assert.equal(opened.group.minAvgDollarVol, 30_000_000)
+  assert.equal(opened.group.maxExtensionAdr50, 4)
+  assert.equal(opened.group.minRvol, 0)
 })
 
 test('UI copy and README use the single > 200 SMA filter label', () => {
