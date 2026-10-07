@@ -15,6 +15,23 @@ import { ResizeHandle } from './ResizeHandle'
 import { CopyForTradingView } from './CopyForTradingView'
 import { MetricTip } from './MetricTip'
 
+function RvolReadout({ idea, className }: { idea: TradingIdea; className: string }) {
+  return (
+    <MetricTip id="rvol" className={className}>
+      <span className="inline-flex items-center justify-end gap-1">
+        {fmtRvol(idea.rvol)}
+        {idea.rvolSource === 'tod' ? (
+          <span className="rounded bg-terminal-amber/15 px-1 text-[9px] font-semibold leading-none tracking-wide text-terminal-amber">
+            TOD
+          </span>
+        ) : (
+          <span className="text-[9px] font-semibold leading-none text-terminal-dim">D</span>
+        )}
+      </span>
+    </MetricTip>
+  )
+}
+
 const IDEAS_COL_KEY = 'qm-ideas-col-widths'
 
 const DEFAULT_IDEAS_COLS: Record<string, number> = {
@@ -24,7 +41,7 @@ const DEFAULT_IDEAS_COLS: Record<string, number> = {
   group: 100,
   price: 64,
   dayPct: 56,
-  rvol: 52,
+  rvol: 80,
   adr: 52,
   ext50: 52,
   hi52: 64,
@@ -480,12 +497,10 @@ function IdeaCard({
         <SetupBadge type={idea.setupType} />
         <TrendBadges idea={idea} />
         <SurferBadges idea={idea} />
-        <MetricTip
-          id="rvol"
+        <RvolReadout
+          idea={idea}
           className={`font-mono ${idea.rvol >= KYLE_SCORE_CONFIG.rvolHigh ? 'text-terminal-amber' : 'text-terminal-muted'}`}
-        >
-          RVOL {fmtRvol(idea.rvol)}
-        </MetricTip>
+        />
         <MetricTip id="adrPct" className="font-mono text-terminal-muted">
           ADR {idea.adrPct.toFixed(1)}%
         </MetricTip>
@@ -948,7 +963,12 @@ export function IdeasTable({
                       idea.rvol >= KYLE_SCORE_CONFIG.rvolHigh ? 'text-terminal-amber' : 'text-terminal-fg'
                     }`}
                   >
-                    <MetricTip id="rvol">{fmtRvol(idea.rvol)}</MetricTip>
+                    <RvolReadout
+                      idea={idea}
+                      className={
+                        idea.rvol >= KYLE_SCORE_CONFIG.rvolHigh ? 'text-terminal-amber' : 'text-terminal-fg'
+                      }
+                    />
                   </td>
                   <td className="hidden overflow-hidden px-2 py-1.5 text-right font-mono text-terminal-fg lg:table-cell">
                     <MetricTip id="adrPct">{idea.adrPct.toFixed(1)}%</MetricTip>

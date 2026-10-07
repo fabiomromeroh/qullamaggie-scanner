@@ -5,9 +5,10 @@
  * Stage 1.5: cheap Yahoo quote SMA prefilter (above 200 AND above 50).
  * Stage 2: deep Kyle/Qullamaggie metrics on survivors (Yahoo-first cascade).
  */
-import type { GroupPeriod, IndustryGroup, LeadingGroupsMeta, TradingIdea } from '../src/types/index.ts'
+import type { GroupPeriod, IndustryGroup, IntradayRvolMeta, LeadingGroupsMeta, TradingIdea } from '../src/types/index.ts'
 import {
   applyEarningsToIdea,
+  applyIntradayRvol,
   computeIdeaMetrics,
   computeMarketRegime,
   type SymbolBars,
@@ -42,6 +43,7 @@ import {
   SCAN_CACHE_SCHEMA,
   type ScanCachePayload,
 } from './scanCache.ts'
+import { enrichWithIntradayRvol } from './intradayVolume.ts'
 
 const STAGE2_CONCURRENCY = Number(process.env.SCAN_STAGE2_CONCURRENCY || 3)
 const STAGE2_GAP_MS = Number(process.env.SCAN_STAGE2_GAP_MS || 150)
@@ -91,6 +93,11 @@ export interface ScoreTickersOptions {
    * names are returned and flagged (`aboveSma200` false, tag `Below 200MA`).
    */
   includeBelowSma200?: boolean
+  /**
+   * Full scan only. Group drill-down leaves this off and stays on the daily
+   * fallback (`rvolSource: 'daily'`). Runs after metrics and before earnings.
+   */
+  intradayRvol?: boolean
 }
 
 export interface ScoreTickersResult {
@@ -99,6 +106,8 @@ export interface ScoreTickersResult {
   belowSma200Count: number
   /** Set when the earnings batch throws. Ideas are still returned without that overlay. */
   earningsError?: string
+  /** Set when `intradayRvol` was requested. A thrown phase still fills this with all-daily. */
+  intradayRvol?: IntradayRvolMeta
 }
 
 /**
@@ -151,6 +160,44 @@ export async function scoreTickers(
     }
   }
 
+  let intradayRvol: IntradayRvolMeta | undefined
+  if (opts?.intradayRvol) {
+    const asOf = new Date()
+    try {
+      const bySymbol = await enrichWithIntradayRvol(
+        ideas.map((idea) => idea.ticker),
+        asOf,
+      )
+      let tod = 0
+      let daily = 0
+      let errors = 0
+      for (let i = 0; i < ideas.length; i++) {
+        const idea = ideas[i]!
+        const row = bySymbol.get(idea.ticker.toUpperCase())
+        if (!row || row.reason === 'error' || row.reason === 'timeout') errors += 1
+        const next = applyIntradayRvol(idea, row?.rvolTod ?? null)
+        ideas[i] = next
+        if (next.rvolSource === 'tod') tod += 1
+        else daily += 1
+      }
+      intradayRvol = { asOf: asOf.toISOString(), tod, daily, errors }
+    } catch (err) {
+      // enrichWithIntradayRvol does not throw; this keeps a bug from failing the scan.
+      intradayRvol = {
+        asOf: asOf.toISOString(),
+        tod: 0,
+        daily: ideas.length,
+        errors: ideas.length,
+      }
+      console.log(
+        JSON.stringify({
+          intradayRvol: 'fallback',
+          error: err instanceof Error ? err.message : String(err),
+        }),
+      )
+    }
+  }
+
   let earningsError: string | undefined
   try {
     if (ideas.length) {
@@ -167,7 +214,7 @@ export async function scoreTickers(
     earningsError = err instanceof Error ? err.message : String(err)
   }
 
-  return { ideas, failed, belowSma200Count, earningsError }
+  return { ideas, failed, belowSma200Count, earningsError, intradayRvol }
 }
 
 async function mapPool<T, R>(
@@ -376,6 +423,7 @@ export async function runFullScan(
     shortlist.map((hit) => hit.symbol),
     {
       includeBelowSma200: false,
+      intradayRvol: true,
       describe(symbol) {
         const group = resolveGroup(hitBySym.get(symbol.toUpperCase()), symbol)
         const snap = lookup?.(symbol)
@@ -434,6 +482,7 @@ export async function runFullScan(
       scanDurationMs: Date.now() - t0,
       errors: errors.slice(0, 50),
       emergencyFallback,
+      intradayRvol: scored.intradayRvol,
     },
   }
 

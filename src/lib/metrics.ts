@@ -10,6 +10,7 @@ import type {
 } from '../types'
 import { extensionAdrFrom50, roundExtensionAdr50 } from './extensionAdr'
 import { resolvePrevClose } from './prevClose'
+import { INTRADAY_RVOL_CONFIG } from './rvolTod'
 import { evaluateRangeBase } from './rangeBase'
 import { setupStageHeuristic } from './setupStage'
 import { compactSurferDetail, evaluateSurfer } from './surfer'
@@ -58,12 +59,28 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100
 }
 
+/**
+ * Raw 20-day ratio and the 10-day daily fallback.
+ * `volumes` includes the latest session as the last element.
+ */
+export function dailyRvolFromVolumes(volumes: readonly number[]): { rvol20: number; rvolDaily10: number } {
+  if (volumes.length < 2) return { rvol20: 0, rvolDaily10: 0 }
+  const last = volumes[volumes.length - 1]!
+  const prior = volumes.slice(0, -1)
+  const avg20 = avg(prior.slice(-BAR_WINDOWS.rvolSessions))
+  const avg10 = avg(prior.slice(-INTRADAY_RVOL_CONFIG.dailyFallbackSessions))
+  return {
+    rvol20: avg20 > 0 ? round2(last / avg20) : 0,
+    rvolDaily10: avg10 > 0 ? round2(last / avg10) : 0,
+  }
+}
+
 /** Periods passed to {@link smaClose} for idea metrics and the QQQ regime. */
 export const SMA_PERIODS = { sma10: 10, sma20: 20, sma50: 50, sma200: 200 } as const
 
 /** Session windows used by {@link computeIdeaMetrics}. */
 export const BAR_WINDOWS = {
-  /** Prior sessions for RVOL, ADR%, and dollar volume (excludes the latest bar). */
+  /** Prior sessions for raw rvol20, ADR%, and dollar volume (excludes the latest bar). */
   rvolSessions: 20,
   adrSessions: 20,
   dolVolSessions: 20,
@@ -921,9 +938,9 @@ export function computeIdeaMetrics(
     }) ?? prev.c
   const dayPct = pctChange(prevClose, price)
 
-  const lookbackVol = bars.slice(-(BAR_WINDOWS.rvolSessions + 1), -1)
-  const avgVol20 = avg(lookbackVol.map((b) => b.v))
-  const rvol = avgVol20 > 0 ? last.v / avgVol20 : 0
+  const { rvol20, rvolDaily10 } = dailyRvolFromVolumes(bars.map((b) => b.v))
+  // Effective RVOL starts as the 10-day daily fallback. Scan applies time-of-day later.
+  const rvol = rvolDaily10
 
   const adrPct = adrPctFromBars(bars)
 
@@ -1045,6 +1062,10 @@ export function computeIdeaMetrics(
     price: round2(price),
     dayPct: metricsCore.dayPct,
     rvol: metricsCore.rvol,
+    rvol20,
+    rvolDaily10,
+    rvolTod: null,
+    rvolSource: 'daily',
     adrPct: metricsCore.adrPct,
     pctFrom52wHigh: metricsCore.pctFrom52wHigh,
     perf1M: round2(perf1M),
@@ -1091,6 +1112,41 @@ export function computeIdeaMetrics(
     rangeBreakoutDetail,
     rangeBaseScore: rangeBaseDetail.score,
     rangeBaseDetail,
+  })
+}
+
+/**
+ * Set effective RVOL from a time-of-day print, or keep the 10-day daily fallback.
+ * Re-derives setupType (Episodic Pivot reads this RVOL) and then isA / isAPlus /
+ * isAPlusPlus, kyleScore, and whyQualifies. setupStage stays on the daily print
+ * from computeIdeaMetrics. Catalyst merge calls applyQualityFlags, which spreads
+ * these fields through unchanged.
+ *
+ * Filters, kyleScore, the Episodic Pivot rule, catalyst candidate selection
+ * (`idea.rvol`), and the table sort all read the effective value.
+ */
+export function applyIntradayRvol(idea: TradingIdea, rvolTod: number | null): TradingIdea {
+  const daily = Number.isFinite(idea.rvolDaily10) ? idea.rvolDaily10 : Number.isFinite(idea.rvol) ? idea.rvol : 0
+  const useTod = typeof rvolTod === 'number' && Number.isFinite(rvolTod) && rvolTod >= 0
+  const rvol = round2(useTod ? rvolTod : daily)
+  const detail = idea.rangeBreakoutDetail
+  const setupType = setupTypeHeuristic({
+    rvol,
+    dayPct: Number.isFinite(idea.dayPct) ? idea.dayPct : 0,
+    adrPct: Number.isFinite(idea.adrPct) ? idea.adrPct : 0,
+    aboveSma50: idea.aboveSma50 === true,
+    priorRunPct: Number.isFinite(idea.priorRunPct) ? idea.priorRunPct : 0,
+    rangeOverAdr: detail?.rangeOverAdr ?? null,
+    hasHigherLows: detail?.hasHigherLows === true,
+  })
+  return applyQualityFlags({
+    ...idea,
+    rvol,
+    rvolTod: useTod ? rvol : null,
+    rvolDaily10: daily,
+    rvol20: idea.rvol20,
+    rvolSource: useTod ? 'tod' : 'daily',
+    setupType,
   })
 }
 

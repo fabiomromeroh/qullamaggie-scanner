@@ -8,6 +8,7 @@ import {
   ALL_SETUP_TYPES,
   DEFAULT_FILTERS,
   GROUP_VIEW_DEFAULT_FILTERS,
+  GROUP_VIEW_MAX_EXTENSION_ADR50,
   type IdeaFilters,
   type SetupStage,
   type TradingIdea,
@@ -489,6 +490,34 @@ test('normal scanner defaults still hide below-200, watching, and below-50', () 
     normalDefaults.map((idea) => idea.ticker).sort(),
     ['QRVO'],
   )
+})
+
+test('group-view defaults hide ext50 4.5 and $20M DolVol, keep 3.9 and $40M', () => {
+  assert.equal(GROUP_VIEW_DEFAULT_FILTERS.minAvgDollarVol, 30_000_000)
+  assert.equal(GROUP_VIEW_DEFAULT_FILTERS.maxExtensionAdr50, GROUP_VIEW_MAX_EXTENSION_ADR50)
+  assert.equal(GROUP_VIEW_DEFAULT_FILTERS.maxExtensionAdr50, 4)
+
+  const ext = selectGroupViewRows(
+    [
+      scannerIdea({ ticker: 'EXT45', extensionAdr50: 4.5, avgDollarVol: 40_000_000 }),
+      scannerIdea({ ticker: 'EXT39', extensionAdr50: 3.9, avgDollarVol: 40_000_000 }),
+    ],
+    GROUP_VIEW_DEFAULT_FILTERS,
+    { EXT45: 2, EXT39: 1 },
+  )
+  assert.deepEqual(tickers(ext.rows), ['EXT39'])
+  assert.equal(ext.hiddenCount, 1)
+
+  const dol = selectGroupViewRows(
+    [
+      scannerIdea({ ticker: 'THIN', avgDollarVol: 20_000_000, extensionAdr50: 1 }),
+      scannerIdea({ ticker: 'FAT', avgDollarVol: 40_000_000, extensionAdr50: 1 }),
+    ],
+    GROUP_VIEW_DEFAULT_FILTERS,
+    { THIN: 2, FAT: 1 },
+  )
+  assert.deepEqual(tickers(dol.rows), ['FAT'])
+  assert.equal(dol.hiddenCount, 1)
 })
 
 test('passing the scanner defaults into group view now filters, it does not no-op', () => {

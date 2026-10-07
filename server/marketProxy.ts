@@ -1145,6 +1145,7 @@ if (url.pathname === '/api/market/dashboard') {
             stage15BelowSma200Count: meta?.stage15BelowSma200Count,
             stage15BelowSma50Count: meta?.stage15BelowSma50Count,
             stage15MissingSmaCount: meta?.stage15MissingSmaCount,
+            intradayRvolMeta: meta?.intradayRvol ?? null,
           }),
         )
         return

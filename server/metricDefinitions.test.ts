@@ -23,6 +23,7 @@ import {
   kyleScoreHeuristic,
 } from '../src/lib/metrics.ts'
 import { RANGE_BASE_CONFIG } from '../src/lib/rangeBase.ts'
+import { INTRADAY_RVOL_CONFIG } from '../src/lib/rvolTod.ts'
 import {
   METRIC_DEFS,
   aPlusPlusRuleText,
@@ -42,7 +43,14 @@ import {
   EXTENSION_ADR50_FORMULA,
   EXTENSION_ADR50_FORMULA_EQUIV,
 } from '../src/lib/extensionAdr.ts'
-import { DEFAULT_FILTERS, MAX_EXTENSION_ADR50_PRESETS, NEAR_HIGHS_PRESETS } from '../src/types/index.ts'
+import {
+  DEFAULT_FILTERS,
+  DEFAULT_MIN_AVG_DOLLAR_VOL,
+  GROUP_VIEW_DEFAULT_FILTERS,
+  GROUP_VIEW_MAX_EXTENSION_ADR50,
+  MAX_EXTENSION_ADR50_PRESETS,
+  NEAR_HIGHS_PRESETS,
+} from '../src/types/index.ts'
 import { STAGE_CONFIG, setupStageHeuristic } from '../src/lib/setupStage.ts'
 import { CATALYST_CATEGORIES, CATALYST_WINDOW_HOURS } from '../src/lib/catalyst.ts'
 import { SURFER_CONFIG } from '../src/lib/surfer.ts'
@@ -266,6 +274,18 @@ test('tooltip text is built from the live scanner constants', () => {
   includes('kyleScore', `${KYLE_SCORE_CONFIG.clampMax}`)
 
   includes('rvol', `${BAR_WINDOWS.rvolSessions}`)
+  includes('rvol', `${INTRADAY_RVOL_CONFIG.slotMinutes}`)
+  includes('rvol', `${INTRADAY_RVOL_CONFIG.sessionsBack}`)
+  includes('rvol', `${INTRADAY_RVOL_CONFIG.fullSessionSlots}`)
+  includes('rvol', `${INTRADAY_RVOL_CONFIG.minCompletedSlots}`)
+  includes('rvol', `${INTRADAY_RVOL_CONFIG.dailyFallbackSessions}`)
+  includes('rvol', '09:30')
+  includes('rvol', '16:00')
+  includes('rvol', 'Half-days')
+  includes('rvol', 'rvol20')
+  includes('rvolTod', `${INTRADAY_RVOL_CONFIG.sessionsBack}`)
+  includes('rvolDaily10', `${INTRADAY_RVOL_CONFIG.dailyFallbackSessions}`)
+  includes('rvol20', `${BAR_WINDOWS.rvolSessions}`)
   includes('adrPct', `${BAR_WINDOWS.adrSessions}`)
   includes('extensionAdr50', EXTENSION_ADR50_FORMULA)
   includes('extensionAdr50', EXTENSION_ADR50_FORMULA_EQUIV)
@@ -273,8 +293,16 @@ test('tooltip text is built from the live scanner constants', () => {
   includes('filterMaxExtensionAdr50', EXTENSION_ADR50_FORMULA)
   includes('filterMaxExtensionAdr50', `${BAR_WINDOWS.adrSessions}`)
   includes('filterMaxExtensionAdr50', `${MAX_EXTENSION_ADR50_PRESETS[0]}`)
+  includes('filterMaxExtensionAdr50', `${GROUP_VIEW_MAX_EXTENSION_ADR50}`)
   includes('filterMaxExtensionAdr50', 'Any')
   assert.equal(DEFAULT_FILTERS.maxExtensionAdr50, 5)
+  assert.equal(GROUP_VIEW_DEFAULT_FILTERS.maxExtensionAdr50, GROUP_VIEW_MAX_EXTENSION_ADR50)
+  assert.equal(GROUP_VIEW_DEFAULT_FILTERS.maxExtensionAdr50, 4)
+  includes('filterMaxExtensionAdr50', `< ${GROUP_VIEW_DEFAULT_FILTERS.maxExtensionAdr50} ADR`)
+  includes('dolVol', `$${GROUP_VIEW_DEFAULT_FILTERS.minAvgDollarVol / 1_000_000}M`)
+  includes('filterMinDollarVol', `$${DEFAULT_MIN_AVG_DOLLAR_VOL / 1_000_000}M`)
+  includes('filterMinDollarVol', `$${GROUP_VIEW_DEFAULT_FILTERS.minAvgDollarVol / 1_000_000}M`)
+  includes('filterMinDollarVol', `${GROUP_VIEW_DEFAULT_FILTERS.minAvgDollarVol}`)
   includes('filterMaxPctFromHigh', `${BAR_WINDOWS.high52Sessions}`)
   includes('filterMaxPctFromHigh', 'abs')
   includes('filterMaxPctFromHigh', 'Any')

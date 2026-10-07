@@ -444,7 +444,14 @@ export function DetailDrawer({ idea, source = 'live', isPinned, onTogglePin }: P
         )}
 
         <div className="grid grid-cols-2 gap-2 text-center sm:grid-cols-3">
-          <MetricCell id="rvol" label="RVOL" value={fmtRvol(idea.rvol)} />
+          <MetricCell
+            id="rvol"
+            label="RVOL"
+            value={`${fmtRvol(idea.rvol)} ${idea.rvolSource === 'tod' ? 'TOD' : 'D'}`}
+          />
+          <MetricCell id="rvolTod" label="RVOL TOD" value={idea.rvolTod == null ? '—' : fmtRvol(idea.rvolTod)} />
+          <MetricCell id="rvolDaily10" label="RVOL 10D" value={fmtRvol(idea.rvolDaily10)} />
+          <MetricCell id="rvol20" label="RVOL 20D" value={fmtRvol(idea.rvol20)} />
           <MetricCell id="adrPct" label="ADR%" value={`${idea.adrPct.toFixed(1)}%`} />
           <MetricCell id="pctFrom52wHigh" label="vs 52w" value={fmtPct(idea.pctFrom52wHigh)} />
           <MetricCell id="perf1m" label="1M" value={fmtPct(idea.perf1M, 0)} />

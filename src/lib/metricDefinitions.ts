@@ -50,6 +50,7 @@ import {
   EXTENSION_ADR50_STRETCHED,
 } from './extensionAdr'
 import { CHART_RIGHT_OFFSET_BARS, VOLUME_SMA_PERIOD } from './chartData'
+import { INTRADAY_RVOL_CONFIG, MIN_FULL_BASELINE_SESSIONS } from './rvolTod'
 import { CHART_SMA_COLORS_KEY, CHART_SMA_PREFS_KEY, DEFAULT_SMA_COLORS } from './chartSmaColors'
 import type { GroupPeriod } from '../types'
 
@@ -127,12 +128,13 @@ export function rangeBaseRuleText(): string {
 /** Point build. Numbers come from {@link KYLE_SCORE_CONFIG}. */
 export function kyleScoreRuleText(): string {
   const k = KYLE_SCORE_CONFIG
-  return `Returns ${k.below200Score} when price is not above the 200-day SMA. Otherwise it starts at ${k.base} and adds ${k.aboveSma50} above SMA${SMA_PERIODS.sma50}, ${k.aboveSma20} above SMA${SMA_PERIODS.sma20}, ${k.aboveSma10} above SMA${SMA_PERIODS.sma10}, ${k.nearHighPoints} when pctFrom52wHigh >= -${k.nearHighPct} (else ${k.nearHighSoftPoints} when >= -${k.nearHighSoftPct}), ${k.rvolHighPoints} when RVOL >= ${k.rvolHigh} (else ${k.rvolMidPoints} when >= ${k.rvolMid}), ${k.priorRunHighPoints} when priorRunPct >= ${k.priorRunHigh} (else ${k.priorRunMidPoints} when >= ${k.priorRunMid}), and ${k.adrPoints} when ADR% is from ${k.adrMin} through ${k.adrMax}. An A+ result is lifted to at least ${k.aPlusFloor}. An A that is not A+ adds ${k.aBump}, and that bump cannot cross ${k.aPlusFloor} from below (it stops 0.01 under). The score is rounded to 2 decimals and clamped to ${k.clampMin}–${k.clampMax}.`
+  return `Returns ${k.below200Score} when price is not above the 200-day SMA. Otherwise it starts at ${k.base} and adds ${k.aboveSma50} above SMA${SMA_PERIODS.sma50}, ${k.aboveSma20} above SMA${SMA_PERIODS.sma20}, ${k.aboveSma10} above SMA${SMA_PERIODS.sma10}, ${k.nearHighPoints} when pctFrom52wHigh >= -${k.nearHighPct} (else ${k.nearHighSoftPoints} when >= -${k.nearHighSoftPct}), ${k.rvolHighPoints} when effective RVOL >= ${k.rvolHigh} (else ${k.rvolMidPoints} when >= ${k.rvolMid}), ${k.priorRunHighPoints} when priorRunPct >= ${k.priorRunHigh} (else ${k.priorRunMidPoints} when >= ${k.priorRunMid}), and ${k.adrPoints} when ADR% is from ${k.adrMin} through ${k.adrMax}. An A+ result is lifted to at least ${k.aPlusFloor}. An A that is not A+ adds ${k.aBump}, and that bump cannot cross ${k.aPlusFloor} from below (it stops 0.01 under). The score is rounded to 2 decimals and clamped to ${k.clampMin}–${k.clampMax}.`
 }
 
 function rvolHow(): string {
+  const c = INTRADAY_RVOL_CONFIG
   const n = BAR_WINDOWS.rvolSessions
-  return `Latest bar volume divided by the average volume of the prior ${n} sessions (bars.slice(-${n + 1}, -1), latest bar excluded). Zero when that average is 0.`
+  return `Effective RVOL is time-of-day RVOL when that value is present (rvolSource tod), otherwise the daily fallback. Time-of-day RVOL divides today's cumulative regular-hours volume through the last completed ${c.slotMinutes}-minute slot by the mean cumulative volume at that same slot. Completed slots only: a bar counts once now is at least ${c.slotMinutes} minutes past its start, so the in-progress bar is excluded. At least ${c.minCompletedSlots} completed slots are required. The baseline uses the last ${c.sessionsBack} full sessions, and a full session has ${c.fullSessionSlots} regular bars from 09:30 to 16:00 ET. Half-days and any session with fewer than ${c.fullSessionSlots} bars are skipped. Fewer than ${MIN_FULL_BASELINE_SESSIONS} full sessions makes the time-of-day value null. Outside weekdays 09:30–16:00 ET, or when today has no bars, it is null and the daily fallback is used. The daily fallback is the latest daily volume divided by the average of the prior ${c.dailyFallbackSessions} daily volumes. The raw 20-day ratio stays on rvol20: latest daily volume divided by the average of the prior ${n} sessions (latest bar excluded), and it is not the effective value. The scan freezes the time-of-day figure.`
 }
 
 function adrHow(): string {
@@ -149,15 +151,21 @@ function extensionAdr50FilterHow(): string {
   return `${extensionAdr50How()} When a threshold T is selected, rows with a known extensionAdr50 > T are hidden. Ideas with extensionAdr50 == null (unknown) are kept. Names below the 50 SMA (negative extension) always pass.`
 }
 
+function dollarVolFloorM(dollars: number): string {
+  return `$${dollars / 1_000_000}M`
+}
+
+function maxExtensionAdr50Label(t: number | null): string {
+  return t == null ? 'Any (no filter)' : `< ${t} ADR`
+}
+
 function extensionAdr50PresetNote(): string {
   const presets = MAX_EXTENSION_ADR50_PRESETS.map((t, i) =>
     i === 0 ? `< ${t} ADR` : `< ${t}`,
   ).join(' | ')
-  const scan = DEFAULT_FILTERS.maxExtensionAdr50
-  const group = GROUP_VIEW_DEFAULT_FILTERS.maxExtensionAdr50
-  const scanText = scan == null ? 'Any (no filter)' : `< ${scan} ADR`
-  const groupText = group == null ? 'Any (no filter)' : `< ${group} ADR`
-  return `Presets: Any (no filter) | ${presets}. Normal scan default: ${scanText}. Group view default: ${groupText} (left on Any on purpose). A missing stored value migrates to the normal-scan default. Explicit null stays Any.`
+  const scanText = maxExtensionAdr50Label(DEFAULT_FILTERS.maxExtensionAdr50)
+  const groupText = maxExtensionAdr50Label(GROUP_VIEW_DEFAULT_FILTERS.maxExtensionAdr50)
+  return `Presets: Any (no filter) | ${presets}. Normal scan default: ${scanText}. Group view default: ${groupText}. A missing stored value migrates to the normal-scan default. Explicit null stays Any.`
 }
 
 function highHow(): string {
@@ -227,7 +235,7 @@ export function rangeBreakoutRuleText(): string {
 
 function setupTypeHow(): string {
   const s = SETUP_TYPE_CONFIG
-  return `Episodic Pivot when RVOL >= ${s.episodicRvol} and day% >= ${s.episodicDayPct}. Otherwise Range Breakout when all five gates pass: ${rangeBreakoutRuleText()} Otherwise Continuation.`
+  return `Episodic Pivot when effective RVOL >= ${s.episodicRvol} and day% >= ${s.episodicDayPct}. Otherwise Range Breakout when all five gates pass: ${rangeBreakoutRuleText()} Otherwise Continuation.`
 }
 
 const FINVIZ_PERF: Record<GroupPeriod, string> = {
@@ -305,9 +313,25 @@ export const METRIC_DEFS = {
   dayPct: d('Day%', 'Session change versus the prior close.', dayHow(), 'Ideas table, detail, watchlist, and the chart header all use this field.'),
   rvol: d(
     'RVOL',
-    'Last volume versus the prior 20 sessions.',
+    'Effective relative volume: time-of-day, or the 10-day daily fallback.',
     rvolHow(),
-    `Finviz relative volume uses about a 3-month average, so these values differ, and an intraday print is not scaled up. The Min RVOL box hides ideas with rvol below the number; a blank input is stored as ${DEFAULT_FILTERS.minRvol}. The amber cell color starts at RVOL >= ${KYLE_SCORE_CONFIG.rvolHigh}.`,
+    `Finviz relative volume uses about a 3-month average, so these values differ. Min RVOL, kyleScore, the Episodic Pivot rule, catalyst candidates (CATALYST_FETCH.rvolMin), and the table sort all read this effective rvol. A and A+ do not read it except through the setup label: Episodic Pivot is not a Range Breakout, so it fails isA. A blank Min RVOL input is stored as ${DEFAULT_FILTERS.minRvol}. The amber cell color starts at RVOL >= ${KYLE_SCORE_CONFIG.rvolHigh}. TOD is the intraday print; D is the daily fallback. Frozen at scan time. Group view stays on the daily fallback.`,
+  ),
+  rvolTod: d(
+    'RVOL TOD',
+    'Time-of-day relative volume at the last completed slot.',
+    rvolHow(),
+    'Null when the scan fell back to daily. The table tag TOD means rvolSource is tod.',
+  ),
+  rvolDaily10: d(
+    'RVOL 10D',
+    'Daily fallback: latest volume versus the prior 10 sessions.',
+    `Latest daily volume divided by the average of the prior ${INTRADAY_RVOL_CONFIG.dailyFallbackSessions} daily volumes. This is idea.rvol when rvolSource is daily.`,
+  ),
+  rvol20: d(
+    'RVOL 20D',
+    'Raw 20-day ratio, kept beside the effective value.',
+    `Latest daily volume divided by the average of the prior ${BAR_WINDOWS.rvolSessions} sessions, latest bar excluded. Zero when that average is 0. Not used for filters, score, or the Episodic Pivot rule.`,
   ),
   adrPct: d('ADR%', 'Average daily range of the prior sessions.', adrHow()),
   pctFrom52wHigh: d(
@@ -445,7 +469,7 @@ export const METRIC_DEFS = {
     'DolVol',
     'Average dollar volume.',
     dolHow(),
-    `The Min DolVol box compares this average with minAvgDollarVol. A normal scan starts at $${DEFAULT_MIN_AVG_DOLLAR_VOL / 1_000_000}M. Group view starts at $0.`,
+    `The Min DolVol box compares this average with minAvgDollarVol. A normal scan starts at ${dollarVolFloorM(DEFAULT_MIN_AVG_DOLLAR_VOL)}. Group view starts at ${dollarVolFloorM(GROUP_VIEW_DEFAULT_FILTERS.minAvgDollarVol)}.`,
   ),
   setupType: d(
     'Setup type',
@@ -588,14 +612,14 @@ export const METRIC_DEFS = {
   filterMinRvol: d(
     'Min RVOL',
     'Hide names under a relative-volume floor.',
-    `${rvolHow()} passesFilters drops the row when rvol < minRvol.`,
+    `${rvolHow()} passesFilters drops the row when effective rvol < minRvol.`,
     `A blank or non-numeric input is stored as ${DEFAULT_FILTERS.minRvol}, which hides nothing. Finviz uses about a 3-month average, so this RVOL will not match Finviz.`,
   ),
   filterMinDollarVol: d(
     'Min DolVol',
     'Hide names under an average dollar-volume floor.',
     `${dolHow()} passesFilters drops the row when that average is a finite number below minAvgDollarVol. A missing average is kept.`,
-    `The box is millions of dollars. Default on a normal scan is $${DEFAULT_MIN_AVG_DOLLAR_VOL / 1_000_000}M (${DEFAULT_MIN_AVG_DOLLAR_VOL} dollars). Group view defaults to $0, which hides nothing. A blank input is stored as 0. migrateStoredFilters fills a missing value with the normal-scan default.`,
+    `The box is millions of dollars. Default on a normal scan is ${dollarVolFloorM(DEFAULT_MIN_AVG_DOLLAR_VOL)} (${DEFAULT_MIN_AVG_DOLLAR_VOL} dollars). Group view defaults to ${dollarVolFloorM(GROUP_VIEW_DEFAULT_FILTERS.minAvgDollarVol)} (${GROUP_VIEW_DEFAULT_FILTERS.minAvgDollarVol} dollars). A blank input is stored as 0. migrateStoredFilters fills a missing value with the normal-scan default.`,
   ),
   filterMaxPctFromHigh: d(
     'Near highs ≤',
