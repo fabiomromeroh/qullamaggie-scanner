@@ -1,7 +1,7 @@
 import type { CSSProperties, KeyboardEvent, ReactNode } from 'react'
 import { Pin, PinOff } from 'lucide-react'
 import type { CharacteristicTag, EarningsStatus, SetupStage, TradingIdea } from '../types'
-import { SHOW_ALL_GROUP_LABEL } from '../lib/ideaFilters'
+import { SEARCH_POOL_NOTE, SHOW_ALL_GROUP_LABEL } from '../lib/ideaFilters'
 import { groupViewFilterNote } from '../lib/groupView'
 import { extensionAdr50Class, formatExtensionAdr50 } from '../lib/extensionAdr'
 import { KYLE_SCORE_CONFIG, NEAR_ATH_MAX_PCT } from '../lib/metrics'
@@ -96,6 +96,31 @@ interface Props {
   groupBanner?: GroupViewBanner | null
   /** Selected-period Finviz performance, keyed by ticker. Tooltip only. */
   finvizPerf?: Record<string, number | null> | null
+  /** Search box is non-empty: show the scanned-pool override note. */
+  searchNote?: boolean
+}
+
+function OriginTags({ idea }: { idea: TradingIdea }) {
+  return (
+    <>
+      {idea.outsideScan ? (
+        <MetricTip
+          id="outsideScan"
+          className="rounded px-1 text-[9px] font-normal uppercase tracking-wide text-terminal-dim"
+        >
+          outside scanned groups
+        </MetricTip>
+      ) : null}
+      {idea.searchOverride ? (
+        <MetricTip
+          id="searchOverride"
+          className="rounded px-1 text-[9px] font-normal uppercase tracking-wide text-terminal-dim"
+        >
+          outside filters
+        </MetricTip>
+      ) : null}
+    </>
+  )
 }
 
 function SetupBadge({ type }: { type: TradingIdea['setupType'] }) {
@@ -466,6 +491,7 @@ function IdeaCard({
             <MetricTip id="ticker" extra={rowTitle} className="font-mono text-sm font-bold text-terminal-fg">
               {idea.ticker}
             </MetricTip>
+            <OriginTags idea={idea} />
             <QualityCell idea={idea} />
             <StageBadge stage={idea.setupStage} aboveSma200={idea.aboveSma200} />
             <EarningsBadge idea={idea} />
@@ -643,6 +669,7 @@ export function IdeasTable({
   emptyMessage,
   groupBanner = null,
   finvizPerf = null,
+  searchNote = false,
 }: Props) {
   const { widthOf, resizeColumn } = useResizableColumns(IDEAS_COL_KEY, DEFAULT_IDEAS_COLS, {
     min: 36,
@@ -676,6 +703,15 @@ export function IdeasTable({
         </div>
         <CopyForTradingView tickers={tickers} />
       </div>
+
+      {searchNote ? (
+        <p
+          className="border-b border-terminal-border px-2 py-1 text-[10px] text-terminal-dim sm:px-3"
+          {...metricTipAttrs('searchOverride')}
+        >
+          {SEARCH_POOL_NOTE}
+        </p>
+      ) : null}
 
       {groupBanner ? <GroupBannerBar banner={groupBanner} /> : null}
 
@@ -945,6 +981,7 @@ export function IdeasTable({
                     <MetricTip id="ticker" extra={rowTitle}>
                       {idea.ticker}
                     </MetricTip>
+                    <OriginTags idea={idea} />
                   </td>
                   <td className="hidden truncate px-2 py-1.5 text-terminal-muted xl:table-cell">
                     <MetricTip id="name">{idea.name}</MetricTip>

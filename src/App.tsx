@@ -11,7 +11,7 @@ import { StatusBanner } from './components/StatusBanner'
 import { WatchlistPanel } from './components/WatchlistPanel'
 import { useDashboard } from './hooks/useDashboard'
 import { groupViewFilterNote } from './lib/groupView'
-import { countCatalystUnchecked } from './lib/ideaFilters'
+import { countCatalystUnchecked, searchQuery } from './lib/ideaFilters'
 import { useResizablePanels } from './hooks/useResizablePanels'
 import { splitReservedLeft } from './lib/splitLayout'
 
@@ -28,6 +28,7 @@ export default function App() {
     setFilters,
     resetFilters,
     filteredIdeas,
+    lookupStatus,
     selectedIdea,
     selectedTicker,
     setSelectedTicker,
@@ -112,6 +113,7 @@ export default function App() {
             dense
             catalystMeta={catalystMeta}
             uncheckedCount={uncheckedCatalysts}
+            lookupStatus={lookupStatus}
           />
           <div className="mt-1.5 hidden flex-wrap items-center gap-x-3 gap-y-0.5 text-[10px] text-terminal-dim sm:flex">
             <span>
@@ -199,6 +201,7 @@ export default function App() {
                     : null
                 }
                 finvizPerf={groupView?.finvizPerf ?? null}
+                searchNote={Boolean(searchQuery(filters))}
               />
             </section>
 

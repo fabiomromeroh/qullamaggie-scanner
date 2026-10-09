@@ -13,7 +13,8 @@ import { resolve } from 'node:path'
 import { resolvePrevClose } from '../src/lib/prevClose.ts'
 import { getBarsForSymbol } from './marketBars.ts'
 import { getQuoteForSymbol } from './marketQuote.ts'
-import { matchMarketSymbolRoute, parseMarketSymbol } from './marketSymbol.ts'
+import { getIdeaForSymbol } from './ideaLookup.ts'
+import { matchMarketSymbolRoute, parseIdeaLookupSymbol, parseMarketSymbol } from './marketSymbol.ts'
 import { getScanRuntimeStatus, loadScanCache } from './scanCache.ts'
 import { DEFAULT_GROUP_PERIOD, parseGroupPeriod } from '../src/lib/groupPeriod.ts'
 import { kickScanOnBoot, triggerScan } from './scanEngine.ts'
@@ -1205,6 +1206,31 @@ if (url.pathname === '/api/market/dashboard') {
         const payload = await getQuoteForSymbol(symbol, (sym) => fetchSymbolSnapshot(sym))
         res.statusCode = 200
         res.end(JSON.stringify(payload))
+        return
+      }
+
+      const ideaRaw = matchMarketSymbolRoute(url.pathname, 'idea')
+      if (ideaRaw != null) {
+        const symbol = parseIdeaLookupSymbol(ideaRaw)
+        if (!symbol) {
+          res.statusCode = 400
+          res.end(JSON.stringify({ error: 'Invalid symbol' }))
+          return
+        }
+        const payload = await getIdeaForSymbol(symbol)
+        if (!payload.ok) {
+          res.statusCode = 404
+          res.end(JSON.stringify({ error: payload.error }))
+          return
+        }
+        res.statusCode = 200
+        res.end(
+          JSON.stringify({
+            idea: payload.idea,
+            outsideScan: true,
+            asOf: payload.asOf,
+          }),
+        )
         return
       }
 

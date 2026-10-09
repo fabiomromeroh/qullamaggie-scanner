@@ -8,8 +8,12 @@ import {
   ABOVE_200_DMA_TOOLTIP,
   FILTERS_STORAGE_KEY,
   FILTERS_STORAGE_V1_KEY,
+  FILTERS_STORAGE_V2_KEY,
   FILTERS_STORAGE_VERSION,
+  SEARCH_POOL_NOTE,
   SHOW_ALL_GROUP_LABEL,
+  SHOW_ALL_SETUPS_LABEL,
+  selectVisibleIdeas,
   applyClearGroup,
   applyFilterChange,
   applyFilterReset,
@@ -724,6 +728,10 @@ test('active-filter counter and reset include > 200 SMA', () => {
   assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, requireAPlusPlus: true }), 1)
   assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, setupTypes: [...ALL_SETUP_TYPES] }), 1)
   assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, setupTypes: ['Range Breakout'] }), 0)
+  assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, showAllSetups: true }), 1)
+  assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, showAllSetups: false }), 0)
+  assert.equal(DEFAULT_FILTERS.showAllSetups, false)
+  assert.equal(GROUP_VIEW_DEFAULT_FILTERS.showAllSetups, false)
   assert.deepEqual(DEFAULT_FILTERS.setupTypes, ['Range Breakout'])
   assert.deepEqual(GROUP_VIEW_DEFAULT_FILTERS.setupTypes, [...ALL_SETUP_TYPES])
   assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, maxPctFromHigh: 10 }), 1)
@@ -939,6 +947,13 @@ test('UI copy and README use the single > 200 SMA filter label', () => {
   assert.match(bar, /50MA Surfer/)
   assert.doesNotMatch(bar, /Surfer \(strict\)/)
   assert.match(bar, /Tight consolidation/)
+  assert.match(bar, /SHOW_ALL_SETUPS_LABEL/)
+  assert.match(bar, /filterShowAllSetups/)
+  assert.match(bar, /SEARCH_POOL_NOTE/)
+  assert.match(bar, /opacity-40/)
+  assert.match(readme, /Search & Show all setups/)
+  assert.match(readme, /qm\.scanFilters\.v3/)
+  assert.match(readme, /GET \/api\/market\/idea\/:symbol/)
   assert.deepEqual([...NEAR_HIGHS_PRESETS], [5, 8, 10, 15, 20])
   assert.match(bar, /Min DolVol/)
   assert.match(bar, /aria-label="Min DolVol"/)
@@ -1051,4 +1066,107 @@ test('stored scan filters collapse the old all-three setup list once', () => {
   assert.equal(loadStoredScanFilters(corrupt).minRvol, DEFAULT_FILTERS.minRvol)
   assert.ok(corrupt.getItem(FILTERS_STORAGE_V1_KEY))
   assert.equal(loadStoredScanFilters(null).requireAPlusPlus, false)
+})
+
+test('showAllSetups skips setupTypes and stages but not minAvgDollarVol or ext50', () => {
+  const continuationWatching = idea({
+    setupType: 'Continuation',
+    setupStage: 'watching',
+  })
+  assert.equal(passesFilters(continuationWatching, filters()), false)
+  assert.equal(passesFilters(continuationWatching, filters({ showAllSetups: true })), true)
+
+  const lowVol = idea({
+    setupType: 'Continuation',
+    setupStage: 'watching',
+    avgDollarVol: 1_000_000,
+  })
+  assert.equal(passesFilters(lowVol, filters({ showAllSetups: true })), false)
+
+  const stretched = idea({
+    setupType: 'Continuation',
+    setupStage: 'watching',
+    extensionAdr50: 9,
+  })
+  assert.equal(passesFilters(stretched, filters({ showAllSetups: true })), false)
+
+  const okExt = idea({
+    setupType: 'Episodic Pivot',
+    setupStage: 'watching',
+    extensionAdr50: 4,
+  })
+  assert.equal(passesFilters(okExt, filters({ showAllSetups: true })), true)
+  assert.equal(DEFAULT_FILTERS.showAllSetups, false)
+  assert.equal(GROUP_VIEW_DEFAULT_FILTERS.showAllSetups, false)
+  assert.equal(SHOW_ALL_SETUPS_LABEL, 'Show all setups')
+})
+
+test('stored scan filters migrate v2 to v3 with showAllSetups false', () => {
+  const v2AllThree = {
+    ...DEFAULT_FILTERS,
+    setupTypes: [...ALL_SETUP_TYPES],
+    minRvol: 2,
+    filtersVersion: 2,
+  }
+  const fromV2 = migrateStoredFilters(v2AllThree)
+  assert.deepEqual(fromV2.setupTypes, [...ALL_SETUP_TYPES])
+  assert.equal(fromV2.showAllSetups, false)
+  assert.equal(fromV2.minRvol, 2)
+
+  const store = memoryStore()
+  writeJsonTo(store, FILTERS_STORAGE_V2_KEY, v2AllThree)
+  const loaded = loadStoredScanFilters(store)
+  assert.deepEqual(loaded.setupTypes, [...ALL_SETUP_TYPES])
+  assert.equal(loaded.showAllSetups, false)
+  assert.equal(loaded.minRvol, 2)
+  assert.equal(store.getItem(FILTERS_STORAGE_V2_KEY), null)
+  const saved = readJsonFrom(store, FILTERS_STORAGE_KEY) as {
+    filtersVersion: number
+    showAllSetups: boolean
+    setupTypes: string[]
+  }
+  assert.equal(saved.filtersVersion, 3)
+  assert.equal(FILTERS_STORAGE_VERSION, 3)
+  assert.equal(FILTERS_STORAGE_KEY, 'qm.scanFilters.v3')
+  assert.equal(saved.showAllSetups, false)
+  assert.deepEqual(saved.setupTypes, [...ALL_SETUP_TYPES])
+
+  const v1Store = memoryStore()
+  writeJsonTo(v1Store, FILTERS_STORAGE_V1_KEY, {
+    ...DEFAULT_FILTERS,
+    setupTypes: [...ALL_SETUP_TYPES],
+    minRvol: 1.5,
+  })
+  const fromV1 = loadStoredScanFilters(v1Store)
+  assert.deepEqual(fromV1.setupTypes, ['Range Breakout'])
+  assert.equal(fromV1.showAllSetups, false)
+  assert.equal(fromV1.minRvol, 1.5)
+})
+
+test('search override shows a row that fails setupTypes, stage, and dolvol', () => {
+  const hidden = idea({
+    ticker: 'MRNA',
+    name: 'Moderna',
+    groupName: 'Biotechnology',
+    setupType: 'Continuation',
+    setupStage: 'watching',
+    avgDollarVol: 1_000,
+  })
+  const visibleOk = idea({ ticker: 'NVDA', name: 'NVIDIA' })
+  const f = filters({ search: 'MRNA' })
+  assert.equal(passesFilters(hidden, f), false)
+  assert.equal(passesFilters(visibleOk, f), false)
+
+  const rows = selectVisibleIdeas([hidden, visibleOk], f)
+  assert.equal(rows.length, 1)
+  assert.equal(rows[0]!.ticker, 'MRNA')
+  assert.equal(rows[0]!.searchOverride, true)
+
+  const prefix = selectVisibleIdeas([hidden], filters({ search: 'MR' }))
+  assert.equal(prefix.length, 1)
+  assert.equal(prefix[0]!.searchOverride, true)
+
+  const none = selectVisibleIdeas([hidden, visibleOk], filters())
+  assert.equal(none.some((row) => row.ticker === 'MRNA'), false)
+  assert.equal(SEARCH_POOL_NOTE, 'Search shows matches from the whole scanned pool, ignoring filters')
 })

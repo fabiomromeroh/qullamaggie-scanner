@@ -25,12 +25,20 @@ export const ABOVE_200_DMA_LABEL = '> 200 SMA'
 /**
  * Stored normal-scan filters. v1 (missing version, or `qm.scanFilters.v1`)
  * rewrites a setupTypes list that is exactly the old default — all three
- * labels — to Range Breakout only, once. v2 keeps that list, including an
- * explicit all-three choice made after the migration.
+ * labels — to Range Breakout only, once. v2 and v3 keep that list, including
+ * an explicit all-three choice made after the migration. v3 adds
+ * `showAllSetups` (missing → false).
  */
-export const FILTERS_STORAGE_VERSION = 2
-export const FILTERS_STORAGE_KEY = 'qm.scanFilters.v2'
+export const FILTERS_STORAGE_VERSION = 3
+export const FILTERS_STORAGE_KEY = 'qm.scanFilters.v3'
+export const FILTERS_STORAGE_V2_KEY = 'qm.scanFilters.v2'
 export const FILTERS_STORAGE_V1_KEY = 'qm.scanFilters.v1'
+/** Pre-v2 blobs whose setup list is exactly the old three labels collapse. */
+export const SETUP_TYPES_COLLAPSE_BEFORE = 2
+
+export const SHOW_ALL_SETUPS_LABEL = 'Show all setups'
+export const SEARCH_POOL_NOTE =
+  'Search shows matches from the whole scanned pool, ignoring filters'
 
 /** Previous normal-scan default. Matching this list on a pre-v2 blob is the one-time rewrite. */
 const LEGACY_ALL_SETUP_TYPES: readonly SetupType[] = [
@@ -137,6 +145,7 @@ export function cloneIdeaFilters(filters: IdeaFilters): IdeaFilters {
     earningsStatuses: [...(filters.earningsStatuses ?? [])],
     groupId: filters.groupId ?? null,
     search: filters.search ?? '',
+    showAllSetups: Boolean(filters.showAllSetups),
   }
 }
 
@@ -212,6 +221,7 @@ export function countActiveFilters(
   if (Boolean(filters.requireAPlus) !== Boolean(baseline.requireAPlus)) n += 1
   if (Boolean(filters.requireAPlusPlus) !== Boolean(baseline.requireAPlusPlus)) n += 1
   if (Boolean(filters.hasCatalyst) !== Boolean(baseline.hasCatalyst)) n += 1
+  if (Boolean(filters.showAllSetups) !== Boolean(baseline.showAllSetups)) n += 1
   return n
 }
 
@@ -285,7 +295,7 @@ function storedFiltersVersion(src: Record<string, unknown>): number {
  * Invalid shapes fall back field-by-field and do not throw.
  *
  * Setup types: a pre-v2 object whose list is exactly the old three-label
- * default becomes Range Breakout only. A v2 object keeps an explicit
+ * default becomes Range Breakout only. A v2 or v3 object keeps an explicit
  * all-three choice. A missing list uses the current normal-scan default.
  */
 export function migrateStoredFilters(raw: unknown): IdeaFilters {
@@ -294,7 +304,7 @@ export function migrateStoredFilters(raw: unknown): IdeaFilters {
   const src = raw as Record<string, unknown>
   const version = storedFiltersVersion(src)
   let setupTypes = pickList(src.setupTypes, ALL_SETUP_TYPES, base.setupTypes)
-  if (version < FILTERS_STORAGE_VERSION && sameMembers(setupTypes, LEGACY_ALL_SETUP_TYPES)) {
+  if (version < SETUP_TYPES_COLLAPSE_BEFORE && sameMembers(setupTypes, LEGACY_ALL_SETUP_TYPES)) {
     setupTypes = ['Range Breakout']
   }
   return {
@@ -326,6 +336,7 @@ export function migrateStoredFilters(raw: unknown): IdeaFilters {
     earningsStatuses: pickList(src.earningsStatuses, ALL_EARNINGS_STATUSES, base.earningsStatuses),
     groupId: typeof src.groupId === 'string' && src.groupId.trim() ? src.groupId : null,
     search: typeof src.search === 'string' ? src.search : '',
+    showAllSetups: pickBool(src.showAllSetups, false),
   }
 }
 
@@ -343,28 +354,50 @@ function resolveStore(store?: KeyValueStore | null): KeyValueStore | null {
   return browserStore()
 }
 
-function withLegacyVersion(raw: unknown): unknown {
+function withLegacyVersion(raw: unknown, version = 1): unknown {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return raw
   const src = raw as Record<string, unknown>
   if (typeof src.filtersVersion === 'number') return src
-  return { ...src, filtersVersion: 1 }
+  return { ...src, filtersVersion: version }
 }
 
-/** Normal-scan filters from `qm.scanFilters.v2`, else a one-time v1 migration, else defaults. */
+function promoteStoredFilters(
+  kv: KeyValueStore,
+  raw: unknown,
+  legacyVersion: number,
+  removeKey?: string,
+): IdeaFilters {
+  const migrated = migrateStoredFilters(withLegacyVersion(raw, legacyVersion))
+  saveStoredScanFilters(migrated, kv)
+  if (removeKey) removeKeyFrom(kv, removeKey)
+  return migrated
+}
+
+/** Normal-scan filters from `qm.scanFilters.v3`, else v2, else a one-time v1 migration, else defaults. */
 export function loadStoredScanFilters(store?: KeyValueStore | null): IdeaFilters {
   const kv = resolveStore(store)
   if (!kv) return cloneIdeaFilters(DEFAULT_FILTERS)
   if (kv.getItem(FILTERS_STORAGE_KEY) != null) {
     return migrateStoredFilters(readJsonFrom(kv, FILTERS_STORAGE_KEY))
   }
+  if (kv.getItem(FILTERS_STORAGE_V2_KEY) != null) {
+    return promoteStoredFilters(
+      kv,
+      readJsonFrom(kv, FILTERS_STORAGE_V2_KEY),
+      2,
+      FILTERS_STORAGE_V2_KEY,
+    )
+  }
   if (kv.getItem(FILTERS_STORAGE_V1_KEY) == null) return cloneIdeaFilters(DEFAULT_FILTERS)
-  const migrated = migrateStoredFilters(withLegacyVersion(readJsonFrom(kv, FILTERS_STORAGE_V1_KEY)))
-  saveStoredScanFilters(migrated, kv)
-  removeKeyFrom(kv, FILTERS_STORAGE_V1_KEY)
-  return migrated
+  return promoteStoredFilters(
+    kv,
+    readJsonFrom(kv, FILTERS_STORAGE_V1_KEY),
+    1,
+    FILTERS_STORAGE_V1_KEY,
+  )
 }
 
-/** Write the current normal-scan filters as v2 so a later all-three choice is not rewritten. */
+/** Write the current normal-scan filters as v3 so a later all-three choice is not rewritten. */
 export function saveStoredScanFilters(filters: IdeaFilters, store?: KeyValueStore | null): void {
   const kv = resolveStore(store)
   if (!kv) return
@@ -404,9 +437,60 @@ export function countCatalystUnchecked(
   }).length
 }
 
+/** Trimmed search box. Empty after trim means no search. */
+export function searchQuery(filters: { search?: string } | null | undefined): string {
+  return (filters?.search ?? '').trim()
+}
+
+/**
+ * Ticker prefix or exact (case-insensitive), plus the existing haystack
+ * includes() over ticker, name, group name, setup stage, and tags.
+ */
+export function ideaMatchesSearch(idea: FilterableIdea, search: string): boolean {
+  const q = search.trim().toLowerCase()
+  if (!q) return true
+  const ticker = idea.ticker.toLowerCase()
+  if (ticker === q || ticker.startsWith(q)) return true
+  const hay =
+    `${idea.ticker} ${idea.name} ${idea.groupName} ${idea.setupStage} ${(idea.characteristics ?? []).join(' ')}`.toLowerCase()
+  return hay.includes(q)
+}
+
+/**
+ * Table pipeline. `passesFilters` stays the strict AND of every gate.
+ * When search is non-empty, every haystack match is visible; rows that fail
+ * the other gates carry `searchOverride: true`.
+ */
+export function selectVisibleIdeas<T extends FilterableIdea>(
+  ideas: readonly T[],
+  filters: IdeaFilters,
+  options: PassesFiltersOptions = {},
+): Array<T & { searchOverride?: boolean }> {
+  const q = searchQuery(filters)
+  if (!q) {
+    return ideas.filter((idea) => passesFilters(idea, filters, options))
+  }
+  const rows: Array<T & { searchOverride?: boolean }> = []
+  for (const idea of ideas) {
+    if (!ideaMatchesSearch(idea, q)) continue
+    const pass = passesFilters(idea, filters, options)
+    rows.push(pass ? { ...idea, searchOverride: false } : { ...idea, searchOverride: true })
+  }
+  return rows
+}
+
+export function applySearchOverride<T extends FilterableIdea>(
+  ideas: readonly T[],
+  filters: IdeaFilters,
+  options: PassesFiltersOptions = {},
+): Array<T & { searchOverride?: boolean }> {
+  return selectVisibleIdeas(ideas, filters, options)
+}
+
 /**
  * Shared predicate for the scanner table and group drill-down.
  * Every filter value is applied as written. `groupView` skips only `groupId`.
+ * `showAllSetups` skips only the Setup type and Stage gates.
  * Above 200 DMA replaces the old normal-scan hard gate (`requireAbove200`
  * missing means on). Group view does not exempt below-200 names from the
  * other gates; its baseline is just more permissive.
@@ -417,6 +501,7 @@ export function passesFilters(
   options: PassesFiltersOptions = {},
 ): boolean {
   const groupView = options.groupView === true
+  const skipSetupGates = f.showAllSetups === true
   if (requireAbove200On(f) && !idea.aboveSma200) return false
   if (f.requireSma50 && !idea.aboveSma50) return false
   if (f.requireSma10 && !idea.aboveSma10) return false
@@ -425,7 +510,7 @@ export function passesFilters(
   if (f.requireSurfer20 && !idea.surfer20) return false
   if (f.requireSurfer50 && !idea.surfer50) return false
   if (f.requireTight && !idea.tightConsolidation) return false
-  if (f.stages?.length && !f.stages.includes(idea.setupStage)) return false
+  if (!skipSetupGates && f.stages?.length && !f.stages.includes(idea.setupStage)) return false
   if (typeof f.minRvol === 'number' && idea.rvol < f.minRvol) return false
   if (
     typeof f.minAvgDollarVol === 'number' &&
@@ -452,7 +537,7 @@ export function passesFilters(
     const ext = idea.extensionAdr50
     if (typeof ext === 'number' && Number.isFinite(ext) && ext > f.maxExtensionAdr50) return false
   }
-  if (f.setupTypes && !f.setupTypes.includes(idea.setupType)) return false
+  if (!skipSetupGates && f.setupTypes && !f.setupTypes.includes(idea.setupType)) return false
   // Quality chips are a union. All off skips the gate. A+ implies A, and
   // A++ implies A+, so the wider chip already includes the stricter tier.
   if (f.requireA || f.requireAPlus || f.requireAPlusPlus) {
@@ -477,12 +562,7 @@ export function passesFilters(
       return false
     }
   }
-  if (f.search) {
-    const q = f.search.toLowerCase()
-    const hay =
-      `${idea.ticker} ${idea.name} ${idea.groupName} ${idea.setupStage} ${(idea.characteristics ?? []).join(' ')}`.toLowerCase()
-    if (!hay.includes(q)) return false
-  }
+  if (!ideaMatchesSearch(idea, f.search ?? '')) return false
   return true
 }
 

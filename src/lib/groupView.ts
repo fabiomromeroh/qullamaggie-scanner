@@ -1,5 +1,5 @@
 import type { EarningsStatus, IdeaFilters, SetupStage, SetupType } from '../types'
-import { passesFilters } from './ideaFilters'
+import { selectVisibleIdeas } from './ideaFilters'
 
 /**
  * Rows for a Finviz group drill-down.
@@ -47,10 +47,6 @@ export function groupViewFilterNote(
   return `Showing ${shown} of ${total} group stocks (filters hiding ${hiddenCount})`
 }
 
-function passesGroupViewFilters(idea: GroupViewRow, filters: IdeaFilters): boolean {
-  return passesFilters(idea, filters, { groupView: true })
-}
-
 function periodPerf(
   ticker: string,
   perfByTicker: Readonly<Record<string, number | null>> | null | undefined,
@@ -91,7 +87,7 @@ export function selectGroupViewRows<T extends GroupViewRow>(
   filters: IdeaFilters,
   perfByTicker: Readonly<Record<string, number | null>> | null | undefined,
 ): GroupViewSelection<T> {
-  const rows = ideas.filter((idea) => passesGroupViewFilters(idea, filters))
+  const rows = selectVisibleIdeas(ideas, filters, { groupView: true })
   rows.sort((a, b) => compareByPeriodPerf(a, b, perfByTicker))
   return {
     rows,
