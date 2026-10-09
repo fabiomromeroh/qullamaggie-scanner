@@ -43,6 +43,7 @@ import {
 import { LEADER_POOL_SIZE, PERIOD_SESSIONS } from './memberPerf'
 import { SCAN_MIN_AVG_VOL_DEFAULT, SCAN_MIN_PRICE_DEFAULT, SCAN_STAGE1_CAP_DEFAULT, SCAN_STAGE1_PAGE_SIZE } from './scanDefaults'
 import { DEFAULT_FILTERS, DEFAULT_MIN_AVG_DOLLAR_VOL, GROUP_VIEW_DEFAULT_FILTERS, MAX_EXTENSION_ADR50_PRESETS, NEAR_HIGHS_PRESETS } from '../types'
+import { SEARCH_POOL_NOTE } from './ideaFilters'
 import {
   EXTENSION_ADR50_FORMULA,
   EXTENSION_ADR50_FORMULA_EQUIV,
@@ -606,8 +607,24 @@ export const METRIC_DEFS = {
   ),
   filterSearch: d(
     'Search',
-    'Substring match across the row.',
-    'Case-insensitive includes() over ticker, name, group name, setup stage, and the characteristic tags joined with spaces. An empty box matches everything.',
+    'Ticker prefix or exact, plus name and group.',
+    'Ticker matches prefix or exact (case-insensitive). Name, group name, setup stage, and characteristic tags still use the existing haystack includes(). An empty box matches everything. When the box is non-empty, the table shows every scanned-pool match even if other filters fail (search intent wins).',
+  ),
+  filterShowAllSetups: d(
+    'Show all setups',
+    'Ignore Setup type and Stage chips.',
+    'showAllSetups skips only the setupTypes and stages gates in passesFilters. Min DolVol, max ADR extension from 50 SMA, SMAs, quality, earnings, catalyst, group, and search still apply. Default off in DEFAULT_FILTERS and GROUP_VIEW_DEFAULT_FILTERS. While on, the Setup type and Stage chips are dimmed. Counts as one active filter when on.',
+  ),
+  searchOverride: d(
+    'Outside filters',
+    'Search match that fails the other chips.',
+    'When search is non-empty, selectVisibleIdeas shows every scanned idea that matches ticker/name/group even if it fails setup type, stage, dollar volume, or any other gate. Those rows carry searchOverride and this tag. passesFilters itself stays the strict AND of every filter.',
+    SEARCH_POOL_NOTE,
+  ),
+  outsideScan: d(
+    'Outside scanned groups',
+    'Scored on demand; not in the leading-groups universe.',
+    'GET /api/market/idea/:symbol runs scoreTickers on that one ticker with includeBelowSma200 true. The leading-groups top-12 universe, scan caps, and scan cache are unchanged. The row is appended with outsideScan and bypasses the filter bar the same way other search matches do. Cache 10 minutes per symbol.',
   ),
   filterMinRvol: d(
     'Min RVOL',
@@ -651,7 +668,7 @@ export const METRIC_DEFS = {
   filterActiveCount: d(
     'Active filters',
     'How many controls differ from the baseline.',
-    'countActiveFilters increments once per field that differs from the baseline: search, min RVOL, min dollar volume, near highs, max ADR extension from 50 SMA, group, setup types, stages, each SMA / surfer / tight / > 200 SMA flag, earnings statuses, the A chip, the A+ chip, the A++ chip, and catalyst. The normal-scan baseline setup types are Range Breakout only. The group-view baseline still includes every setup type. Selecting all three setup types on a normal scan counts as one active filter. The baseline is the normal defaults, or the group-view baseline while a group is open. The > 200 SMA chip counts when it is off against a baseline that has it on.',
+    'countActiveFilters increments once per field that differs from the baseline: search, min RVOL, min dollar volume, near highs, max ADR extension from 50 SMA, group, setup types, stages, each SMA / surfer / tight / > 200 SMA flag, earnings statuses, the A chip, the A+ chip, the A++ chip, catalyst, and Show all setups. The normal-scan baseline setup types are Range Breakout only. The group-view baseline still includes every setup type. Selecting all three setup types on a normal scan counts as one active filter. Show all setups counts when it is on. The baseline is the normal defaults, or the group-view baseline while a group is open. The > 200 SMA chip counts when it is off against a baseline that has it on.',
   ),
   watchlistPin: d(
     'Pin',

@@ -7,6 +7,9 @@ import {
   ABOVE_200_DMA_TOOLTIP,
   countActiveFilters,
   resetFilters,
+  SEARCH_POOL_NOTE,
+  SHOW_ALL_SETUPS_LABEL,
+  searchQuery,
 } from '../lib/ideaFilters'
 import { metricTipAttrs, type MetricId } from '../lib/metricDefinitions'
 import { stageLabel } from '../lib/setupStage'
@@ -91,6 +94,8 @@ interface Props {
   catalystMeta?: CatalystMeta | null
   /** Ideas that pass every other filter but are still pending or unchecked. */
   uncheckedCount?: number
+  /** Server ticker lookup while the search box looks like a symbol. */
+  lookupStatus?: { symbol: string; state: 'loading' | 'not-found' } | null
 }
 
 function readExpandedPreference(): boolean {
@@ -114,6 +119,7 @@ export function FiltersBar({
   dense = false,
   catalystMeta = null,
   uncheckedCount = 0,
+  lookupStatus = null,
 }: Props) {
   const [expanded, setExpanded] = useState(readExpandedPreference)
   const activeCount = useMemo(
@@ -340,7 +346,7 @@ export function FiltersBar({
               type="button"
               onClick={() => toggleStage(s)}
               {...metricTipAttrs(s === 'watching' ? 'stageWatching' : s === 'coiled' ? 'stageCoiled' : 'stageTriggering')}
-              className={chipClass(on, tone)}
+              className={`${chipClass(on, tone)}${filters.showAllSetups ? ' opacity-40' : ''}`}
             >
               {stageLabel(s)}
             </button>
@@ -359,12 +365,24 @@ export function FiltersBar({
               {...metricTipAttrs(
                 s === 'Range Breakout' ? 'setupRangeBreakout' : s === 'Episodic Pivot' ? 'setupEpisodicPivot' : 'setupContinuation',
               )}
-              className={chipClass(on, 'blue')}
+              className={`${chipClass(on, 'blue')}${filters.showAllSetups ? ' opacity-40' : ''}`}
             >
               {s}
             </button>
           )
         })}
+        <label
+          {...metricTipAttrs('filterShowAllSetups')}
+          className={chipClass(Boolean(filters.showAllSetups), 'blue')}
+        >
+          <input
+            type="checkbox"
+            checked={Boolean(filters.showAllSetups)}
+            onChange={(e) => onChange({ ...filters, showAllSetups: e.target.checked })}
+            className="accent-terminal-green"
+          />
+          <span>{SHOW_ALL_SETUPS_LABEL}</span>
+        </label>
       </FilterGroup>
 
       <FilterGroup label="Earnings">
@@ -417,6 +435,17 @@ export function FiltersBar({
           <span>Has catalyst</span>
         </label>
       </FilterGroup>
+
+      {searchQuery(filters) ? (
+        <p className="w-full text-[10px] text-terminal-dim" {...metricTipAttrs('searchOverride')}>
+          {SEARCH_POOL_NOTE}
+        </p>
+      ) : null}
+      {lookupStatus?.state === 'loading' ? (
+        <p className="w-full text-[10px] text-terminal-dim">Looking up {lookupStatus.symbol}…</p>
+      ) : lookupStatus?.state === 'not-found' ? (
+        <p className="w-full text-[10px] text-terminal-dim">{lookupStatus.symbol} not found</p>
+      ) : null}
 
       {catalystMeta ? (
         <p className="w-full text-[10px] text-terminal-dim" data-catalyst-coverage>

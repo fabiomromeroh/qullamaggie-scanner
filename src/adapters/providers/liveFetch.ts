@@ -1,4 +1,5 @@
 import type { SymbolBars } from '../../lib/metrics'
+import type { TradingIdea } from '../../types'
 
 interface SnapshotResponse {
   symbol: string
@@ -184,4 +185,41 @@ export async function requestScanRefresh(
 export async function fetchScanStatus(): Promise<ScanStatusPayload> {
   const res = await fetch('/api/market/scan/status')
   return (await res.json()) as ScanStatusPayload
+}
+
+export class IdeaLookupNotFoundError extends Error {
+  readonly symbol: string
+  constructor(symbol: string, message?: string) {
+    super(message || `${symbol} not found`)
+    this.name = 'IdeaLookupNotFoundError'
+    this.symbol = symbol
+  }
+}
+
+export interface IdeaLookupResponse {
+  idea: TradingIdea
+  outsideScan: true
+  asOf: string
+}
+
+/** Score one symbol that is not in the scanned pool. Demo mode should skip this. */
+export async function fetchIdeaBySymbol(
+  symbol: string,
+  init?: { signal?: AbortSignal },
+): Promise<IdeaLookupResponse> {
+  const res = await fetch(`/api/market/idea/${encodeURIComponent(symbol)}`, {
+    signal: init?.signal,
+  })
+  const body = (await res.json()) as IdeaLookupResponse & { error?: string }
+  if (res.status === 404 || res.status === 400) {
+    throw new IdeaLookupNotFoundError(symbol, body.error)
+  }
+  if (!res.ok || !body.idea) {
+    throw new Error(body.error || `Idea lookup failed for ${symbol} (${res.status})`)
+  }
+  return {
+    idea: body.idea,
+    outsideScan: true,
+    asOf: typeof body.asOf === 'string' && body.asOf.trim() ? body.asOf : new Date().toISOString(),
+  }
 }

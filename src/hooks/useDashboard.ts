@@ -8,8 +8,9 @@ import {
   applyShowAllGroup,
   cloneIdeaFilters,
   loadStoredScanFilters,
-  matchesFilters,
+  passesFilters,
   saveStoredScanFilters,
+  selectVisibleIdeas,
 } from '../lib/ideaFilters'
 import { DEFAULT_GROUP_PERIOD, GROUP_PERIODS, isGroupPeriod, isGroupSlug } from '../lib/groupPeriod'
 import { selectGroupViewRows } from '../lib/groupView'
@@ -22,6 +23,7 @@ import type {
 } from '../types'
 import { DEFAULT_FILTERS, GROUP_VIEW_DEFAULT_FILTERS } from '../types'
 import { useGroups } from './useGroups'
+import { useTickerLookup } from './useTickerLookup'
 import { useUserWatchlist } from './useUserWatchlist'
 
 const GROUPS_PERIOD_KEY = 'qm-groups-period'
@@ -364,41 +366,68 @@ export function useDashboard() {
     return selectGroupViewRows(groupView.ideas, filters, groupView.finvizPerf)
   }, [groupView, filters])
 
+  const poolTickers = useMemo(() => {
+    const set = new Set<string>()
+    const list = groupView?.ideas ?? data?.ideas ?? []
+    for (const idea of list) set.add(idea.ticker.toUpperCase())
+    return set
+  }, [groupView?.ideas, data?.ideas])
+
+  const tickerLookup = useTickerLookup({
+    search: filters.search,
+    poolTickers,
+    enabled: mode !== 'demo',
+  })
+
   const filteredIdeas = useMemo(() => {
-    if (groupView) return groupRows?.rows ?? []
-    if (!data) return []
-    const downtrend = data.marketRegime?.stDirection === 'Downtrend'
+    const downtrend = data?.marketRegime?.stDirection === 'Downtrend'
     const groupSource = groupsMeta?.source ?? null
-    return data.ideas
-      .filter((i) => matchesFilters(i, filters, groupSource, groupsView))
-      .sort((a, b) => {
-        // Earnings avoid sinks to bottom (hard fail for entry)
-        const ea = a.earningsStatus === 'avoid' ? 1 : 0
-        const eb = b.earningsStatus === 'avoid' ? 1 : 0
-        if (ea !== eb) return ea - eb
-        // Coiled + triggering first (stage rank), then score
-        const sr = stageSortRank(a.setupStage) - stageSortRank(b.setupStage)
-        if (sr !== 0) return sr
-        if (a.isAPlusPlus !== b.isAPlusPlus) return a.isAPlusPlus ? -1 : 1
-        if (a.isAPlus !== b.isAPlus) return a.isAPlus ? -1 : 1
-        if (a.isA !== b.isA) return a.isA ? -1 : 1
-        if (a.kyleScore !== b.kyleScore) return b.kyleScore - a.kyleScore
-        if (a.aboveSma50 !== b.aboveSma50) return a.aboveSma50 ? -1 : 1
-        // Soft deprioritize new breakouts in Downtrend: push triggering lower when equal score
-        if (downtrend && a.setupStage === 'triggering' && b.setupStage !== 'triggering') return 1
-        if (downtrend && b.setupStage === 'triggering' && a.setupStage !== 'triggering') return -1
-        return b.rvol - a.rvol
-      })
-  }, [data, filters, groupsMeta, groupsView, groupView, groupRows])
+    const filterOpts = groupView
+      ? { groupView: true as const }
+      : { groupSource, groups: groupsView }
+    const rows = groupView
+      ? (groupRows?.rows ?? [])
+      : !data
+        ? []
+        : selectVisibleIdeas(data.ideas, filters, filterOpts).sort((a, b) => {
+            // Earnings avoid sinks to bottom (hard fail for entry)
+            const ea = a.earningsStatus === 'avoid' ? 1 : 0
+            const eb = b.earningsStatus === 'avoid' ? 1 : 0
+            if (ea !== eb) return ea - eb
+            // Coiled + triggering first (stage rank), then score
+            const sr = stageSortRank(a.setupStage) - stageSortRank(b.setupStage)
+            if (sr !== 0) return sr
+            if (a.isAPlusPlus !== b.isAPlusPlus) return a.isAPlusPlus ? -1 : 1
+            if (a.isAPlus !== b.isAPlus) return a.isAPlus ? -1 : 1
+            if (a.isA !== b.isA) return a.isA ? -1 : 1
+            if (a.kyleScore !== b.kyleScore) return b.kyleScore - a.kyleScore
+            if (a.aboveSma50 !== b.aboveSma50) return a.aboveSma50 ? -1 : 1
+            // Soft deprioritize new breakouts in Downtrend: push triggering lower when equal score
+            if (downtrend && a.setupStage === 'triggering' && b.setupStage !== 'triggering') return 1
+            if (downtrend && b.setupStage === 'triggering' && a.setupStage !== 'triggering') return -1
+            return b.rvol - a.rvol
+          })
+    const extra = tickerLookup.idea
+    if (!extra) return rows
+    const key = extra.ticker.toUpperCase()
+    if (rows.some((row) => row.ticker.toUpperCase() === key)) return rows
+    const override = !passesFilters(extra, filters, filterOpts)
+    return [
+      ...rows,
+      { ...extra, outsideScan: true, searchOverride: override },
+    ]
+  }, [data, filters, groupsMeta, groupsView, groupView, groupRows, tickerLookup.idea])
 
   const selectedIdea = useMemo(() => {
     if (!selectedTicker) return null
+    const fromVisible = filteredIdeas.find((idea) => idea.ticker === selectedTicker)
+    if (fromVisible) return fromVisible
     if (groupView?.ideas) {
       return groupView.ideas.find((idea) => idea.ticker === selectedTicker) ?? null
     }
     if (!data) return null
     return data.ideas.find((i) => i.ticker === selectedTicker) ?? null
-  }, [data, selectedTicker, groupView])
+  }, [data, selectedTicker, groupView, filteredIdeas])
 
   const catalystPending = groupViewActive
     ? (groupStocks?.data?.catalystMeta?.pending ?? 0)
@@ -501,6 +530,10 @@ export function useDashboard() {
     setFilters,
     resetFilters,
     filteredIdeas,
+    lookupStatus:
+      tickerLookup.status === 'loading' || tickerLookup.status === 'not-found'
+        ? { symbol: tickerLookup.symbol ?? '', state: tickerLookup.status }
+        : null,
     selectedIdea,
     selectedTicker,
     setSelectedTicker,

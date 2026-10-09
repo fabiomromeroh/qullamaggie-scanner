@@ -280,6 +280,16 @@ export interface TradingIdea {
   /** checked = looked up; pending = candidate not finished; unchecked = not a candidate; error = lookup failed. */
   catalystStatus?: 'checked' | 'pending' | 'unchecked' | 'error'
   /**
+   * Client table flag: this row is shown because search matched, even though
+   * it fails the other filter gates.
+   */
+  searchOverride?: boolean
+  /**
+   * Client table flag: scored on demand, not a member of the leading-groups
+   * scan universe.
+   */
+  outsideScan?: boolean
+  /**
    * Constructive setup. No catalyst required. A+ implies A.
    * See `isAHeuristic` in src/lib/metrics.ts.
    */
@@ -592,6 +602,11 @@ export interface IdeaFilters {
   earningsStatuses: EarningsStatus[]
   groupId: string | null
   search: string
+  /**
+   * Skip the Setup type and Stage gates only. Default off.
+   * Every other filter still applies.
+   */
+  showAllSetups: boolean
 }
 
 export const ALL_SETUP_TYPES: SetupType[] = [
@@ -636,6 +651,7 @@ export const DEFAULT_FILTERS: IdeaFilters = {
   earningsStatuses: [...ALL_EARNINGS_STATUSES],
   groupId: null,
   search: '',
+  showAllSetups: false,
 }
 
 /**
@@ -645,7 +661,7 @@ export const DEFAULT_FILTERS: IdeaFilters = {
  * {@link DEFAULT_MIN_AVG_DOLLAR_VOL}. Max ADR extension from 50 SMA is
  * {@link GROUP_VIEW_MAX_EXTENSION_ADR50}.
  *
- * Group-view filters are not persisted (`qm.scanFilters.v2` stores the normal
+ * Group-view filters are not persisted (`qm.scanFilters.v3` stores the normal
  * scan only). Opening or changing a group resets this object via
  * applyFilterChange, so no storage migration is needed.
  */
