@@ -9,6 +9,7 @@ import {
   FILTERS_STORAGE_KEY,
   FILTERS_STORAGE_V1_KEY,
   FILTERS_STORAGE_V2_KEY,
+  FILTERS_STORAGE_V3_KEY,
   FILTERS_STORAGE_VERSION,
   SEARCH_POOL_NOTE,
   SHOW_ALL_GROUP_LABEL,
@@ -38,7 +39,9 @@ import {
   DEFAULT_MIN_AVG_DOLLAR_VOL,
   GROUP_VIEW_DEFAULT_FILTERS,
   GROUP_VIEW_MAX_EXTENSION_ADR50,
+  DEFAULT_MIN_ADR_PCT,
   MAX_EXTENSION_ADR50_PRESETS,
+  MIN_ADR_PCT_PRESETS,
   NEAR_HIGHS_PRESETS,
   type IdeaFilters,
   type TradingIdea,
@@ -812,7 +815,9 @@ test('active-filter counter and reset include > 200 SMA', () => {
   assert.equal(showAll.setupTypes.length, ALL_SETUP_TYPES.length)
   assert.equal(showAll.stages.length, 3)
   assert.equal(showAll.earningsStatuses.length, ALL_EARNINGS_STATUSES.length)
-  assert.equal(countActiveFilters(showAll, GROUP_VIEW_DEFAULT_FILTERS), 3)
+  assert.equal(showAll.minAdrPct, null)
+  // > 200 SMA off, Min DolVol 0, Max ADR ext Any, ADR% Any.
+  assert.equal(countActiveFilters(showAll, GROUP_VIEW_DEFAULT_FILTERS), 4)
 })
 
 test('group edits do not clobber scan filters; reset and show-all are separate', () => {
@@ -1125,9 +1130,9 @@ test('stored scan filters migrate v2 to v3 with showAllSetups false', () => {
     showAllSetups: boolean
     setupTypes: string[]
   }
-  assert.equal(saved.filtersVersion, 3)
-  assert.equal(FILTERS_STORAGE_VERSION, 3)
-  assert.equal(FILTERS_STORAGE_KEY, 'qm.scanFilters.v3')
+  assert.equal(saved.filtersVersion, 4)
+  assert.equal(FILTERS_STORAGE_VERSION, 4)
+  assert.equal(FILTERS_STORAGE_KEY, 'qm.scanFilters.v4')
   assert.equal(saved.showAllSetups, false)
   assert.deepEqual(saved.setupTypes, [...ALL_SETUP_TYPES])
 
@@ -1169,4 +1174,61 @@ test('search override shows a row that fails setupTypes, stage, and dolvol', () 
   const none = selectVisibleIdeas([hidden, visibleOk], filters())
   assert.equal(none.some((row) => row.ticker === 'MRNA'), false)
   assert.equal(SEARCH_POOL_NOTE, 'Search shows matches from the whole scanned pool, ignoring filters')
+})
+
+test('Min ADR% filter: presets, defaults, inclusive gate, independent of setup gates', () => {
+  assert.deepEqual([...MIN_ADR_PCT_PRESETS], [3, 4, 5, 6])
+  assert.equal(DEFAULT_MIN_ADR_PCT, 3)
+  assert.equal(DEFAULT_FILTERS.minAdrPct, 3)
+  assert.equal(GROUP_VIEW_DEFAULT_FILTERS.minAdrPct, 3)
+  const open: IdeaFilters = { ...showAllGroupFilters(), minAdrPct: 4 }
+  // Inclusive: exactly N passes, just below fails.
+  assert.equal(passesFilters(idea({ adrPct: 4 }), open), true)
+  assert.equal(passesFilters(idea({ adrPct: 3.99 }), open), false)
+  assert.equal(passesFilters(idea({ adrPct: 6.5 }), open), true)
+  // Unknown ADR is kept.
+  assert.equal(passesFilters(idea({ adrPct: Number.NaN }), open), true)
+  // Any (null) hides nothing.
+  assert.equal(passesFilters(idea({ adrPct: 1 }), { ...open, minAdrPct: null }), true)
+  // Independent of setup type: a Continuation row with ADR 2 still fails > 3.
+  assert.equal(
+    passesFilters(idea({ adrPct: 2, setupType: 'Continuation' }), { ...open, minAdrPct: 3 }),
+    false,
+  )
+  assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, minAdrPct: 5 }), 1)
+  assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, minAdrPct: null }), 1)
+  assert.equal(countActiveFilters({ ...DEFAULT_FILTERS, minAdrPct: 3 }), 0)
+  assert.equal(cloneIdeaFilters({ ...DEFAULT_FILTERS, minAdrPct: 6 }).minAdrPct, 6)
+})
+
+test('stored filters v3 -> v4 take Min ADR% default; v4 keeps explicit Any', () => {
+  const fromV3 = migrateStoredFilters({ ...DEFAULT_FILTERS, minAdrPct: null, minRvol: 2, filtersVersion: 3 })
+  assert.equal(fromV3.minAdrPct, 3)
+  assert.equal(fromV3.minRvol, 2)
+  const legacy = { ...DEFAULT_FILTERS, filtersVersion: 3 } as Record<string, unknown>
+  delete legacy.minAdrPct
+  assert.equal(migrateStoredFilters(legacy).minAdrPct, 3)
+  assert.equal(migrateStoredFilters({ ...DEFAULT_FILTERS, minAdrPct: null, filtersVersion: 4 }).minAdrPct, null)
+  assert.equal(migrateStoredFilters({ ...DEFAULT_FILTERS, minAdrPct: 5, filtersVersion: 4 }).minAdrPct, 5)
+
+  const store = memoryStore()
+  writeJsonTo(store, FILTERS_STORAGE_V3_KEY, { ...DEFAULT_FILTERS, minAdrPct: undefined, minRvol: 1.5, filtersVersion: 3 })
+  const loaded = loadStoredScanFilters(store)
+  assert.equal(loaded.minAdrPct, 3)
+  assert.equal(loaded.minRvol, 1.5)
+  assert.equal(store.getItem(FILTERS_STORAGE_V3_KEY), null)
+  const saved = readJsonFrom(store, FILTERS_STORAGE_KEY) as { filtersVersion: number; minAdrPct: number | null }
+  assert.equal(saved.filtersVersion, 4)
+  assert.equal(saved.minAdrPct, 3)
+
+  saveStoredScanFilters({ ...loaded, minAdrPct: null }, store)
+  assert.equal(loadStoredScanFilters(store).minAdrPct, null)
+})
+
+test('FiltersBar renders the ADR% select with > labels and Any', () => {
+  const src = readFileSync(resolve(process.cwd(), 'src/components/FiltersBar.tsx'), 'utf8')
+  assert.match(src, /metricTipAttrs\('filterMinAdrPct'\)/)
+  assert.match(src, /MIN_ADR_PCT_PRESETS\.map/)
+  assert.match(src, /`> \$\{t\}`/)
+  assert.match(src, /aria-label="Min ADR%"/)
 })

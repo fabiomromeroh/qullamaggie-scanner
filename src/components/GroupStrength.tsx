@@ -25,6 +25,7 @@ const DEFAULT_COLS: Record<string, number> = {
   name: 148,
   leaders: 58,
   d1: 52,
+  w1: 52,
   m1: 52,
   m3: 52,
   m6: 52,
@@ -43,8 +44,9 @@ const SORT_PERIOD: Partial<Record<GroupSortKey, GroupPeriod>> = {
   '6m': '6m',
 }
 
-const COLUMN_PERIOD: Record<'d1' | 'm1' | 'm3' | 'm6', GroupPeriod> = {
+const COLUMN_PERIOD: Record<'d1' | 'w1' | 'm1' | 'm3' | 'm6', GroupPeriod> = {
   d1: '1d',
+  w1: '1w',
   m1: '1m',
   m3: '3m',
   m6: '6m',
@@ -97,8 +99,7 @@ function formatUpdatedHm(iso: string | undefined): string | null {
 
 function groupTitle(g: IndustryGroup): string {
   const parts = [g.description]
-  if (g.source === 'finviz' && finite(g.weekPct)) parts.push(`1W ${fmtPct(g.weekPct)}`)
-  parts.push(`1M ${fmtCell(g.perf1m)}`, `3M ${fmtCell(g.perf3m)}`, `6M ${fmtCell(g.perf6m)}`)
+  parts.push(`1W ${fmtCell(g.weekPct)}`, `1M ${fmtCell(g.perf1m)}`, `3M ${fmtCell(g.perf3m)}`, `6M ${fmtCell(g.perf6m)}`)
   if (finite(g.perf1y)) parts.push(`1Y ${fmtPct(g.perf1y)}`)
   if (finite(g.perfYtd)) parts.push(`YTD ${fmtPct(g.perfYtd)}`)
   return parts.join(' · ')
@@ -352,7 +353,7 @@ function Th({
   width: number
   onResize: (key: string, dx: number) => void
   className?: string
-  metric: 'groupRank' | 'groupName' | 'groupLeaders' | 'groupPerf1d' | 'groupPerf1m' | 'groupPerf3m' | 'groupPerf6m'
+  metric: 'groupRank' | 'groupName' | 'groupLeaders' | 'groupPerf1d' | 'groupPerf1w' | 'groupPerf1m' | 'groupPerf3m' | 'groupPerf6m'
   children: ReactNode
   align?: 'left' | 'right'
   sortKey: GroupSortKey
@@ -602,6 +603,7 @@ export function GroupStrength({
             <col style={{ width: widthOf('name') }} />
             <col style={{ width: widthOf('leaders') }} />
             <col style={{ width: widthOf('d1') }} />
+            <col style={{ width: widthOf('w1') }} />
             <col style={{ width: widthOf('m1') }} />
             <col style={{ width: widthOf('m3') }} />
             <col style={{ width: widthOf('m6') }} />
@@ -638,6 +640,19 @@ export function GroupStrength({
                 metric="groupPerf1d"
               >
                 1D
+              </Th>
+              <Th
+                colKey="w1"
+                width={widthOf('w1')}
+                onResize={resizeColumn}
+                align="right"
+                sortKey="1w"
+                sort={sort}
+                onSort={onSort}
+                emphasize={emph('w1')}
+                metric="groupPerf1w"
+              >
+                1W
               </Th>
               <Th
                 colKey="m1"
@@ -683,7 +698,7 @@ export function GroupStrength({
           <tbody>
             {sorted.length === 0 ? (
               <tr>
-                <td colSpan={7} className="px-2 py-4 text-center text-terminal-dim">
+                <td colSpan={8} className="px-2 py-4 text-center text-terminal-dim">
                   {loading ? 'Loading leading groups…' : 'No groups'}
                 </td>
               </tr>
@@ -749,6 +764,9 @@ export function GroupStrength({
                     </td>
                     <td className={`overflow-hidden px-2 py-1.5 text-right font-mono ${cellClass(g.dayPct)} ${emph('d1') ? 'bg-terminal-blue/10 font-semibold' : ''}`}>
                       <MetricTip id="groupPerf1d">{fmtCell(g.dayPct)}</MetricTip>
+                    </td>
+                    <td className={`overflow-hidden px-2 py-1.5 text-right font-mono ${cellClass(g.weekPct)} ${emph('w1') ? 'bg-terminal-blue/10 font-semibold' : ''}`}>
+                      <MetricTip id="groupPerf1w">{fmtCell(g.weekPct)}</MetricTip>
                     </td>
                     <td className={`overflow-hidden px-2 py-1.5 text-right font-mono ${cellClass(g.perf1m)} ${emph('m1') ? 'bg-terminal-blue/10 font-semibold' : ''}`}>
                       <MetricTip id="groupPerf1m">{fmtCell(g.perf1m, 0)}</MetricTip>

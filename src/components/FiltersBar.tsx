@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import type { CatalystMeta, EarningsStatus, IdeaFilters, IndustryGroup, SetupStage, SetupType } from '../types'
-import { ALL_EARNINGS_STATUSES, ALL_SETUP_TYPES, DEFAULT_FILTERS, MAX_EXTENSION_ADR50_PRESETS, NEAR_HIGHS_PRESETS } from '../types'
+import { ALL_EARNINGS_STATUSES, ALL_SETUP_TYPES, DEFAULT_FILTERS, MAX_EXTENSION_ADR50_PRESETS, MIN_ADR_PCT_PRESETS, NEAR_HIGHS_PRESETS } from '../types'
 import {
   ABOVE_200_DMA_LABEL,
   ABOVE_200_DMA_TOOLTIP,
@@ -308,6 +308,30 @@ export function FiltersBar({
             {MAX_EXTENSION_ADR50_PRESETS.map((t) => (
               <option key={t} value={t}>
                 {t === 5 ? `< ${t} ADR` : `< ${t}`}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label
+          {...metricTipAttrs('filterMinAdrPct')}
+          className="flex cursor-help flex-col gap-0.5 text-[10px] text-terminal-dim"
+        >
+          ADR%
+          <select
+            value={filters.minAdrPct ?? ''}
+            aria-label="Min ADR%"
+            onChange={(e) =>
+              onChange({
+                ...filters,
+                minAdrPct: e.target.value === '' ? null : Number(e.target.value),
+              })
+            }
+            className="min-h-8 min-w-[72px] rounded border border-terminal-border-bright bg-terminal-bg px-2 py-1 text-[10px] text-terminal-fg outline-none focus:border-terminal-blue"
+          >
+            <option value="">Any</option>
+            {MIN_ADR_PCT_PRESETS.map((t) => (
+              <option key={t} value={t}>
+                {`> ${t}`}
               </option>
             ))}
           </select>

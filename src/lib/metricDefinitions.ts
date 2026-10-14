@@ -42,7 +42,7 @@ import {
 } from './groupPeriod'
 import { LEADER_POOL_SIZE, PERIOD_SESSIONS } from './memberPerf'
 import { SCAN_MIN_AVG_VOL_DEFAULT, SCAN_MIN_PRICE_DEFAULT, SCAN_STAGE1_CAP_DEFAULT, SCAN_STAGE1_PAGE_SIZE } from './scanDefaults'
-import { DEFAULT_FILTERS, DEFAULT_MIN_AVG_DOLLAR_VOL, GROUP_VIEW_DEFAULT_FILTERS, MAX_EXTENSION_ADR50_PRESETS, NEAR_HIGHS_PRESETS } from '../types'
+import { DEFAULT_FILTERS, DEFAULT_MIN_ADR_PCT, DEFAULT_MIN_AVG_DOLLAR_VOL, GROUP_VIEW_DEFAULT_FILTERS, MAX_EXTENSION_ADR50_PRESETS, MIN_ADR_PCT_PRESETS, NEAR_HIGHS_PRESETS } from '../types'
 import { SEARCH_POOL_NOTE } from './ideaFilters'
 import {
   EXTENSION_ADR50_FORMULA,
@@ -266,7 +266,7 @@ function groupColumn(period: GroupPeriod): MetricDef {
     meta.label,
     `Group ${meta.label} performance.`,
     `Finviz groups page field ${FINVIZ_PERF[period]}. Screener order token is ${meta.order}. The internal fallback writes this field as ${FALLBACK_PERF[period]}. Leader and drill-down member returns use ${member}.`,
-    `Selecting ${meta.label} re-ranks with rankGroups (this field descending, then ${meta.tieBreak.join(', ')}), saves localStorage qm-groups-period, rebuilds the Stage-1 universe from the new top 12 snapshot members, and rescans. It also reloads leaders plus an open drill-down. Finviz week/month/quarter/half windows are about 5/20/65/130 sessions, so member figures (${PERIOD_SESSIONS['1w']}/${PERIOD_SESSIONS['1m']}/${PERIOD_SESSIONS['3m']}/${PERIOD_SESSIONS['6m']}) can differ by a few points. 1W has no table column.`,
+    `Selecting ${meta.label} re-ranks with rankGroups (this field descending, then ${meta.tieBreak.join(', ')}), saves localStorage qm-groups-period, rebuilds the Stage-1 universe from the new top 12 snapshot members, and rescans. It also reloads leaders plus an open drill-down. Finviz week/month/quarter/half windows are about 5/20/65/130 sessions, so member figures (${PERIOD_SESSIONS['1w']}/${PERIOD_SESSIONS['1m']}/${PERIOD_SESSIONS['3m']}/${PERIOD_SESSIONS['6m']}) can differ by a few points. 1W is a sortable table column (Finviz perfW → weekPct).`,
   )
 }
 
@@ -649,6 +649,12 @@ export const METRIC_DEFS = {
     'Hide names stretched more than T ADRs above the 50-day SMA.',
     extensionAdr50FilterHow(),
     extensionAdr50PresetNote(),
+  ),
+  filterMinAdrPct: d(
+    'Min ADR%',
+    `Hide names whose ADR% is below N. Default > ${DEFAULT_MIN_ADR_PCT}.`,
+    `Keeps a row when adrPct >= N (inclusive, although the label reads "> N"). ADR%: ${adrHow()} A row without a finite ADR% is kept. Any turns the filter off.`,
+    `Presets ${MIN_ADR_PCT_PRESETS.map((n) => `> ${n}`).join(', ')} or Any. Default ${DEFAULT_MIN_ADR_PCT} on the normal scan and in group view. Independent of the Range Breakout gate (ADR% >= ${RANGE_BREAKOUT_CONFIG.adrMinPct}) and the A gate (ADR% >= ${A_CONFIG.adrMin}). Saved filters older than v4 take the default once.`,
   ),
   filterGroup: d(
     'Group filter',
