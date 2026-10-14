@@ -173,7 +173,8 @@ test('NVDA and AMD appear only when their snapshot group is in the top 12', () =
   assert.equal(present.has('NVDA'), true)
   assert.equal(present.has('AMD'), true)
   assert.equal(loaded.snapshot.groups.semiconductors != null, true)
-  assert.equal(loaded.snapshot.generatedAt.startsWith('2026-10-05'), true)
+  // Not pinned to a date: the snapshot is refreshed periodically.
+  assert.equal(Number.isFinite(Date.parse(loaded.snapshot.generatedAt)), true)
 
   const otherSlug = Object.keys(loaded.snapshot.groups).find((slug) => slug !== 'semiconductors')
   assert.ok(otherSlug)

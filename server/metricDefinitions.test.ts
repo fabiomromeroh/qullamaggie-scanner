@@ -535,3 +535,19 @@ test('watchlist metric ids exist, cite cap/pattern/TTL, and have no auto-add cop
     assert.equal(/autoAdd/.test(text), false, `${id} tooltip still mentions autoAdd`)
   }
 })
+
+test('Min ADR% filter and group 1W column tooltips', () => {
+  includes('filterMinAdrPct', 'adrPct >= N')
+  includes('filterMinAdrPct', '> 3')
+  includes('filterMinAdrPct', '> 6')
+  includes('filterMinAdrPct', 'high − low')
+  includes('groupPerf1w', 'perfW')
+  includes('groupPerf1w', '1W is a sortable table column')
+})
+
+test('Leading groups table has a sortable 1W column fed by weekPct', () => {
+  const src = readFileSync(resolve(process.cwd(), 'src/components/GroupStrength.tsx'), 'utf8')
+  assert.match(src, /colKey="w1"[\s\S]*?sortKey="1w"[\s\S]*?metric="groupPerf1w"/)
+  assert.match(src, /<MetricTip id="groupPerf1w">\{fmtCell\(g\.weekPct\)\}<\/MetricTip>/)
+  assert.match(src, /<td colSpan=\{8\}/)
+})

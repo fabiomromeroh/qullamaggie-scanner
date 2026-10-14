@@ -27,10 +27,15 @@ export const ABOVE_200_DMA_LABEL = '> 200 SMA'
  * rewrites a setupTypes list that is exactly the old default — all three
  * labels — to Range Breakout only, once. v2 and v3 keep that list, including
  * an explicit all-three choice made after the migration. v3 adds
- * `showAllSetups` (missing → false).
+ * `showAllSetups` (missing → false). v4 adds `minAdrPct`: a blob older than
+ * v4 always gets the default (3), even if it carried some other value.
+ * From v4 on, an explicit null (Any) or preset is kept.
  */
-export const FILTERS_STORAGE_VERSION = 3
-export const FILTERS_STORAGE_KEY = 'qm.scanFilters.v3'
+export const FILTERS_STORAGE_VERSION = 4
+export const FILTERS_STORAGE_KEY = 'qm.scanFilters.v4'
+export const FILTERS_STORAGE_V3_KEY = 'qm.scanFilters.v3'
+/** Stored blobs below this version take DEFAULT_FILTERS.minAdrPct. */
+export const MIN_ADR_PCT_SINCE = 4
 export const FILTERS_STORAGE_V2_KEY = 'qm.scanFilters.v2'
 export const FILTERS_STORAGE_V1_KEY = 'qm.scanFilters.v1'
 /** Pre-v2 blobs whose setup list is exactly the old three labels collapse. */
@@ -90,6 +95,8 @@ export interface FilterableIdea {
    * kept when a max-extension threshold is set.
    */
   extensionAdr50?: number | null
+  /** ADR% (20-session average daily range). Missing/non-finite is kept when a minimum is set. */
+  adrPct?: number
   setupType: SetupType
   /** Missing is treated as false when the A chip is on. */
   isA?: boolean
@@ -128,6 +135,7 @@ export function cloneIdeaFilters(filters: IdeaFilters): IdeaFilters {
     minAvgDollarVol: filters.minAvgDollarVol,
     maxPctFromHigh: filters.maxPctFromHigh ?? null,
     maxExtensionAdr50: filters.maxExtensionAdr50 ?? null,
+    minAdrPct: filters.minAdrPct ?? null,
     setupTypes: [...(filters.setupTypes ?? [])],
     requireA: Boolean(filters.requireA),
     requireAPlus: Boolean(filters.requireAPlus),
@@ -168,6 +176,7 @@ export function showAllGroupFilters(): IdeaFilters {
     minAvgDollarVol: 0,
     maxPctFromHigh: null,
     maxExtensionAdr50: null,
+    minAdrPct: null,
     requireA: false,
     requireAPlus: false,
     requireAPlusPlus: false,
@@ -205,6 +214,7 @@ export function countActiveFilters(
   if (filters.minAvgDollarVol !== baseline.minAvgDollarVol) n += 1
   if ((filters.maxPctFromHigh ?? null) !== (baseline.maxPctFromHigh ?? null)) n += 1
   if ((filters.maxExtensionAdr50 ?? null) !== (baseline.maxExtensionAdr50 ?? null)) n += 1
+  if ((filters.minAdrPct ?? null) !== (baseline.minAdrPct ?? null)) n += 1
   if ((filters.groupId ?? null) !== (baseline.groupId ?? null)) n += 1
   if (!sameMembers(filters.setupTypes, baseline.setupTypes)) n += 1
   if (!sameMembers(filters.stages, baseline.stages)) n += 1
@@ -312,6 +322,10 @@ export function migrateStoredFilters(raw: unknown): IdeaFilters {
     minAvgDollarVol: Math.max(0, pickNum(src.minAvgDollarVol, base.minAvgDollarVol)),
     maxPctFromHigh: migrateMaxPctFromHigh(src.maxPctFromHigh),
     maxExtensionAdr50: pickNumOrNull(src.maxExtensionAdr50, base.maxExtensionAdr50),
+    minAdrPct:
+      version < MIN_ADR_PCT_SINCE
+        ? base.minAdrPct
+        : pickNumOrNull(src.minAdrPct, base.minAdrPct),
     setupTypes,
     requireA: pickBool(src.requireA, base.requireA),
     // A stored aPlusOnly: true (the old single chip) becomes requireAPlus
@@ -373,12 +387,20 @@ function promoteStoredFilters(
   return migrated
 }
 
-/** Normal-scan filters from `qm.scanFilters.v3`, else v2, else a one-time v1 migration, else defaults. */
+/** Normal-scan filters from `qm.scanFilters.v4`, else v3, else v2, else a one-time v1 migration, else defaults. */
 export function loadStoredScanFilters(store?: KeyValueStore | null): IdeaFilters {
   const kv = resolveStore(store)
   if (!kv) return cloneIdeaFilters(DEFAULT_FILTERS)
   if (kv.getItem(FILTERS_STORAGE_KEY) != null) {
     return migrateStoredFilters(readJsonFrom(kv, FILTERS_STORAGE_KEY))
+  }
+  if (kv.getItem(FILTERS_STORAGE_V3_KEY) != null) {
+    return promoteStoredFilters(
+      kv,
+      readJsonFrom(kv, FILTERS_STORAGE_V3_KEY),
+      3,
+      FILTERS_STORAGE_V3_KEY,
+    )
   }
   if (kv.getItem(FILTERS_STORAGE_V2_KEY) != null) {
     return promoteStoredFilters(
@@ -397,7 +419,7 @@ export function loadStoredScanFilters(store?: KeyValueStore | null): IdeaFilters
   )
 }
 
-/** Write the current normal-scan filters as v3 so a later all-three choice is not rewritten. */
+/** Write the current normal-scan filters as v4 so a later all-three choice is not rewritten. */
 export function saveStoredScanFilters(filters: IdeaFilters, store?: KeyValueStore | null): void {
   const kv = resolveStore(store)
   if (!kv) return
@@ -536,6 +558,11 @@ export function passesFilters(
   if (typeof f.maxExtensionAdr50 === 'number' && Number.isFinite(f.maxExtensionAdr50)) {
     const ext = idea.extensionAdr50
     if (typeof ext === 'number' && Number.isFinite(ext) && ext > f.maxExtensionAdr50) return false
+  }
+  // Min ADR%: inclusive (>= N) although the UI labels it "> N". Unknown ADR is kept.
+  if (typeof f.minAdrPct === 'number' && Number.isFinite(f.minAdrPct)) {
+    const adr = idea.adrPct
+    if (typeof adr === 'number' && Number.isFinite(adr) && adr < f.minAdrPct) return false
   }
   if (!skipSetupGates && f.setupTypes && !f.setupTypes.includes(idea.setupType)) return false
   // Quality chips are a union. All off skips the gate. A+ implies A, and

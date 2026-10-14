@@ -535,6 +535,17 @@ export const MAX_EXTENSION_ADR50_PRESETS = [5, 4, 3, 2, 1] as const
 
 export type MaxExtensionAdr50Preset = (typeof MAX_EXTENSION_ADR50_PRESETS)[number]
 
+/**
+ * Min ADR% presets for the ADR% filter. Labelled "> N" in the UI but the gate
+ * is inclusive (adrPct >= N) to match the existing ADR% >= 3 Range Breakout rule.
+ */
+export const MIN_ADR_PCT_PRESETS = [3, 4, 5, 6] as const
+
+export type MinAdrPctPreset = (typeof MIN_ADR_PCT_PRESETS)[number]
+
+/** Default Min ADR% for the normal scan and group view. */
+export const DEFAULT_MIN_ADR_PCT = 3
+
 export interface IdeaFilters {
   minRvol: number
   /**
@@ -557,6 +568,13 @@ export interface IdeaFilters {
    * Negative extensions (below the 50 SMA) always pass.
    */
   maxExtensionAdr50: number | null
+  /**
+   * Hide names whose ADR% is below this value (inclusive: adrPct >= N passes).
+   * `null` is Any. Presets {@link MIN_ADR_PCT_PRESETS}; default
+   * {@link DEFAULT_MIN_ADR_PCT}. Independent of the Range Breakout (ADR% >= 3)
+   * and A (ADR% >= 2.5) gates. A row without a finite adrPct is kept.
+   */
+  minAdrPct: number | null
   setupTypes: SetupType[]
   /**
    * Keep rows with `isA`. Off by default.
@@ -633,6 +651,8 @@ export const DEFAULT_FILTERS: IdeaFilters = {
    * Group view uses {@link GROUP_VIEW_MAX_EXTENSION_ADR50} instead.
    */
   maxExtensionAdr50: 5,
+  /** ADR% >= 3 (shown as "> 3"). Group view uses the same default. */
+  minAdrPct: DEFAULT_MIN_ADR_PCT,
   /** Episodic Pivot and Continuation start off. Group view keeps every label. */
   setupTypes: ['Range Breakout'],
   requireA: false,
@@ -661,7 +681,7 @@ export const DEFAULT_FILTERS: IdeaFilters = {
  * {@link DEFAULT_MIN_AVG_DOLLAR_VOL}. Max ADR extension from 50 SMA is
  * {@link GROUP_VIEW_MAX_EXTENSION_ADR50}.
  *
- * Group-view filters are not persisted (`qm.scanFilters.v3` stores the normal
+ * Group-view filters are not persisted (`qm.scanFilters.v4` stores the normal
  * scan only). Opening or changing a group resets this object via
  * applyFilterChange, so no storage migration is needed.
  */
@@ -674,6 +694,7 @@ export const GROUP_VIEW_DEFAULT_FILTERS: IdeaFilters = {
    * Null extensions stay. The normal scan default is 5.
    */
   maxExtensionAdr50: GROUP_VIEW_MAX_EXTENSION_ADR50,
+  minAdrPct: DEFAULT_MIN_ADR_PCT,
   requireA: false,
   requireAPlus: false,
   requireAPlusPlus: false,
