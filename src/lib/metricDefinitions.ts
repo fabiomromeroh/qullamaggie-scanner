@@ -304,7 +304,12 @@ export const METRIC_DEFS = {
   ideaGroup: d(
     'Finviz group',
     'Finviz industry on the idea.',
-    'The scan sets groupId and groupName from the membership snapshot. A ticker in more than one group uses the current top-12 group with the best rank on the selected period. The detail header prefixes this label with Finviz. Yahoo sector/industry and WATCHLIST_GROUPS are used only when the snapshot has no row. This is not the Finviz groups-table rank.',
+    'The scan sets groupId and groupName from the membership snapshot. A ticker in more than one group uses the current top-12 group with the best rank on the selected period. The detail header prefixes this label with Finviz. Yahoo sector/industry and WATCHLIST_GROUPS are used only when the snapshot has no row. The rank next to it (ideaGroupRank) is the Leading groups position on the selected period.',
+  ),
+  ideaGroupRank: d(
+    'Group rank',
+    "Position of this ticker's Finviz group in the Leading groups ranking for the selected period.",
+    'ideaGroupRank sorts the live Finviz groups with rankGroups on the period selected in the Leading groups panel (1D / 1W / 1M / 3M / 6M; that field descending, then the panel tie-breaks) and shows #rank/total plus the period label. The group is matched by normalized id/slug/name (ideaMatchesFinvizGroup). Changing the period updates it. Hidden when the group is Other/unknown, the groups list is not loaded, or no live group matches. Lookup rows outside the scanned groups still get a rank when their group is in the live list.',
   ),
   price: d(
     'Price',
