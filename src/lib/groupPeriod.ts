@@ -3,6 +3,7 @@
  * Pure helpers shared by the server and the panel.
  */
 import type { GroupPeriod, IndustryGroup } from '../types/index.ts'
+import { ideaMatchesFinvizGroup } from './groupMatch.ts'
 
 export const GROUP_PERIOD_IDS: readonly GroupPeriod[] = ['1d', '1w', '1m', '3m', '6m']
 
@@ -249,4 +250,39 @@ export function compareGroupsByPeriod(
 export function rankGroups(groups: IndustryGroup[], period: GroupPeriod): IndustryGroup[] {
   const sorted = [...groups].sort((a, b) => compareGroupsByPeriod(a, b, period, 'desc'))
   return sorted.map((group, index) => ({ ...group, rsRank: index + 1 }))
+}
+
+export interface IdeaGroupRank {
+  /** 1-based position among `total` groups on `period` (same order as the Leading groups panel). */
+  rank: number
+  total: number
+  period: GroupPeriod
+  groupName: string
+}
+
+/**
+ * Rank of the idea's Finviz group on the selected period, using
+ * {@link rankGroups} (the Leading groups panel order). Matching is
+ * {@link ideaMatchesFinvizGroup} (normalized id/slug/name equality).
+ * Null for an empty/"Other" group, an empty groups list, or no match.
+ */
+export function ideaGroupRank(
+  idea: { groupId?: string; groupName: string },
+  groups: readonly IndustryGroup[],
+  period: GroupPeriod,
+): IdeaGroupRank | null {
+  const name = (idea.groupName ?? '').trim()
+  const id = (idea.groupId ?? '').trim()
+  if (!groups.length) return null
+  if ((!name || name.toLowerCase() === 'other') && !id) return null
+  if (name.toLowerCase() === 'other' && (!id || id.toLowerCase() === 'other')) return null
+  const ranked = rankGroups([...groups], period)
+  const hit = ranked.find((group) => ideaMatchesFinvizGroup({ groupId: id, groupName: name }, group))
+  if (!hit) return null
+  return { rank: hit.rsRank, total: ranked.length, period, groupName: hit.name }
+}
+
+/** Header text, e.g. `#52/144 · 1M`. */
+export function formatIdeaGroupRank(r: IdeaGroupRank): string {
+  return `#${r.rank}/${r.total} · ${GROUP_PERIODS[r.period].label}`
 }

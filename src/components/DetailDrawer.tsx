@@ -6,6 +6,7 @@ import {
 } from '../lib/extensionAdr'
 import { metricTipAttrs, type MetricId } from '../lib/metricDefinitions'
 import type { TradingIdea } from '../types'
+import { formatIdeaGroupRank, type IdeaGroupRank } from '../lib/groupPeriod'
 import { RANGE_BREAKOUT_CONFIG } from '../lib/metrics'
 import { RANGE_BASE_CONFIG } from '../lib/rangeBase'
 import { stageLabel } from '../lib/setupStage'
@@ -21,6 +22,11 @@ interface Props {
   source?: 'live' | 'demo'
   isPinned?: boolean
   onTogglePin?: () => void
+  /**
+   * Rank of the idea's group in the Leading groups panel for the selected
+   * period. Null/undefined hides the rank (Other, unknown, or groups not loaded).
+   */
+  groupRank?: IdeaGroupRank | null
 }
 
 function passFail(ok: boolean): string {
@@ -271,7 +277,7 @@ function RangeBaseSection({ idea }: { idea: TradingIdea }) {
   )
 }
 
-export function DetailDrawer({ idea, source = 'live', isPinned, onTogglePin }: Props) {
+export function DetailDrawer({ idea, source = 'live', isPinned, onTogglePin, groupRank }: Props) {
   return (
     <div className="flex flex-col bg-terminal-panel">
       <div className="border-b border-terminal-border px-4 py-3">
@@ -379,6 +385,14 @@ export function DetailDrawer({ idea, source = 'live', isPinned, onTogglePin }: P
           </p>
           <p className="text-[11px] text-terminal-dim">
             <MetricTip id="ideaGroup">Finviz · {idea.groupName}</MetricTip>
+            {groupRank ? (
+              <>
+                {' · '}
+                <MetricTip id="ideaGroupRank" className="font-mono text-terminal-fg">
+                  {formatIdeaGroupRank(groupRank)}
+                </MetricTip>
+              </>
+            ) : null}
           </p>
         </div>
         {onTogglePin ? (

@@ -3,6 +3,7 @@ import { Maximize2, Minimize2, X } from 'lucide-react'
 import { useSplitLayout } from '../hooks/useSplitLayout'
 import { escClosesSheet, isTypingTarget, nextTickerIndex } from '../lib/splitLayout'
 import type { TradingIdea } from '../types'
+import type { IdeaGroupRank } from '../lib/groupPeriod'
 import { DetailDrawer } from './DetailDrawer'
 import { ResizeHandle } from './ResizeHandle'
 
@@ -19,6 +20,8 @@ interface Props {
   reservedLeft: number
   isPinned?: (ticker: string) => boolean
   onTogglePin?: (ticker: string) => void
+  /** Selected idea's group rank on the Leading groups period. */
+  groupRank?: IdeaGroupRank | null
 }
 
 function cssEscape(value: string): string {
@@ -44,6 +47,7 @@ export function SplitDetailSheet({
   reservedLeft,
   isPinned,
   onTogglePin,
+  groupRank,
 }: Props) {
   const [maximized, setMaximized] = useState(false)
   const { sheet, panel, resizeSheetEdge, resizeDivider } = useSplitLayout(reservedLeft, maximized)
@@ -193,6 +197,7 @@ export function SplitDetailSheet({
                 source={source}
                 isPinned={isPinned?.(idea.ticker) ?? false}
                 onTogglePin={onTogglePin ? () => onTogglePin(idea.ticker) : undefined}
+                groupRank={groupRank}
               />
             </div>
           </div>

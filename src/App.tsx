@@ -11,6 +11,7 @@ import { StatusBanner } from './components/StatusBanner'
 import { WatchlistPanel } from './components/WatchlistPanel'
 import { useDashboard } from './hooks/useDashboard'
 import { groupViewFilterNote } from './lib/groupView'
+import { ideaGroupRank } from './lib/groupPeriod'
 import { countCatalystUnchecked, searchQuery } from './lib/ideaFilters'
 import { useResizablePanels } from './hooks/useResizablePanels'
 import { splitReservedLeft } from './lib/splitLayout'
@@ -46,6 +47,12 @@ export default function App() {
   } = useDashboard()
 
   const { widths: panelWidths, resizeGroups, resizeWatchlist } = useResizablePanels()
+
+  // Same ranking as the Leading groups panel (rankGroups on the selected period).
+  const selectedGroupRank = useMemo(
+    () => (selectedIdea ? ideaGroupRank(selectedIdea, groups, period) : null),
+    [selectedIdea, groups, period],
+  )
 
   const aPlusCount = filteredIdeas.filter((i) => i.isAPlus).length
   const coiledCount = filteredIdeas.filter((i) => i.setupStage === 'coiled').length
@@ -264,6 +271,7 @@ export default function App() {
           reservedLeft={splitReservedLeft(panelWidths.groups)}
           isPinned={userWatchlist.isPinned}
           onTogglePin={userWatchlist.toggle}
+          groupRank={selectedGroupRank}
         />
       ) : null}
     </div>
