@@ -1120,6 +1120,7 @@ if (url.pathname === '/api/market/dashboard') {
             JSON.stringify({
               scanning: true,
               message: 'Scan cache empty — background scan started',
+              scanFreshness: null,
               status: getScanRuntimeStatus(),
             }),
           )
@@ -1147,6 +1148,7 @@ if (url.pathname === '/api/market/dashboard') {
             stage15BelowSma50Count: meta?.stage15BelowSma50Count,
             stage15MissingSmaCount: meta?.stage15MissingSmaCount,
             intradayRvolMeta: meta?.intradayRvol ?? null,
+            scanFreshness: meta?.scanFreshness ?? null,
           }),
         )
         return

@@ -140,14 +140,33 @@ The ideas table has an **Ext50** column and the detail panel a chip **Ext. 50SMA
 
 Results are written to `data/scan-cache.json` (gitignored). Default staleness **45 minutes** (`SCAN_CACHE_STALE_MS`).
 
-Payloads are stamped with `SCAN_CACHE_SCHEMA` (`server/scanCache.ts`). Schema 10 discards scans from before effective RVOL (time-of-day when the scan computed it, otherwise the prior-10 daily ratio) and the stored `rvol20` / `rvolDaily10` / `rvolTod` / `rvolSource` fields. Schema 9 had discarded scans from before `isA` also required a Range Breakout label and tight consolidation, and before ideas stored `isAPlusPlus`. `isAPlus` and `isAPlusPlus` are recomputed when catalyst fields are merged onto the response. Schema 8 had discarded scans from before `isA`, `rangeBaseScore`, and `rangeBaseDetail`. Schema 7 had discarded scans from before the leading-groups universe dropped the liquid list and defaulted to 1-month ranking. Schema 6 had discarded scans from before the Range Breakout gate change. Each idea now stores `rangeBreakoutDetail` (ADR%, above the 50 SMA, prior leg, 5-session range/ADR, higher lows, which higher-low rule fired, and whether all five gates passed). Schema 5 had discarded scans from before `extensionAdr50` (ADR multiples from the 50-day SMA). Schema 4 had discarded scans from before the ADR-relative surfer detail and the tight-consolidation 50/200 SMA fields. Catalyst fields are not stored in this file; they are merged onto the HTTP response from a separate cache. Schema 3 had added the first strict surfer / tight fields. Schema 2 had discarded scans from before the 1D-change fix: Yahoo `chartPreviousClose` on a 1-year chart is the close before that range, not the prior session, so those files stored a wrong `dayPct`. The next start throws an older file out and runs a fresh scan.
+Payloads are stamped with `SCAN_CACHE_SCHEMA` (`server/scanCache.ts`). Schema 11 discards scans from before `scanFreshness` on the cache meta (see **Scan freshness**). Idea math is unchanged from schema 10. Schema 10 had discarded scans from before effective RVOL (time-of-day when the scan computed it, otherwise the prior-10 daily ratio) and the stored `rvol20` / `rvolDaily10` / `rvolTod` / `rvolSource` fields. Schema 9 had discarded scans from before `isA` also required a Range Breakout label and tight consolidation, and before ideas stored `isAPlusPlus`. `isAPlus` and `isAPlusPlus` are recomputed when catalyst fields are merged onto the response. Schema 8 had discarded scans from before `isA`, `rangeBaseScore`, and `rangeBaseDetail`. Schema 7 had discarded scans from before the leading-groups universe dropped the liquid list and defaulted to 1-month ranking. Schema 6 had discarded scans from before the Range Breakout gate change. Each idea now stores `rangeBreakoutDetail` (ADR%, above the 50 SMA, prior leg, 5-session range/ADR, higher lows, which higher-low rule fired, and whether all five gates passed). Schema 5 had discarded scans from before `extensionAdr50` (ADR multiples from the 50-day SMA). Schema 4 had discarded scans from before the ADR-relative surfer detail and the tight-consolidation 50/200 SMA fields. Catalyst fields are not stored in this file; they are merged onto the HTTP response from a separate cache. Schema 3 had added the first strict surfer / tight fields. Schema 2 had discarded scans from before the 1D-change fix: Yahoo `chartPreviousClose` on a 1-year chart is the close before that range, not the prior session, so those files stored a wrong `dayPct`. The next start throws an older file out and runs a fresh scan.
+
+### Scan freshness
+
+`GET /api/market/dashboard` and `GET /api/market/scan/status` return a top-level `scanFreshness` object. The same object is stored on the scan cache meta. The dashboard keeps its existing `asOf`; `scanFreshness.asOf` is that same completion time.
+
+| Field | Meaning |
+|-------|---------|
+| `asOf` | ISO time the scan finished |
+| `barsAsOf` | `YYYY-MM-DD` America/New_York date of the newest daily bar used. It is the max last-bar timestamp across scored ideas, converted with `Intl` (`America/New_York`). A pre-market scan shows the prior session, because that session is the latest bar |
+| `universeSize` | Tickers in the stage-1 universe before SMA filtering. On the leading-groups path this is the unique member count of the top 12 Finviz groups for `groupsPeriod`, before the stage-1 cap |
+| `scannedCount` | Tickers that reached deep scoring (Stage 1.5 survivors / shortlist) |
+| `passedCount` | Ideas returned (`scanHitCount`) |
+| `groupsPeriod` | `1d`, `1w`, `1m`, `3m`, or `6m` when the top-12 universe was used. Null on the Yahoo or emergency path |
+| `groupsFetchedAt` | ISO time the Finviz groups payload used for that universe was fetched. Null if unknown |
+| `membershipSnapshotDate` | `generatedAt` of `server/data/finviz-group-members.json`. Null when that file is missing or invalid |
+
+The stats line under the filters formats this as local time (short zone name from `Intl`) with ET in parentheses, then the bar date, the universe, and the membership date. Null pieces are omitted. Shape: `Scan 14:25 GMT+1 (09:25 ET) · bars Oct 15 · universe 254 (top-12 groups, 1M) · membership Oct 12`. Browsers whose ICU data has an abbreviation may show `IST` instead of `GMT+1`.
+
+Scans run on boot (when the cache is missing or stale), when the dashboard cache is empty, on **Refresh**, and when the groups period changes. There is no background rescan interval. The membership snapshot is refreshed manually with `npm run build:groups`. The top-12 universe itself is unchanged.
 
 ### API
 
 | Endpoint | Role |
 |----------|------|
-| `GET /api/market/dashboard` | Cached dashboard JSON (fast UI) |
-| `GET /api/market/scan/status` | Scanning flag, cache age, Stage-1 counts |
+| `GET /api/market/dashboard` | Cached dashboard JSON, including top-level `asOf` and `scanFreshness` |
+| `GET /api/market/scan/status` | Scanning flag, cache age, Stage-1 counts, and `scanFreshness` |
 | `POST /api/market/scan/refresh` | Kick background rescan (lock; 202 if started) |
 | `GET /api/market/health` | Key presence + cascade (no secrets) |
 | `GET /api/market/snapshot?symbol=` | On-demand single-symbol cascade |
