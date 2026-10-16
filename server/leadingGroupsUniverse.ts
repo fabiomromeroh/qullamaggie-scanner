@@ -26,6 +26,8 @@ export interface LeadingUniverseOk {
   /** Unique members of the selected top groups, before the Stage-1 cap. */
   leadingSymbols: Set<string>
   lookup: (symbol: string) => IdeaGroupLabel | null
+  /** ISO time the Finviz groups payload was fetched. Null when the caller did not supply it. */
+  groupsFetchedAt: string | null
 }
 
 export interface LeadingUniverseErr {
@@ -195,6 +197,7 @@ export function universeFromGroups(
     hits,
     leadingSymbols,
     lookup,
+    groupsFetchedAt: null,
     meta: {
       period,
       groups: metaGroups,
@@ -217,5 +220,10 @@ export async function buildLeadingGroupsUniverse(
   }
   const loaded = loadMembershipSnapshot()
   if (!loaded.ok) return { ok: false, error: loaded.error }
-  return universeFromGroups(response, loaded.snapshot, options)
+  const built = universeFromGroups(response, loaded.snapshot, options)
+  if (!built.ok) return built
+  return {
+    ...built,
+    groupsFetchedAt: response.source === 'finviz' && response.fetchedAt ? response.fetchedAt : null,
+  }
 }

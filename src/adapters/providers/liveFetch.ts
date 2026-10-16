@@ -1,5 +1,5 @@
 import type { SymbolBars } from '../../lib/metrics'
-import type { TradingIdea } from '../../types'
+import type { ScanFreshness, TradingIdea } from '../../types'
 
 interface SnapshotResponse {
   symbol: string
@@ -128,6 +128,7 @@ export interface ScanStatusPayload {
   stage15Count: number | null
   shortlistCount: number | null
   emergencyFallback: boolean
+  scanFreshness?: ScanFreshness | null
 }
 
 export type DashboardCacheResult =
