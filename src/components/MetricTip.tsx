@@ -8,13 +8,13 @@ import {
 } from 'react'
 import { createPortal } from 'react-dom'
 import { getMetricDef, isMetricId, type MetricId } from '../lib/metricDefinitions'
+import { dismissDelay, type DismissEvent, type TipReason } from '../lib/tooltipDismiss'
 import { placeTooltip, TOOLTIP_MAX_WIDTH } from '../lib/tooltipPosition'
 
 const TOOLTIP_ID = 'qm-metric-tooltip'
 const HOVER_MS = 250
-const HIDE_MS = 120
 
-type Reason = 'hover' | 'focus' | 'tap'
+type Reason = TipReason
 
 interface TipModel {
   id: MetricId
@@ -121,12 +121,21 @@ function scheduleHover(el: HTMLElement): void {
   }, HOVER_MS)
 }
 
-function scheduleHide(): void {
-  cancelHide()
+/** Apply the dismiss policy to the open tip (if any). */
+function dismiss(event: DismissEvent): void {
+  if (!tip) return
+  const delay = dismissDelay(tip.reason, event)
+  if (delay == null) return
+  if (delay <= 0) {
+    hide()
+    return
+  }
+  if (hideTimer != null) return
+  const target = tip
   hideTimer = setTimeout(() => {
     hideTimer = null
-    if (tip?.reason === 'hover') hide()
-  }, HIDE_MS)
+    if (tip === target) hide()
+  }, delay)
 }
 
 function onOver(event: MouseEvent): void {
@@ -146,20 +155,38 @@ function onOut(event: MouseEvent): void {
   const el = findTrigger(event.target)
   if (!el) return
   const next = event.relatedTarget
-  if (next instanceof Node && (el.contains(next) || inPopover(next))) return
+  if (next instanceof Node && el.contains(next)) return
   if (pendingEl === el) cancelHover()
-  if (tip?.el === el && tip.reason === 'hover') scheduleHide()
+  if (tip?.el === el) dismiss({ kind: 'leave', pointerType: lastPointer })
 }
 
-function onPopoverOver(event: MouseEvent): void {
-  if (inPopover(event.target)) cancelHide()
+/**
+ * Safety net for a missed mouseout (trigger re-rendered or removed under the
+ * pointer): any pointer movement outside the open trigger starts the hide.
+ */
+function onPointerMove(event: PointerEvent): void {
+  if (!tip) return
+  if (event.pointerType) lastPointer = event.pointerType
+  if (!tip.el.isConnected) {
+    dismiss({ kind: 'detached' })
+    return
+  }
+  const target = event.target
+  if (target instanceof Node && tip.el.contains(target)) {
+    cancelHide()
+    return
+  }
+  dismiss({ kind: 'move-outside', pointerType: event.pointerType || 'mouse' })
 }
 
-function onPopoverOut(event: MouseEvent): void {
-  if (!inPopover(event.target)) return
-  const next = event.relatedTarget
-  if (next instanceof Node && inPopover(next)) return
-  if (tip?.reason === 'hover') scheduleHide()
+function onScroll(): void {
+  cancelHover()
+  dismiss({ kind: 'scroll' })
+}
+
+function onWindowBlur(): void {
+  cancelHover()
+  dismiss({ kind: 'blur' })
 }
 
 function onFocusIn(event: FocusEvent): void {
@@ -174,7 +201,7 @@ function onFocusOut(event: FocusEvent): void {
   if (dismissedEl && el === dismissedEl) dismissedEl = null
   const next = event.relatedTarget
   if (el && next instanceof Node && el.contains(next)) return
-  if (tip?.reason === 'focus' && tip.el === el) hide()
+  if (tip && tip.el === el) dismiss({ kind: 'blur' })
 }
 
 function onPointerDown(event: PointerEvent): void {
@@ -213,14 +240,16 @@ function onKey(event: KeyboardEvent): void {
   }
   event.preventDefault()
   event.stopPropagation()
-  hide()
+  cancelHover()
+  dismiss({ kind: 'escape' })
 }
 
 function bindTipListeners(): () => void {
   document.addEventListener('mouseover', onOver)
   document.addEventListener('mouseout', onOut)
-  document.addEventListener('mouseover', onPopoverOver)
-  document.addEventListener('mouseout', onPopoverOut)
+  document.addEventListener('pointermove', onPointerMove, { passive: true })
+  document.addEventListener('scroll', onScroll, { capture: true, passive: true })
+  window.addEventListener('blur', onWindowBlur)
   document.addEventListener('focusin', onFocusIn)
   document.addEventListener('focusout', onFocusOut)
   document.addEventListener('pointerdown', onPointerDown, true)
@@ -229,8 +258,9 @@ function bindTipListeners(): () => void {
   return () => {
     document.removeEventListener('mouseover', onOver)
     document.removeEventListener('mouseout', onOut)
-    document.removeEventListener('mouseover', onPopoverOver)
-    document.removeEventListener('mouseout', onPopoverOut)
+    document.removeEventListener('pointermove', onPointerMove)
+    document.removeEventListener('scroll', onScroll, true)
+    window.removeEventListener('blur', onWindowBlur)
     document.removeEventListener('focusin', onFocusIn)
     document.removeEventListener('focusout', onFocusOut)
     document.removeEventListener('pointerdown', onPointerDown, true)
@@ -265,8 +295,8 @@ export function MetricTipRoot({ children }: { children: ReactNode }) {
     if (!model || !node) return
     const place = () => {
       const rect = model.el.getBoundingClientRect()
-      if (rect.width === 0 && rect.height === 0) {
-        hide()
+      if (!model.el.isConnected || (rect.width === 0 && rect.height === 0)) {
+        dismiss({ kind: 'detached' })
         return
       }
       const placed = placeTooltip(
@@ -281,10 +311,8 @@ export function MetricTipRoot({ children }: { children: ReactNode }) {
     }
     place()
     window.addEventListener('resize', place)
-    document.addEventListener('scroll', place, true)
     return () => {
       window.removeEventListener('resize', place)
-      document.removeEventListener('scroll', place, true)
     }
   }, [model])
 
@@ -305,7 +333,7 @@ export function MetricTipRoot({ children }: { children: ReactNode }) {
               maxWidth: TOOLTIP_MAX_WIDTH,
               visibility: 'hidden',
             }}
-            className="pointer-events-auto max-h-72 w-max overflow-y-auto rounded-md border border-terminal-border-bright bg-terminal-elevated px-2.5 py-2 text-left shadow-[0_8px_24px_rgb(0_0_0/0.45)]"
+            className="pointer-events-none max-h-72 w-max overflow-y-auto rounded-md border border-terminal-border-bright bg-terminal-elevated px-2.5 py-2 text-left shadow-[0_8px_24px_rgb(0_0_0/0.45)]"
           >
             <div className="text-[12px] font-semibold leading-snug text-terminal-fg">{def.label}</div>
             <div className="mt-0.5 text-[11px] leading-snug text-terminal-muted">{def.short}</div>
