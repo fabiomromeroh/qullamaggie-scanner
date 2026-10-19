@@ -14,7 +14,7 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { dirname, resolve } from 'node:path'
-import type { DashboardData, IntradayRvolMeta, LeadingGroupsMeta } from '../src/types/index.ts'
+import type { DashboardData, IntradayRvolMeta, LeadingGroupsMeta, ScanFreshness } from '../src/types/index.ts'
 
 /**
  * Bump when cached idea math changes so old files are not served as fresh.
@@ -39,8 +39,11 @@ import type { DashboardData, IntradayRvolMeta, LeadingGroupsMeta } from '../src/
  * v10: effective rvol is time-of-day when the scan computed it, else the
  * prior-10 daily ratio. Ideas store rvol20, rvolDaily10, rvolTod, rvolSource.
  * meta.intradayRvol counts that pass.
+ * v11: meta.scanFreshness (asOf, barsAsOf, universeSize, scannedCount,
+ * passedCount, groupsPeriod, groupsFetchedAt, membershipSnapshotDate).
+ * Idea metrics are unchanged. Older files are discarded.
  */
-export const SCAN_CACHE_SCHEMA = 10
+export const SCAN_CACHE_SCHEMA = 11
 
 export interface ScanCacheMeta {
   schemaVersion?: number
@@ -62,6 +65,8 @@ export interface ScanCacheMeta {
   emergencyFallback: boolean
   /** Present on schema 10 scans. Absent when the pass did not run. */
   intradayRvol?: IntradayRvolMeta
+  /** Present on schema 11 scans. */
+  scanFreshness: ScanFreshness
 }
 
 export type ScanCachePayload = DashboardData & {
@@ -81,6 +86,8 @@ export type ScanStatus = {
   stage15Count: number | null
   shortlistCount: number | null
   emergencyFallback: boolean
+  /** Null when the cache is empty or predates schema 11. */
+  scanFreshness: ScanFreshness | null
 }
 
 const DEFAULT_CACHE_PATH = resolve(process.cwd(), 'data', 'scan-cache.json')
@@ -172,6 +179,7 @@ export function getScanRuntimeStatus(): ScanStatus {
     stage15Count: cache?.meta?.stage15Count ?? null,
     shortlistCount: cache?.meta?.shortlistCount ?? null,
     emergencyFallback: Boolean(cache?.meta?.emergencyFallback),
+    scanFreshness: cache?.meta?.scanFreshness ?? null,
   }
 }
 

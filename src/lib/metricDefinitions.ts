@@ -947,6 +947,12 @@ export const METRIC_DEFS = {
     'Where the headlines were loaded from.',
     'Finnhub company-news when that call returns items, otherwise Yahoo search. The panel list is capped at 8 headlines. A separate 48h lookup classifies important headlines into catalyst categories.',
   ),
+  scanFreshness: d(
+    'Scan freshness',
+    'When this scan finished, which session the bars are from, and how big the universe was.',
+    'scanFreshness.asOf is the scan completion time, the same instant as the dashboard asOf. The line shows that clock in local time with the short zone name and again in ET. barsAsOf is the America/New_York date of the newest daily bar used (the max last-bar timestamp across scored ideas). A pre-market scan shows the prior session, because that session is the latest daily bar. universeSize is the top-12 Finviz group member count for groupsPeriod before SMA filtering and before the stage-1 cap. scannedCount is how many tickers reached deep scoring (Stage 1.5 survivors, the shortlist). passedCount is the ideas returned (scan hits). groupsFetchedAt is the ISO time the Finviz groups payload used for the universe was fetched. membershipSnapshotDate is generatedAt of server/data/finviz-group-members.json, shown as that instant\'s ET calendar date.',
+    'Scans run on boot, Refresh, and a groups-period change only (no background interval). The universe is the members of the top 12 Finviz groups for the selected period. The membership snapshot is refreshed manually (npm run build:groups). A missing piece is left off the line.',
+  ),
 } as const satisfies Record<string, MetricDef>
 
 export type MetricId = keyof typeof METRIC_DEFS

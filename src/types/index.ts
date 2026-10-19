@@ -116,6 +116,38 @@ export interface LeadingGroupsMeta {
 }
 
 /**
+ * Freshness of one completed scan. Stored on the scan cache meta and returned
+ * at the top level of `GET /api/market/dashboard` and `GET /api/market/scan/status`.
+ * `asOf` is the same instant as the dashboard `asOf`.
+ */
+export interface ScanFreshness {
+  /** ISO time the scan finished. */
+  asOf: string
+  /**
+   * America/New_York trading date (`YYYY-MM-DD`) of the newest daily bar used.
+   * Max last-bar timestamp across scored ideas. Null when no scored bar exists.
+   * A pre-market scan is the prior session, because that session is the latest bar.
+   */
+  barsAsOf: string | null
+  /**
+   * Tickers in the stage-1 universe before SMA filtering.
+   * Leading-groups scans use the unique top-12 member count before the stage-1 cap.
+   * Null when that count was not recorded.
+   */
+  universeSize: number | null
+  /** Tickers that reached deep scoring (stage 1.5 survivors / shortlist). */
+  scannedCount: number | null
+  /** Ideas returned (scan hits). */
+  passedCount: number | null
+  /** Period used to rank the leading-groups universe. Null on the Yahoo or emergency path. */
+  groupsPeriod: GroupPeriod | null
+  /** ISO time the Finviz groups payload used for the universe was fetched. Null if unknown. */
+  groupsFetchedAt: string | null
+  /** `generatedAt` of `server/data/finviz-group-members.json`. Null if the file is unavailable. */
+  membershipSnapshotDate: string | null
+}
+
+/**
  * One stock in a group's leader pool (top 20 snapshot members by the
  * selected period, or the live screener page when that option is on).
  * `inScan` is null when the scan cache is not ready.
@@ -514,6 +546,8 @@ export interface DashboardData {
   catalystMeta?: CatalystMeta
   /** Time-of-day RVOL phase from the scan that produced this payload. */
   intradayRvolMeta?: IntradayRvolMeta
+  /** Scan clock, bar session, universe size, and membership stamp. Same object as cache meta. */
+  scanFreshness?: ScanFreshness | null
 }
 
 /** Counts from the scan's time-of-day RVOL pass. `daily` includes every non-TOD idea. */

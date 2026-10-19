@@ -5,7 +5,8 @@
  * Stage 1.5: cheap Yahoo quote SMA prefilter (above 200 AND above 50).
  * Stage 2: deep Kyle/Qullamaggie metrics on survivors (Yahoo-first cascade).
  */
-import type { GroupPeriod, IndustryGroup, IntradayRvolMeta, LeadingGroupsMeta, TradingIdea } from '../src/types/index.ts'
+import type { GroupPeriod, IndustryGroup, IntradayRvolMeta, LeadingGroupsMeta, ScanFreshness, TradingIdea } from '../src/types/index.ts'
+import { barsAsOfFromEpochs } from '../src/lib/scanFreshness.ts'
 import {
   applyEarningsToIdea,
   applyIntradayRvol,
@@ -34,6 +35,7 @@ import {
   buildLeadingGroupsUniverse,
   type IdeaGroupLabel,
 } from './leadingGroupsUniverse.ts'
+import { membershipSnapshotGeneratedAt } from './groupMembers.ts'
 import {
   beginScanLock,
   endScanLock,
@@ -108,6 +110,12 @@ export interface ScoreTickersResult {
   earningsError?: string
   /** Set when `intradayRvol` was requested. A thrown phase still fills this with all-daily. */
   intradayRvol?: IntradayRvolMeta
+  /**
+   * Unix milliseconds of the last daily bar on each symbol `computeIdeaMetrics`
+   * scored, including names later dropped for the 200 SMA. `DailyBar.t` is
+   * unix seconds; this value is that max `t` × 1000. Metrics are unchanged.
+   */
+  lastBarEpochMs?: number[]
 }
 
 /**
@@ -137,23 +145,26 @@ export async function scoreTickers(
         snapToBars(snap),
       )
       if (!idea) throw new Error(`Insufficient history for ${symbol}`)
-      return idea
+      // Same bar computeIdeaMetrics uses: max timestamp after it sorts by t.
+      return { idea, lastBarEpochMs: lastDailyBarEpochMs(snap.bars) }
     },
     STAGE2_GAP_MS,
   )
 
   const ideas: TradingIdea[] = []
   const failed: ScoreTickerFailure[] = []
+  const lastBarEpochMs: number[] = []
   let belowSma200Count = 0
   for (let i = 0; i < settled.length; i++) {
     const result = settled[i]!
     const symbol = symbols[i]!
     if (result.status === 'fulfilled') {
-      if (!result.value.aboveSma200) {
+      if (result.value.lastBarEpochMs != null) lastBarEpochMs.push(result.value.lastBarEpochMs)
+      if (!result.value.idea.aboveSma200) {
         belowSma200Count += 1
         if (!includeBelow) continue
       }
-      ideas.push(result.value)
+      ideas.push(result.value.idea)
     } else {
       const reason = result.reason instanceof Error ? result.reason.message : String(result.reason)
       failed.push({ ticker: symbol, reason })
@@ -214,7 +225,17 @@ export async function scoreTickers(
     earningsError = err instanceof Error ? err.message : String(err)
   }
 
-  return { ideas, failed, belowSma200Count, earningsError, intradayRvol }
+  return { ideas, failed, belowSma200Count, earningsError, intradayRvol, lastBarEpochMs }
+}
+
+/** Unix ms of the newest daily bar. `t` is unix seconds. */
+function lastDailyBarEpochMs(bars: readonly { t: number }[]): number | null {
+  let maxSec = Number.NEGATIVE_INFINITY
+  for (const bar of bars) {
+    if (typeof bar.t === 'number' && Number.isFinite(bar.t) && bar.t > maxSec) maxSec = bar.t
+  }
+  if (maxSec === Number.NEGATIVE_INFINITY) return null
+  return maxSec * 1000
 }
 
 async function mapPool<T, R>(
@@ -324,6 +345,10 @@ export async function runFullScan(
   let hits: ScreenerHit[] = []
   let leadingGroupsMeta: LeadingGroupsMeta | null = null
   let lookup: ((symbol: string) => IdeaGroupLabel | null) | null = null
+  /** Unique top-12 members before the stage-1 cap and the SMA prefilter. */
+  let universeSizeBeforeFilter: number | null = null
+  let groupsPeriodForFreshness: GroupPeriod | null = null
+  let groupsFetchedAt: string | null = null
   try {
     const built = await buildLeadingGroupsUniverse({ cap: STAGE1_CAP, period })
     if (!built.ok) throw new Error(built.error)
@@ -333,6 +358,9 @@ export async function runFullScan(
     hits = built.hits
     lookup = built.lookup
     leadingGroupsMeta = built.meta
+    universeSizeBeforeFilter = built.leadingSymbols.size
+    groupsPeriodForFreshness = built.meta.period
+    groupsFetchedAt = built.groupsFetchedAt
     stage1Source = LEADING_STAGE1_SOURCE
     stage1Filters = {
       universe: LEADING_STAGE1_SOURCE,
@@ -347,6 +375,9 @@ export async function runFullScan(
     errors.push(`stage1 leading-groups: ${message}`)
     lookup = null
     leadingGroupsMeta = null
+    universeSizeBeforeFilter = null
+    groupsPeriodForFreshness = null
+    groupsFetchedAt = null
     try {
       const screen = await runYahooEquityScreener()
       hits = screen.hits
@@ -456,9 +487,21 @@ export async function runFullScan(
     )
   }
 
+  const asOf = new Date().toISOString()
+  const scanFreshness: ScanFreshness = {
+    asOf,
+    barsAsOf: barsAsOfFromEpochs(scored.lastBarEpochMs ?? []),
+    universeSize: universeSizeBeforeFilter ?? stage1Hits.length,
+    scannedCount: shortlist.length,
+    passedCount: ideas.length,
+    groupsPeriod: groupsPeriodForFreshness,
+    groupsFetchedAt,
+    membershipSnapshotDate: membershipSnapshotGeneratedAt(),
+  }
+
   const payload: ScanCachePayload = {
     source: 'live',
-    asOf: new Date().toISOString(),
+    asOf,
     groups: buildDynamicGroups(ideas),
     ideas,
     marketRegime,
@@ -483,6 +526,7 @@ export async function runFullScan(
       errors: errors.slice(0, 50),
       emergencyFallback,
       intradayRvol: scored.intradayRvol,
+      scanFreshness,
     },
   }
 

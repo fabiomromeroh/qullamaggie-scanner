@@ -52,11 +52,12 @@ test('roundExtensionAdr50 stores 2 decimals; helper keeps higher precision', () 
   assert.equal(formatExtensionAdr50(null), '—')
 })
 
-test('SCAN_CACHE_SCHEMA is 10 and extensionAdr50 is wired through', () => {
-  assert.equal(SCAN_CACHE_SCHEMA, 10)
+test('SCAN_CACHE_SCHEMA is 11 and extensionAdr50 is wired through', () => {
+  assert.equal(SCAN_CACHE_SCHEMA, 11)
   const root = process.cwd()
   const cache = readFileSync(resolve(root, 'server/scanCache.ts'), 'utf8')
-  assert.match(cache, /export const SCAN_CACHE_SCHEMA = 10/)
+  assert.match(cache, /export const SCAN_CACHE_SCHEMA = 11/)
+  assert.match(cache, /scanFreshness/)
   assert.match(cache, /rangeBaseDetail/)
   assert.match(cache, /isA/)
   assert.match(cache, /rangeBreakoutDetail/)

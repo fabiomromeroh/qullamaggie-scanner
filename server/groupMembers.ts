@@ -212,6 +212,12 @@ export function loadMembershipSnapshot(path = membershipSnapshotPath()): Snapsho
   }
 }
 
+/** ISO `generatedAt` of the membership file, or null when it is missing or invalid. */
+export function membershipSnapshotGeneratedAt(path = membershipSnapshotPath()): string | null {
+  const loaded = loadMembershipSnapshot(path)
+  return loaded.ok ? loaded.snapshot.generatedAt : null
+}
+
 export function clearMembershipSnapshotCache(): void {
   loadCache.clear()
 }
