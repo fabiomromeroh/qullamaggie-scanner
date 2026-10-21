@@ -38,7 +38,7 @@ test('formatIdeaGroupRank and the header wiring', () => {
   assert.ok(METRIC_DEFS.ideaGroupRank.how.includes('rankGroups'))
   const drawer = readFileSync(resolve(process.cwd(), 'src/components/DetailDrawer.tsx'), 'utf8')
   assert.match(drawer, /<MetricTip id="ideaGroupRank"[^>]*>\s*\{formatIdeaGroupRank\(groupRank\)\}/)
-  const app = readFileSync(resolve(process.cwd(), 'src/App.tsx'), 'utf8')
+  const app = readFileSync(resolve(process.cwd(), 'src/modules/ScannerModule.tsx'), 'utf8')
   assert.match(app, /ideaGroupRank\(selectedIdea, groups, period\)/)
   assert.match(app, /groupRank=\{selectedGroupRank\}/)
 })

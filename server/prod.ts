@@ -9,6 +9,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createGroupsMiddleware } from './finvizGroups.ts'
 import { startGroupWarmup } from './groupWarmup.ts'
+import { createPulseMiddleware } from './marketPulse.ts'
 import {
   createMarketMiddleware,
   getFinnhubKey,
@@ -84,6 +85,7 @@ async function main(): Promise<void> {
 
   const market = createMarketMiddleware()
   const groupsMw = createGroupsMiddleware()
+  const pulseMw = createPulseMiddleware()
   const host = '0.0.0.0'
   const port = Number(process.env.PORT) || 5173
 
@@ -94,9 +96,14 @@ async function main(): Promise<void> {
     if (
       pathname === '/api/groups' ||
       pathname.startsWith('/api/groups/') ||
+      pathname.startsWith('/api/pulse/') ||
       url.pathname.startsWith('/api/market')
     ) {
-      const handler = pathname.startsWith('/api/groups') ? groupsMw : market
+      const handler = pathname.startsWith('/api/groups')
+        ? groupsMw
+        : pathname.startsWith('/api/pulse/')
+          ? pulseMw
+          : market
       void handler(
         req,
         {
