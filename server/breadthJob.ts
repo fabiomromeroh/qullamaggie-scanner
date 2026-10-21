@@ -21,6 +21,7 @@ import {
   breadthNeedsRefresh,
   chartQuote,
   finalizeRows,
+  markPartial,
   type BreadthRow,
   type ChartQuote,
   type DayCounts,
@@ -134,15 +135,16 @@ export async function computeBreadth(
   )
   // Drop partial dates (e.g. a ticker list straddling a holiday) with < 50% of the max universe.
   const maxU = Math.max(0, ...[...acc.values()].map((r) => r.universe))
+  const nowMs = Date.now()
   return {
     version: 1,
-    generatedAt: new Date().toISOString(),
+    generatedAt: new Date(nowMs).toISOString(),
     runtimeMs: Date.now() - started,
     requests,
     tickers: tickers.length,
     failed,
     rules: BREADTH_RULES,
-    rows: finalizeRows(acc, days, Math.ceil(maxU * 0.5)),
+    rows: markPartial(finalizeRows(acc, days, Math.ceil(maxU * 0.5)), nowMs),
     quotes: quotes.sort((a, b) => a.ticker.localeCompare(b.ticker)),
     source: 'yahoo',
   }

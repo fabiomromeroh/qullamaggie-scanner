@@ -48,6 +48,9 @@ export interface DayCounts {
   universe: number
   up4: number
   down4: number
+  /** Price-only ±4% counts (no volume condition). */
+  up4Price: number
+  down4Price: number
   up25q: number
   down25q: number
   up25m: number
@@ -73,6 +76,10 @@ export interface BreadthRow extends DayCounts {
   ratio10: number | null
   pctAbove50: number | null
   pctAbove200: number | null
+  /** True when this row is today's still-forming intraday bar. */
+  partial?: boolean
+  /** ISO time the partial row was computed. */
+  asOf?: string
 }
 
 const ET_DATE = new Intl.DateTimeFormat('en-CA', {
@@ -92,6 +99,8 @@ export function emptyCounts(date: string): DayCounts {
     universe: 0,
     up4: 0,
     down4: 0,
+    up4Price: 0,
+    down4Price: 0,
     up25q: 0,
     down25q: 0,
     up25m: 0,
@@ -155,6 +164,8 @@ export function accumulateStock(bars: readonly BreadthBar[], days: number, acc: 
     const day = pct(prev.c, b.c)
     if (b.c > prev.c) row.advancing++
     else if (b.c < prev.c) row.declining++
+    if (day >= R.movePct) row.up4Price++
+    else if (day <= -R.movePct) row.down4Price++
     if (b.v > prev.v) {
       if (day >= R.movePct) row.up4++
       else if (day <= -R.movePct) row.down4++
@@ -411,4 +422,21 @@ export function splitShares(left: number, right: number): { leftPct: number; rig
   if (total <= 0) return { leftPct: 50, rightPct: 50 }
   const leftPct = (left / total) * 100
   return { leftPct, rightPct: 100 - leftPct }
+}
+
+/** Flag the newest row as intraday-partial when computed during that day's US session (before 16:05 ET). */
+export function markPartial(rows: BreadthRow[], generatedAtMs: number): BreadthRow[] {
+  const top = rows[0]
+  if (!top) return rows
+  const { weekday, minutes } = etClock(generatedAtMs)
+  const inSession = WEEKDAYS.has(weekday) && minutes < CLOSE_MIN
+  if (inSession && top.date === etDate(Math.floor(generatedAtMs / 1000))) {
+    rows[0] = { ...top, partial: true, asOf: new Date(generatedAtMs).toISOString() }
+  }
+  return rows
+}
+
+/** "HH:MM ET" for an ISO time. */
+export function etTime(iso: string): string {
+  return new Intl.DateTimeFormat('en-GB', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(iso)) + ' ET'
 }

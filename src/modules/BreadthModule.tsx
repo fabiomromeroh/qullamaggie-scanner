@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { MetricTip } from '../components/MetricTip'
 import type { MetricId } from '../lib/metricDefinitions'
-import { cellTone, scaledThreshold, splitShares, type BreadthColumn, type BreadthRow, type Tone } from '../lib/breadth'
+import { cellTone, etTime, scaledThreshold, splitShares, type BreadthColumn, type BreadthRow, type Tone } from '../lib/breadth'
 
 interface BreadthResponse {
   result: {
@@ -250,12 +250,19 @@ export function BreadthModule() {
             <tbody className="font-mono tabular-nums">
               {rows.map((r) => (
                 <tr key={r.date} className="border-b border-terminal-border/50">
-                  <td className="whitespace-nowrap px-1.5 py-0.5 text-terminal-muted">{r.date}</td>
+                  <td className="whitespace-nowrap px-1.5 py-0.5 text-terminal-muted">
+                    {r.date}
+                    {r.partial ? (
+                      <span className="ml-1 text-[10px] text-terminal-amber">intraday · as of {r.asOf ? etTime(r.asOf) : '—'}</span>
+                    ) : null}
+                  </td>
                   {COLUMNS.map((c) => {
                     const tone = c.key === 'universe' ? null : cellTone(c.key, r)
                     return (
                       <td key={c.key} className={`whitespace-nowrap px-1.5 py-0.5 text-right ${tone ? TONE_CLASS[tone] : 'text-terminal-fg'}`}>
-                        {fmt(r[c.key] as number | null, c.fmt)}
+                        {r.partial && (c.key === 'up4' || c.key === 'down4') && typeof r[c.key === 'up4' ? 'up4Price' : 'down4Price'] === 'number'
+                          ? `${r[c.key === 'up4' ? 'up4Price' : 'down4Price']} (${r[c.key]} w/ vol)`
+                          : fmt(r[c.key] as number | null, c.fmt)}
                       </td>
                     )
                   })}

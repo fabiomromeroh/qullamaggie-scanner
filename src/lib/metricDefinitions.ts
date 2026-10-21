@@ -959,18 +959,18 @@ export const METRIC_DEFS = {
   ),
 
   // Breadth Market Monitor columns (src/lib/breadth.ts).
-  breadthDate: d('Date', 'Trading session (America/New_York date), newest first.', `One row per session that has bars for at least half of the largest daily universe. ${BREADTH_UNIVERSE_TEXT}`),
+  breadthDate: d('Date', 'Trading session (America/New_York date), newest first.', `The newest row is marked “intraday · as of HH:MM ET” while the US session is open (before 16:05 ET); it is replaced by the final row after the close. One row per session that has bars for at least half of the largest daily universe. ${BREADTH_UNIVERSE_TEXT}`),
   breadthUp4: d(
     'Up 4% Today',
     'Stocks up 4% or more today on higher volume.',
     `Count of eligible stocks with close ≥ +${BR.movePct}% vs the prior close AND volume above the prior day's volume (Stockbee 4% breakout). ${BREADTH_UNIVERSE_TEXT}`,
-    `Strong green when ≥ 300 scaled to the universe (scaledThreshold); otherwise green when it exceeds Down 4%. ${BREADTH_SCALE_TEXT} Intraday the volume test compares today's partial volume with yesterday's full volume, so the newest row undercounts until late in the session.`,
+    `Strong green when ≥ 300 scaled to the universe (scaledThreshold); otherwise green when it exceeds Down 4%. ${BREADTH_SCALE_TEXT} Intraday the volume test compares today's partial volume with yesterday's full volume, so the newest row undercounts until late in the session. While the session is open that row is flagged “intraday · as of HH:MM ET” and shows two counts: price-only (close ≥ +4%, no volume test) followed by “(N w/ vol)”, the full Stockbee rule. The row is finalised by the refresh after the 16:05 ET close.`,
   ),
   breadthDown4: d(
     'Down 4% Today',
     'Stocks down 4% or more today on higher volume.',
     `Count of eligible stocks with close ≤ −${BR.movePct}% vs the prior close AND volume above the prior day's volume. ${BREADTH_UNIVERSE_TEXT}`,
-    `Strong red when ≥ 300 scaled to the universe; otherwise red when it exceeds Up 4%. ${BREADTH_SCALE_TEXT} Same intraday volume caveat as Up 4%.`,
+    `Strong red when ≥ 300 scaled to the universe; otherwise red when it exceeds Up 4%. ${BREADTH_SCALE_TEXT} Same intraday volume caveat as Up 4%: on the intraday row it shows the price-only count (close ≤ −4%) followed by “(N w/ vol)”, the full rule.`,
   ),
   breadthRatio5: d(
     '5 Day Ratio',
