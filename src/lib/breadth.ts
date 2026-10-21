@@ -404,3 +404,11 @@ export function breadthNeedsRefresh(generatedAtIso: string | null | undefined, n
   if (inSession) return now - at > maxAgeMs
   return at < lastCloseMs(now)
 }
+
+/** Split-bar shares: left / (left + right) and the remainder, so the two segments always total 100%. */
+export function splitShares(left: number, right: number): { leftPct: number; rightPct: number } {
+  const total = left + right
+  if (total <= 0) return { leftPct: 50, rightPct: 50 }
+  const leftPct = (left / total) * 100
+  return { leftPct, rightPct: 100 - leftPct }
+}

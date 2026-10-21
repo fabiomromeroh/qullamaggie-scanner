@@ -48,7 +48,8 @@ export function SortableTable<T>({
 
   return (
     <div className="min-h-0 flex-1 overflow-auto">
-      <table className="w-full border-collapse text-[12px]">
+      {/* Auto-width table: columns size to content instead of stretching across wide screens. */}
+      <table className="w-max min-w-0 border-collapse text-[12px]">
         <thead className="sticky top-0 z-10 bg-terminal-panel">
           <tr className="border-b border-terminal-border text-[11px] uppercase tracking-wide text-terminal-dim">
             {renderExpanded ? <th className="w-6" /> : null}
@@ -59,7 +60,7 @@ export function SortableTable<T>({
                 <th
                   key={c.key}
                   aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : 'none'}
-                  className={`whitespace-nowrap px-2 py-1.5 font-medium ${
+                  className={`whitespace-nowrap px-1.5 py-1.5 font-medium ${
                     (c.align ?? (c.pct || c.value ? 'right' : 'left')) === 'right' ? 'text-right' : 'text-left'
                   }`}
                 >
@@ -116,7 +117,7 @@ export function SortableTable<T>({
                     return (
                       <td
                         key={c.key}
-                        className={`whitespace-nowrap px-2 py-1 ${right ? 'text-right font-mono tabular-nums' : ''} ${
+                        className={`whitespace-nowrap px-1.5 py-1 ${right ? 'text-right font-mono tabular-nums' : ''} ${
                           c.pct ? pctClass(v) : ''
                         } ${c.className ?? ''}`}
                       >
@@ -128,7 +129,8 @@ export function SortableTable<T>({
                 {isOpen && renderExpanded ? (
                   <tr className="border-b border-terminal-border bg-terminal-bg">
                     <td colSpan={columns.length + 1} className="px-3 py-2">
-                      {renderExpanded(row)}
+                      {/* width 0 + min-width 100%: fills the table width without widening it. */}
+                      <div className="w-0 min-w-full">{renderExpanded(row)}</div>
                     </td>
                   </tr>
                 ) : null}
