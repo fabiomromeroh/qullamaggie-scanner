@@ -15,6 +15,8 @@ interface Tape {
   losers: TapeItem[]
   moversUniverse: number
   moversMinDollarVolume: number
+  moversSource?: 'quote' | 'chart'
+  moversAsOf?: string
   moversError?: string
 }
 
@@ -70,7 +72,11 @@ export function TickerTape() {
       title={
         data.moversError
           ? `Movers unavailable: ${data.moversError}`
-          : `Movers from ${data.moversUniverse} membership-snapshot stocks with ≥ $${(data.moversMinDollarVolume / 1e6).toFixed(0)}M average daily $ volume`
+          : `Movers from ${data.moversUniverse} membership-snapshot stocks with ≥ $${(data.moversMinDollarVolume / 1e6).toFixed(0)}M average daily $ volume${
+              data.moversSource === 'chart' && data.moversAsOf
+                ? ` · from chart data as of ${new Date(data.moversAsOf).toLocaleTimeString()}`
+                : ''
+            }`
       }
     >
       <div className="qm-tape-track inline-flex">

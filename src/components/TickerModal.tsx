@@ -69,6 +69,7 @@ interface Fundamentals {
   nextEarningsDate: string | null
   quarterlyEps: { period: string; actual: number | null; estimate: number | null }[]
   quarterlyRevenue: { period: string; revenue: number | null; earnings: number | null }[]
+  source?: 'yahoo' | 'finnhub'
 }
 
 interface Filings {
@@ -168,7 +169,12 @@ function FundamentalsTab({ symbol }: { symbol: string }) {
         </table>
       ) : null}
       {data.summary ? <p className="mt-4 max-w-3xl leading-relaxed text-terminal-muted">{data.summary}</p> : null}
-      <p className="mt-3 text-[10px] text-terminal-dim">Source: Yahoo quoteSummary (unofficial). Growth is the latest quarter vs the same quarter a year ago.</p>
+      <p className="mt-3 text-[10px] text-terminal-dim">
+        {data.source === 'finnhub'
+          ? 'Source: Finnhub free tier (profile2, metric, earnings). Sector, short interest, ownership and quarterly revenue are not in the free tier and show —. Margins are TTM.'
+          : 'Source: Yahoo quoteSummary (unofficial).'}{' '}
+        Growth is the latest quarter vs the same quarter a year ago.
+      </p>
     </div>
   )
 }

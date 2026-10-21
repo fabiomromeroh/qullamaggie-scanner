@@ -15,9 +15,18 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { accumulateStock, BREADTH_RULES, finalizeRows, type BreadthRow, type DayCounts } from '../src/lib/breadth.ts'
-import { sendJson, membershipUniverse } from './marketPulse.ts'
-import { fetchDailyBarsUncached } from './yahooClient.ts'
+import {
+  accumulateStock,
+  BREADTH_RULES,
+  breadthNeedsRefresh,
+  chartQuote,
+  finalizeRows,
+  type BreadthRow,
+  type ChartQuote,
+  type DayCounts,
+} from '../src/lib/breadth.ts'
+import { sendJson, membershipUniverse } from './pulseShared.ts'
+import { fetchDailySeriesUncached } from './yahooClient.ts'
 import { createJobQueue } from './requestBudget.ts'
 
 export const BREADTH_DAYS = Number(process.env.BREADTH_DAYS) || 60
@@ -31,6 +40,8 @@ export interface BreadthResult {
   failed: number
   rules: typeof BREADTH_RULES
   rows: BreadthRow[]
+  /** Last price / change / 20d $vol per ticker from the same chart data (tape movers, group members). */
+  quotes?: ChartQuote[]
   source: 'yahoo'
 }
 
@@ -97,6 +108,7 @@ export async function computeBreadth(
   const gate = createJobQueue(opts.concurrency ?? (Number(process.env.BREADTH_CONCURRENCY) || 3))
   const pause = opts.pauseMs ?? 50
   const acc = new Map<string, DayCounts>()
+  const quotes: ChartQuote[] = []
   let done = 0
   let failed = 0
   let requests = 0
@@ -105,9 +117,11 @@ export async function computeBreadth(
       await gate.acquire()
       try {
         requests++
-        const bars = await fetchDailyBarsUncached(t, '2y')
+        const series = await fetchDailySeriesUncached(t, '2y')
         // Ratios need 10 extra sessions beyond the rows kept.
-        accumulateStock(bars, days + 10, acc)
+        accumulateStock(series.bars, days + 10, acc)
+        const q = chartQuote(t, series)
+        if (q) quotes.push(q)
       } catch {
         failed++
       } finally {
@@ -129,6 +143,7 @@ export async function computeBreadth(
     failed,
     rules: BREADTH_RULES,
     rows: finalizeRows(acc, days, Math.ceil(maxU * 0.5)),
+    quotes: quotes.sort((a, b) => a.ticker.localeCompare(b.ticker)),
     source: 'yahoo',
   }
 }
@@ -167,6 +182,20 @@ export function getBreadth(): { result: BreadthResult | null; job: BreadthJobSta
   return { result, job }
 }
 
+/** Start a background refresh when the cached result is stale (see breadthNeedsRefresh). */
+export function maybeRefreshBreadth(now = Date.now()): void {
+  if (running || process.env.BREADTH_AUTO === '0') return
+  if (!result) result = loadBestCached()
+  if (breadthNeedsRefresh(result?.generatedAt, now)) startBreadthJob()
+}
+
+/** Chart-derived quotes from the latest breadth run, or null when none exist. */
+export function getBreadthQuotes(): { generatedAt: string; quotes: Map<string, ChartQuote> } | null {
+  if (!result) result = loadBestCached()
+  if (!result?.quotes?.length) return null
+  return { generatedAt: result.generatedAt, quotes: new Map(result.quotes.map((q) => [q.ticker, q])) }
+}
+
 type MiniReq = { url?: string; method?: string }
 
 export function createBreadthMiddleware() {
@@ -174,7 +203,10 @@ export function createBreadthMiddleware() {
     const url = new URL(req.url ?? '/', 'http://localhost')
     const pathname = url.pathname.replace(/\/+$/, '')
     if (pathname === '/api/breadth') {
-      sendJson(res, 200, getBreadth())
+      const body = getBreadth()
+      maybeRefreshBreadth()
+      const { quotes: _quotes, ...light } = body.result ?? {}
+      sendJson(res, 200, { result: body.result ? light : null, job })
       return
     }
     if (pathname === '/api/breadth/recompute') {
@@ -183,7 +215,9 @@ export function createBreadthMiddleware() {
         return
       }
       if (!result) result = loadBestCached()
-      sendJson(res, 202, { result, job: startBreadthJob() })
+      const started = startBreadthJob()
+      const { quotes: _q, ...light } = result ?? {}
+      sendJson(res, 202, { result: result ? light : null, job: started })
       return
     }
     next()

@@ -7,7 +7,9 @@
  * News stays on the scanner's /api/market/news/:symbol.
  */
 import { adrPct, avgDollarVolume, buildTickerCikMap, parseRecentFilings, type FilingRow } from '../src/lib/tickerStats.ts'
-import { sendJson } from './marketPulse.ts'
+import { finnhubToFundamentals } from '../src/lib/finnhubFundamentals.ts'
+import { getFinnhubKey } from './marketProxy.ts'
+import { sendJson } from './pulseShared.ts'
 import {
   getBatchQuotes,
   getDailySeries,
@@ -60,10 +62,55 @@ function raw(v: unknown): number | null {
   return typeof r === 'number' && Number.isFinite(r) ? r : null
 }
 
-const fundamentalsMemo = ttlMemo<Record<string, unknown>>(6 * 60 * 60 * 1000)
+const fundamentalsMemo = ttlMemo<object>(6 * 60 * 60 * 1000)
 
+async function finnhubJson(path: string, token: string): Promise<unknown> {
+  const res = await fetch(`https://finnhub.io/api/v1/${path}&token=${encodeURIComponent(token)}`, {
+    signal: AbortSignal.timeout(15_000),
+  })
+  if (!res.ok) throw new Error(`Finnhub HTTP ${res.status}`)
+  return res.json()
+}
+
+/** Finnhub free tier: profile2 + metric + earnings + earnings calendar (4 requests, cached 6h). */
+export async function getFinnhubFundamentals(symbol: string) {
+  const token = getFinnhubKey()
+  if (!token) throw new Error('FINNHUB_API_KEY is not set')
+  const sym = encodeURIComponent(symbol)
+  const now = new Date()
+  const from = now.toISOString().slice(0, 10)
+  const to = new Date(now.getTime() + 200 * 86_400_000).toISOString().slice(0, 10)
+  const [profile, metric, earnings, calendar] = await Promise.all([
+    finnhubJson(`stock/profile2?symbol=${sym}`, token),
+    finnhubJson(`stock/metric?symbol=${sym}&metric=all`, token).catch(() => null),
+    finnhubJson(`stock/earnings?symbol=${sym}`, token).catch(() => null),
+    finnhubJson(`calendar/earnings?symbol=${sym}&from=${from}&to=${to}`, token).catch(() => null),
+  ])
+  if (!profile || typeof profile !== 'object' || !(profile as { name?: unknown }).name) {
+    throw new Error(`Finnhub has no profile for ${symbol}`)
+  }
+  return finnhubToFundamentals(symbol, profile, metric, earnings, calendar, now.toISOString())
+}
+
+/** Yahoo quoteSummary first; Finnhub when Yahoo's crumb is unavailable (e.g. HTTP 429 on Render). */
 export function getFundamentals(symbol: string) {
   return fundamentalsMemo(symbol, async () => {
+    try {
+      return await getYahooFundamentals(symbol)
+    } catch (yahooErr) {
+      try {
+        return await getFinnhubFundamentals(symbol)
+      } catch (finnhubErr) {
+        const y = yahooErr instanceof Error ? yahooErr.message : 'Yahoo failed'
+        const f = finnhubErr instanceof Error ? finnhubErr.message : 'Finnhub failed'
+        throw new Error(`Yahoo: ${y.slice(0, 120)} · Finnhub: ${f}`)
+      }
+    }
+  })
+}
+
+async function getYahooFundamentals(symbol: string): Promise<object> {
+  {
     const s = await getQuoteSummary(symbol, [
       'assetProfile',
       'price',
@@ -127,7 +174,7 @@ export function getFundamentals(symbol: string) {
       })),
       source: 'yahoo',
     }
-  })
+  }
 }
 
 /**

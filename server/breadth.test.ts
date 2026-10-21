@@ -144,3 +144,29 @@ test('colour thresholds', () => {
   assert.equal(cellTone('down25q', base({ up25q: 500, down25q: 600 })), 'red')
   assert.equal(cellTone('atrExt10', base({ atrExt10: 30 })), 'amber')
 })
+
+import { breadthNeedsRefresh, chartQuote, lastCloseMs } from '../src/lib/breadth.ts'
+
+test('chart quote: change vs prior close and 20-day dollar volume', () => {
+  const bars = Array.from({ length: 25 }, (_, i) => ({ t: T0 + i * DAY, o: 10, h: 10, l: 10, c: 10, v: 1000 }))
+  const q = chartQuote('ABC', { price: 11, prevClose: 10, bars })!
+  assert.ok(Math.abs(q.changePct - 10) < 1e-9)
+  assert.equal(q.dollarVolume20, 10_000)
+  assert.equal(chartQuote('X', { price: 0, prevClose: 10, bars }), null)
+})
+
+test('breadth refresh policy: 30 min in session, once after the close otherwise', () => {
+  // Wed 2026-10-21 14:00 ET = 18:00Z (EDT).
+  const inSession = Date.UTC(2026, 9, 21, 18, 0)
+  assert.equal(breadthNeedsRefresh(new Date(inSession - 20 * 60_000).toISOString(), inSession), false)
+  assert.equal(breadthNeedsRefresh(new Date(inSession - 40 * 60_000).toISOString(), inSession), true)
+  // Wed 20:00 ET (00:00Z Thu): fresh if computed after 16:05 ET, stale if before.
+  const evening = Date.UTC(2026, 9, 22, 0, 0)
+  assert.equal(new Date(lastCloseMs(evening)).toISOString(), '2026-10-21T20:05:00.000Z')
+  assert.equal(breadthNeedsRefresh('2026-10-21T20:10:00.000Z', evening), false)
+  assert.equal(breadthNeedsRefresh('2026-10-21T19:50:00.000Z', evening), true)
+  // Saturday: Friday's post-close run is enough.
+  const sat = Date.UTC(2026, 9, 24, 15, 0)
+  assert.equal(breadthNeedsRefresh('2026-10-23T20:30:00.000Z', sat), false)
+  assert.equal(breadthNeedsRefresh(null, sat), true)
+})

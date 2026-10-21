@@ -17,6 +17,7 @@ interface MembersResponse {
     avgVolume?: number
     marketCap?: number
   }[]
+  quotesSource?: string
   quotesError?: string
 }
 
@@ -31,7 +32,7 @@ function GroupMembers({ group }: { group: IndustryGroup }) {
     <div>
       <div className="mb-1 text-[10px] text-terminal-dim">
         {members.length} members from the Finviz membership snapshot ({data.generatedAt.slice(0, 10)}; price &gt; $5, avg vol
-        &gt; 750K) · quotes from Yahoo
+        &gt; 750K) · {data.quotesSource ?? 'Yahoo quotes'}
         {data.quotesError ? <span className="text-terminal-red"> · quotes unavailable: {data.quotesError}</span> : null}
       </div>
       <div className="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-x-4 gap-y-0.5 text-[11px]">
