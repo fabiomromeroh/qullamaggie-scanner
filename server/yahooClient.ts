@@ -105,6 +105,14 @@ export function getDailySeries(symbol: string, range: '1y' | '2y' = '1y'): Promi
   })
 }
 
+/** Uncached daily bars, for bulk jobs (breadth) that must not fill the 5-min memo. */
+export async function fetchDailyBarsUncached(symbol: string, range: '1y' | '2y' = '2y'): Promise<DailyBar[]> {
+  const raw = await getJson(
+    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=${range}&includePrePost=false`,
+  )
+  return parseYahooChart(raw, symbol, range).bars
+}
+
 export type IntradayInterval = '1m' | '30m' | '1h'
 
 export const INTRADAY_RANGE: Record<IntradayInterval, string> = {

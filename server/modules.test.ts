@@ -7,6 +7,7 @@ test('module routing from hash defaults to the scanner', () => {
   assert.equal(moduleFromHash(''), 'scanner')
   assert.equal(moduleFromHash('#pulse'), 'pulse')
   assert.equal(moduleFromHash('#PULSE/sectors'), 'pulse')
+  assert.equal(moduleFromHash('#breadth'), 'breadth')
   assert.equal(moduleFromHash('#nope'), 'scanner')
   assert.equal(subFromHash('#pulse/sectors'), 'sectors')
   assert.equal(subFromHash('#pulse'), null)
