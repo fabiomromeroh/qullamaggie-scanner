@@ -310,3 +310,29 @@ th.qm-th-resizable {
   position: relative;
   overflow: visible;
 }
+
+/* Market Pulse ticker tape: two copies of the content scroll left; hover pauses. */
+@keyframes qm-tape-scroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+.qm-tape-track {
+  animation: qm-tape-scroll 90s linear infinite;
+  width: max-content;
+}
+.qm-tape:hover .qm-tape-track,
+.qm-tape:focus-within .qm-tape-track {
+  animation-play-state: paused;
+}
+@media (prefers-reduced-motion: reduce) {
+  .qm-tape-track {
+    animation: none;
+  }
+  .qm-tape {
+    overflow-x: auto;
+  }
+}
