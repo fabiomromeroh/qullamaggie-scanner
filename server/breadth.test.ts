@@ -180,3 +180,15 @@ test('split bar shares always total 100% with no gap', () => {
   assert.deepEqual(splitShares(0, 0), { leftPct: 50, rightPct: 50 })
   assert.deepEqual(splitShares(5, 0), { leftPct: 100, rightPct: 0 })
 })
+
+test('markPartial flags only an in-session same-day newest row', async () => {
+  const { markPartial, etTime } = await import('../src/lib/breadth')
+  const mk = (date: string) => ({ date } as never)
+  const mid = Date.parse('2026-10-21T16:48:00Z') // 12:48 ET
+  const r = markPartial([mk('2026-10-21'), mk('2026-10-20')], mid)
+  assert.equal((r[0] as { partial?: boolean }).partial, true)
+  assert.equal((r[1] as { partial?: boolean }).partial, undefined)
+  assert.equal(etTime((r[0] as { asOf: string }).asOf), '12:48 ET')
+  const after = markPartial([mk('2026-10-21')], Date.parse('2026-10-21T20:10:00Z'))
+  assert.equal((after[0] as { partial?: boolean }).partial, undefined)
+})

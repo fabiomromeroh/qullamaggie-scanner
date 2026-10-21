@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
-import { cellTone, scaledThreshold, splitShares, type BreadthColumn, type BreadthRow, type Tone } from '../lib/breadth'
+import { MetricTip } from '../components/MetricTip'
+import type { MetricId } from '../lib/metricDefinitions'
+import { cellTone, etTime, scaledThreshold, splitShares, type BreadthColumn, type BreadthRow, type Tone } from '../lib/breadth'
 
 interface BreadthResponse {
   result: {
@@ -21,23 +23,62 @@ const TONE_CLASS: Record<Exclude<Tone, null>, string> = {
   amber: 'bg-terminal-amber-dim text-terminal-amber',
 }
 
+/** Stockbee's full column names, shown in the header tooltip (visible labels are abbreviated). */
+const FULL_LABEL: Record<BreadthColumn | 'universe', string> = {
+  up4: 'Stocks Up 4%+ Today',
+  down4: 'Stocks Down 4%+ Today',
+  ratio5: '5 Day Ratio',
+  ratio10: '10 Day Ratio',
+  up25q: 'Up 25%+ Quarter',
+  down25q: 'Down 25%+ Quarter',
+  up25m: 'Up 25%+ Month',
+  down25m: 'Down 25%+ Month',
+  up50m: 'Up 50%+ Month',
+  down50m: 'Down 50%+ Month',
+  up13x34: 'Up 13%+ in 34 Days',
+  down13x34: 'Down 13%+ in 34 Days',
+  atrExt10: '10x ATR Extension',
+  pctAbove50: '% above 50-day SMA',
+  pctAbove200: '% above 200-day SMA',
+  universe: 'Universe',
+}
+
+const METRIC_OF: Record<BreadthColumn | 'universe', MetricId> = {
+  up4: 'breadthUp4',
+  down4: 'breadthDown4',
+  ratio5: 'breadthRatio5',
+  ratio10: 'breadthRatio10',
+  up25q: 'breadthUp25q',
+  down25q: 'breadthDown25q',
+  up25m: 'breadthUp25m',
+  down25m: 'breadthDown25m',
+  up50m: 'breadthUp50m',
+  down50m: 'breadthDown50m',
+  up13x34: 'breadthUp13x34',
+  down13x34: 'breadthDown13x34',
+  atrExt10: 'breadthAtrExt',
+  pctAbove50: 'breadthAbove50',
+  pctAbove200: 'breadthAbove200',
+  universe: 'breadthUniverse',
+}
+
 const COLUMNS: { key: BreadthColumn | 'universe'; label: string; title: string; fmt?: 'ratio' | 'pct' }[] = [
-  { key: 'up4', label: 'Up 4%+ Today', title: 'Close ≥ +4% vs prior close on higher volume than the prior day' },
-  { key: 'down4', label: 'Down 4%+ Today', title: 'Close ≤ −4% vs prior close on higher volume than the prior day' },
-  { key: 'ratio5', label: '5 Day Ratio', title: 'Σ up-4% ÷ Σ down-4% over the last 5 sessions', fmt: 'ratio' },
-  { key: 'ratio10', label: '10 Day Ratio', title: 'Σ up-4% ÷ Σ down-4% over the last 10 sessions', fmt: 'ratio' },
-  { key: 'up25q', label: 'Up 25%+ Quarter', title: 'Close ≥ +25% vs 65 sessions ago' },
-  { key: 'down25q', label: 'Down 25%+ Quarter', title: 'Close ≤ −25% vs 65 sessions ago' },
-  { key: 'up25m', label: 'Up 25%+ Month', title: 'Close ≥ +25% vs 21 sessions ago' },
-  { key: 'down25m', label: 'Down 25%+ Month', title: 'Close ≤ −25% vs 21 sessions ago' },
-  { key: 'up50m', label: 'Up 50%+ Month', title: 'Close ≥ +50% vs 21 sessions ago' },
-  { key: 'down50m', label: 'Down 50%+ Month', title: 'Close ≤ −50% vs 21 sessions ago' },
-  { key: 'up13x34', label: 'Up 13%+ 34 Days', title: 'Close ≥ +13% vs 34 sessions ago' },
-  { key: 'down13x34', label: 'Down 13%+ 34 Days', title: 'Close ≤ −13% vs 34 sessions ago' },
-  { key: 'atrExt10', label: '10x ATR Ext.', title: '(Close − SMA50) ÷ ATR14 ≥ 10' },
+  { key: 'up4', label: 'Up 4% Today', title: 'Close ≥ +4% vs prior close on higher volume than the prior day' },
+  { key: 'down4', label: 'Dn 4% Today', title: 'Close ≤ −4% vs prior close on higher volume than the prior day' },
+  { key: 'ratio5', label: '5D Ratio', title: 'Σ up-4% ÷ Σ down-4% over the last 5 sessions', fmt: 'ratio' },
+  { key: 'ratio10', label: '10D Ratio', title: 'Σ up-4% ÷ Σ down-4% over the last 10 sessions', fmt: 'ratio' },
+  { key: 'up25q', label: 'Up 25% Qtr', title: 'Close ≥ +25% vs 65 sessions ago' },
+  { key: 'down25q', label: 'Dn 25% Qtr', title: 'Close ≤ −25% vs 65 sessions ago' },
+  { key: 'up25m', label: 'Up 25% Mo', title: 'Close ≥ +25% vs 21 sessions ago' },
+  { key: 'down25m', label: 'Dn 25% Mo', title: 'Close ≤ −25% vs 21 sessions ago' },
+  { key: 'up50m', label: 'Up 50% Mo', title: 'Close ≥ +50% vs 21 sessions ago' },
+  { key: 'down50m', label: 'Dn 50% Mo', title: 'Close ≤ −50% vs 21 sessions ago' },
+  { key: 'up13x34', label: 'Up 13% 34D', title: 'Close ≥ +13% vs 34 sessions ago' },
+  { key: 'down13x34', label: 'Dn 13% 34D', title: 'Close ≤ −13% vs 34 sessions ago' },
+  { key: 'atrExt10', label: '10x ATR', title: '(Close − SMA50) ÷ ATR14 ≥ 10' },
   { key: 'pctAbove50', label: '>50dma', title: '% of stocks closing above their 50-day SMA', fmt: 'pct' },
   { key: 'pctAbove200', label: '>200dma', title: '% of stocks closing above their 200-day SMA', fmt: 'pct' },
-  { key: 'universe', label: 'Universe', title: 'Eligible stocks that day (price ≥ $5, 20d avg $vol ≥ $5M)' },
+  { key: 'universe', label: 'Univ.', title: 'Eligible stocks that day (price ≥ $5, 20d avg $vol ≥ $5M)' },
 ]
 
 function fmt(v: number | null | undefined, kind?: 'ratio' | 'pct'): string {
@@ -189,13 +230,19 @@ export function BreadthModule() {
         </div>
       ) : (
         <div className="min-h-0 flex-1 overflow-auto">
-          <table className="w-full border-collapse text-[12px]">
+          {/* Auto-width: columns size to content; narrow screens scroll horizontally. */}
+          <table className="w-max border-collapse text-[12px]">
             <thead className="sticky top-0 z-10 bg-terminal-panel">
               <tr className="border-b border-terminal-border text-[10px] uppercase text-terminal-dim">
-                <th className="px-2 py-1.5 text-left font-medium">Date</th>
+                <th className="whitespace-nowrap px-1.5 py-1 text-left font-medium">
+                  <MetricTip id="breadthDate">Date</MetricTip>
+                </th>
                 {COLUMNS.map((c) => (
-                  <th key={c.key} title={c.title} className="max-w-20 px-1.5 py-1.5 text-right font-medium leading-tight">
-                    {c.label}
+                  <th key={c.key} className="whitespace-nowrap px-1.5 py-1 text-right font-medium">
+                    {/* One-line header: the column is as wide as its label. Tooltip explains the calculation. */}
+                    <MetricTip id={METRIC_OF[c.key]} extra={FULL_LABEL[c.key]}>
+                      {c.label}
+                    </MetricTip>
                   </th>
                 ))}
               </tr>
@@ -203,12 +250,19 @@ export function BreadthModule() {
             <tbody className="font-mono tabular-nums">
               {rows.map((r) => (
                 <tr key={r.date} className="border-b border-terminal-border/50">
-                  <td className="whitespace-nowrap px-2 py-0.5 text-terminal-muted">{r.date}</td>
+                  <td className="whitespace-nowrap px-1.5 py-0.5 text-terminal-muted">
+                    {r.date}
+                    {r.partial ? (
+                      <span className="ml-1 text-[10px] text-terminal-amber">intraday · as of {r.asOf ? etTime(r.asOf) : '—'}</span>
+                    ) : null}
+                  </td>
                   {COLUMNS.map((c) => {
                     const tone = c.key === 'universe' ? null : cellTone(c.key, r)
                     return (
-                      <td key={c.key} className={`px-1.5 py-0.5 text-right ${tone ? TONE_CLASS[tone] : 'text-terminal-fg'}`}>
-                        {fmt(r[c.key] as number | null, c.fmt)}
+                      <td key={c.key} className={`whitespace-nowrap px-1.5 py-0.5 text-right ${tone ? TONE_CLASS[tone] : 'text-terminal-fg'}`}>
+                        {r.partial && (c.key === 'up4' || c.key === 'down4') && typeof r[c.key === 'up4' ? 'up4Price' : 'down4Price'] === 'number'
+                          ? `${r[c.key === 'up4' ? 'up4Price' : 'down4Price']} (${r[c.key]} w/ vol)`
+                          : fmt(r[c.key] as number | null, c.fmt)}
                       </td>
                     )
                   })}

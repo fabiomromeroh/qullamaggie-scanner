@@ -367,6 +367,15 @@ test('tooltip text is built from the live scanner constants', () => {
 test('component metric ids match the registry', () => {
   const dir = resolve(process.cwd(), 'src/components')
   const used = usedMetricIds(dir)
+  // Module screens use MetricTip too; their ids sit in typed `Record<…, MetricId>` maps.
+  const modulesDir = resolve(process.cwd(), 'src/modules')
+  for (const id of usedMetricIds(modulesDir)) used.add(id)
+  for (const name of readdirSync(modulesDir)) {
+    if (!name.endsWith('.tsx')) continue
+    const source = readFileSync(resolve(modulesDir, name), 'utf8')
+    const map = source.match(/Record<[^>]*MetricId>\s*=\s*\{([\s\S]*?)\n\}/)
+    if (map) for (const id of quotedIds(map[1]!)) used.add(id)
+  }
   const unknown = [...used].filter((id) => !isMetricId(id))
   assert.deepEqual(unknown, [])
   const unused = (Object.keys(METRIC_DEFS) as string[]).filter(
@@ -550,4 +559,17 @@ test('Leading groups table has a sortable 1W column fed by weekPct', () => {
   assert.match(src, /colKey="w1"[\s\S]*?sortKey="1w"[\s\S]*?metric="groupPerf1w"/)
   assert.match(src, /<MetricTip id="groupPerf1w">\{fmtCell\(g\.weekPct\)\}<\/MetricTip>/)
   assert.match(src, /<td colSpan=\{8\}/)
+})
+
+test('breadth header tooltips carry the live rules and universe filter', () => {
+  for (const id of ['breadthUp4', 'breadthAbove50', 'breadthUniverse'] as const) {
+    includes(id, '≥ $5,')
+    includes(id, '≥ $5M')
+  }
+  includes('breadthUp4', '+4%')
+  includes('breadthUp4', 'scaled')
+  includes('breadthUp25q', '65 sessions')
+  includes('breadthUp13x34', '34 sessions')
+  includes('breadthAtrExt', 'ATR14 ≥ 10')
+  includes('breadthRatio5', '≤ 0.5')
 })
