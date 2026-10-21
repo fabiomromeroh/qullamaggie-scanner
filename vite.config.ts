@@ -6,6 +6,7 @@ import { createGroupsMiddleware } from './server/finvizGroups.ts'
 import { startGroupWarmup } from './server/groupWarmup.ts'
 import { createPulseMiddleware } from './server/marketPulse.ts'
 import { createTickerMiddleware } from './server/tickerDetail.ts'
+import { createBreadthMiddleware } from './server/breadthJob.ts'
 import { createMarketMiddleware, startBackgroundScanIfNeeded } from './server/marketProxy.ts'
 
 function marketDataProxyPlugin(): Plugin {
@@ -16,6 +17,7 @@ function marketDataProxyPlugin(): Plugin {
       server.middlewares.use(createGroupsMiddleware())
       server.middlewares.use(createPulseMiddleware())
       server.middlewares.use(createTickerMiddleware())
+      server.middlewares.use(createBreadthMiddleware())
       server.middlewares.use(createMarketMiddleware())
       startBackgroundScanIfNeeded()
       startGroupWarmup()
@@ -24,6 +26,7 @@ function marketDataProxyPlugin(): Plugin {
       server.middlewares.use(createGroupsMiddleware())
       server.middlewares.use(createPulseMiddleware())
       server.middlewares.use(createTickerMiddleware())
+      server.middlewares.use(createBreadthMiddleware())
       server.middlewares.use(createMarketMiddleware())
       startBackgroundScanIfNeeded()
       startGroupWarmup()

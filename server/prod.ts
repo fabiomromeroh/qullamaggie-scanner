@@ -11,6 +11,7 @@ import { createGroupsMiddleware } from './finvizGroups.ts'
 import { startGroupWarmup } from './groupWarmup.ts'
 import { createPulseMiddleware } from './marketPulse.ts'
 import { createTickerMiddleware } from './tickerDetail.ts'
+import { createBreadthMiddleware } from './breadthJob.ts'
 import {
   createMarketMiddleware,
   getFinnhubKey,
@@ -88,6 +89,7 @@ async function main(): Promise<void> {
   const groupsMw = createGroupsMiddleware()
   const pulseMw = createPulseMiddleware()
   const tickerMw = createTickerMiddleware()
+  const breadthMw = createBreadthMiddleware()
   const host = '0.0.0.0'
   const port = Number(process.env.PORT) || 5173
 
@@ -100,6 +102,8 @@ async function main(): Promise<void> {
       pathname.startsWith('/api/groups/') ||
       pathname.startsWith('/api/pulse/') ||
       pathname.startsWith('/api/ticker/') ||
+      pathname === '/api/breadth' ||
+      pathname.startsWith('/api/breadth/') ||
       url.pathname.startsWith('/api/market')
     ) {
       const handler = pathname.startsWith('/api/groups')
@@ -108,7 +112,9 @@ async function main(): Promise<void> {
           ? pulseMw
           : pathname.startsWith('/api/ticker/')
             ? tickerMw
-            : market
+            : pathname.startsWith('/api/breadth')
+              ? breadthMw
+              : market
       void handler(
         req,
         {

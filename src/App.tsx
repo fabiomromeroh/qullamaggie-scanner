@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { MetricTipRoot } from './components/MetricTip'
 import { TickerModalProvider } from './components/TickerModal'
 import { MODULES, moduleFromHash, type ModuleId } from './lib/modules'
+import { BreadthModule } from './modules/BreadthModule'
 import { MarketPulseModule } from './modules/MarketPulseModule'
 import { ScannerModule } from './modules/ScannerModule'
 
@@ -99,6 +100,7 @@ export default function App() {
             </div>
           ) : null}
           {active === 'pulse' ? <MarketPulseModule /> : null}
+          {active === 'breadth' ? <BreadthModule /> : null}
         </div>
       </TickerModalProvider>
     </MetricTipRoot>

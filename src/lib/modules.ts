@@ -9,6 +9,7 @@ export interface ModuleDef {
 export const MODULES: ModuleDef[] = [
   { id: 'scanner', label: 'Scanner', hash: '#scanner' },
   { id: 'pulse', label: 'Market Pulse', hash: '#pulse' },
+  { id: 'breadth', label: 'Breadth', hash: '#breadth' },
 ]
 
 export const DEFAULT_MODULE: ModuleId = 'scanner'
