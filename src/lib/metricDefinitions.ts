@@ -54,6 +54,7 @@ import { CHART_RIGHT_OFFSET_BARS, VOLUME_SMA_PERIOD } from './chartData'
 import { INTRADAY_RVOL_CONFIG, MIN_FULL_BASELINE_SESSIONS } from './rvolTod'
 import { CHART_SMA_COLORS_KEY, CHART_SMA_PREFS_KEY, DEFAULT_SMA_COLORS } from './chartSmaColors'
 import type { GroupPeriod } from '../types'
+import { BREADTH_RULES as BR, STOCKBEE_UNIVERSE } from './breadth'
 
 export interface MetricDef {
   label: string
@@ -289,6 +290,9 @@ const setupChipNote = (name: string) =>
 
 const earningsChipNote = (status: string) =>
   `The earnings chip includes or excludes status "${status}". Clearing the last chip selects every status again.`
+
+const BREADTH_UNIVERSE_TEXT = `Universe: Finviz membership snapshot tickers; a stock counts on a day only if that day's close ≥ $${BR.minPrice}, its 20-session average dollar volume (close × volume) ≥ $${BR.minDollarVolume20 / 1e6}M, and it has ≥ 21 prior daily bars. Yahoo 2y daily bars. The newest row uses today's partial (intraday) bar until the close.`
+const BREADTH_SCALE_TEXT = `Colour thresholds for counts are Stockbee's (built on ~${STOCKBEE_UNIVERSE.toLocaleString('en-US')} stocks) scaled by universe ÷ ${STOCKBEE_UNIVERSE}.`
 
 export const METRIC_DEFS = {
   ticker: d(
@@ -952,6 +956,105 @@ export const METRIC_DEFS = {
     'When this scan finished, which session the bars are from, and how big the universe was.',
     'scanFreshness.asOf is the scan completion time, the same instant as the dashboard asOf. The line shows that clock in local time with the short zone name and again in ET. barsAsOf is the America/New_York date of the newest daily bar used (the max last-bar timestamp across scored ideas). A pre-market scan shows the prior session, because that session is the latest daily bar. universeSize is the top-12 Finviz group member count for groupsPeriod before SMA filtering and before the stage-1 cap. scannedCount is how many tickers reached deep scoring (Stage 1.5 survivors, the shortlist). passedCount is the ideas returned (scan hits). groupsFetchedAt is the ISO time the Finviz groups payload used for the universe was fetched. membershipSnapshotDate is generatedAt of server/data/finviz-group-members.json, shown as that instant\'s ET calendar date.',
     'Scans run on boot, Refresh, and a groups-period change only (no background interval). The universe is the members of the top 12 Finviz groups for the selected period. The membership snapshot is refreshed manually (npm run build:groups). A missing piece is left off the line.',
+  ),
+
+  // Breadth Market Monitor columns (src/lib/breadth.ts).
+  breadthDate: d('Date', 'Trading session (America/New_York date), newest first.', `One row per session that has bars for at least half of the largest daily universe. ${BREADTH_UNIVERSE_TEXT}`),
+  breadthUp4: d(
+    'Up 4% Today',
+    'Stocks up 4% or more today on higher volume.',
+    `Count of eligible stocks with close ≥ +${BR.movePct}% vs the prior close AND volume above the prior day's volume (Stockbee 4% breakout). ${BREADTH_UNIVERSE_TEXT}`,
+    `Strong green when ≥ 300 scaled to the universe (scaledThreshold); otherwise green when it exceeds Down 4%. ${BREADTH_SCALE_TEXT} Intraday the volume test compares today's partial volume with yesterday's full volume, so the newest row undercounts until late in the session.`,
+  ),
+  breadthDown4: d(
+    'Down 4% Today',
+    'Stocks down 4% or more today on higher volume.',
+    `Count of eligible stocks with close ≤ −${BR.movePct}% vs the prior close AND volume above the prior day's volume. ${BREADTH_UNIVERSE_TEXT}`,
+    `Strong red when ≥ 300 scaled to the universe; otherwise red when it exceeds Up 4%. ${BREADTH_SCALE_TEXT} Same intraday volume caveat as Up 4%.`,
+  ),
+  breadthRatio5: d(
+    '5 Day Ratio',
+    'Up-4% total ÷ down-4% total over 5 sessions.',
+    `Σ Up 4% counts ÷ Σ Down 4% counts over the latest 5 rows (this row and the 4 before it). ∞ when the down total is 0; blank until 5 rows exist. ${BREADTH_UNIVERSE_TEXT}`,
+    `Green ≥ 2 (strong ≥ 3), red ≤ 0.5 (strong ≤ 0.33).`,
+  ),
+  breadthRatio10: d(
+    '10 Day Ratio',
+    'Up-4% total ÷ down-4% total over 10 sessions.',
+    `Σ Up 4% counts ÷ Σ Down 4% counts over the latest 10 rows. ∞ when the down total is 0; blank until 10 rows exist. ${BREADTH_UNIVERSE_TEXT}`,
+    `Green ≥ 2 (strong ≥ 3), red ≤ 0.5 (strong ≤ 0.33).`,
+  ),
+  breadthUp25q: d(
+    'Up 25% Qtr',
+    'Stocks up 25% or more in a quarter.',
+    `Count of eligible stocks whose close is ≥ +${BR.quarterPct}% vs the close ${BR.quarterSessions} sessions earlier. ${BREADTH_UNIVERSE_TEXT}`,
+    `Red when ≤ 200 scaled to the universe (weak tape); otherwise green when it exceeds Down 25% Qtr. ${BREADTH_SCALE_TEXT}`,
+  ),
+  breadthDown25q: d(
+    'Dn 25% Qtr',
+    'Stocks down 25% or more in a quarter.',
+    `Count of eligible stocks whose close is ≤ −${BR.quarterPct}% vs the close ${BR.quarterSessions} sessions earlier. ${BREADTH_UNIVERSE_TEXT}`,
+    `Red when it exceeds Up 25% Qtr.`,
+  ),
+  breadthUp25m: d(
+    'Up 25% Mo',
+    'Stocks up 25% or more in a month.',
+    `Count of eligible stocks whose close is ≥ +${BR.monthPct}% vs the close ${BR.monthSessions} sessions earlier. ${BREADTH_UNIVERSE_TEXT}`,
+    `Green when it exceeds Down 25% Mo.`,
+  ),
+  breadthDown25m: d(
+    'Dn 25% Mo',
+    'Stocks down 25% or more in a month.',
+    `Count of eligible stocks whose close is ≤ −${BR.monthPct}% vs the close ${BR.monthSessions} sessions earlier. ${BREADTH_UNIVERSE_TEXT}`,
+    `Red when it exceeds Up 25% Mo.`,
+  ),
+  breadthUp50m: d(
+    'Up 50% Mo',
+    'Stocks up 50% or more in a month.',
+    `Count of eligible stocks whose close is ≥ +${BR.month50Pct}% vs the close ${BR.monthSessions} sessions earlier. ${BREADTH_UNIVERSE_TEXT}`,
+    `Green when it exceeds Down 50% Mo.`,
+  ),
+  breadthDown50m: d(
+    'Dn 50% Mo',
+    'Stocks down 50% or more in a month.',
+    `Count of eligible stocks whose close is ≤ −${BR.month50Pct}% vs the close ${BR.monthSessions} sessions earlier. ${BREADTH_UNIVERSE_TEXT}`,
+    `Red when it exceeds Up 50% Mo.`,
+  ),
+  breadthUp13x34: d(
+    'Up 13% 34D',
+    'Stocks up 13% or more in 34 sessions.',
+    `Count of eligible stocks whose close is ≥ +${BR.days34Pct}% vs the close ${BR.daysSessions34} sessions earlier. ${BREADTH_UNIVERSE_TEXT}`,
+    `Green when it exceeds Down 13% 34D.`,
+  ),
+  breadthDown13x34: d(
+    'Dn 13% 34D',
+    'Stocks down 13% or more in 34 sessions.',
+    `Count of eligible stocks whose close is ≤ −${BR.days34Pct}% vs the close ${BR.daysSessions34} sessions earlier. ${BREADTH_UNIVERSE_TEXT}`,
+    `Red when it exceeds Up 13% 34D.`,
+  ),
+  breadthAtrExt: d(
+    '10x ATR',
+    'Stocks extended 10× ATR above the 50-day SMA.',
+    `Count of eligible stocks with (close − SMA50) ÷ ATR${BR.atrPeriod} ≥ ${BR.atrExtMultiple}. ATR is the simple mean of true range over ${BR.atrPeriod} sessions; needs 50 bars. ${BREADTH_UNIVERSE_TEXT}`,
+    `Amber when ≥ 0.5% of the universe (an extended, frothy tape).`,
+  ),
+  breadthAbove50: d(
+    '>50dma',
+    'Percent of stocks above their 50-day SMA.',
+    `Eligible stocks closing above their 50-session simple moving average ÷ eligible stocks with at least 50 bars, × 100. ${BREADTH_UNIVERSE_TEXT}`,
+    `Strong green ≥ 80%, green ≥ 60%, red ≤ 40%, strong red ≤ 20%.`,
+  ),
+  breadthAbove200: d(
+    '>200dma',
+    'Percent of stocks above their 200-day SMA.',
+    `Eligible stocks closing above their 200-session simple moving average ÷ eligible stocks with at least 200 bars, × 100. ${BREADTH_UNIVERSE_TEXT}`,
+    `Strong green ≥ 80%, green ≥ 60%, red ≤ 40%, strong red ≤ 20%.`,
+  ),
+  breadthUniverse: d(
+    'Universe',
+    'Eligible stocks counted that day.',
+    `Number of membership-snapshot tickers that pass the day's price and liquidity filter. ${BREADTH_UNIVERSE_TEXT}`,
+    `Not coloured. Tickers Yahoo cannot serve are skipped (see the job's failed count).`,
   ),
 } as const satisfies Record<string, MetricDef>
 

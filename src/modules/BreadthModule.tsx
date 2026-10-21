@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react'
+import { MetricTip } from '../components/MetricTip'
+import type { MetricId } from '../lib/metricDefinitions'
 import { cellTone, scaledThreshold, splitShares, type BreadthColumn, type BreadthRow, type Tone } from '../lib/breadth'
 
 interface BreadthResponse {
@@ -39,6 +41,25 @@ const FULL_LABEL: Record<BreadthColumn | 'universe', string> = {
   pctAbove50: '% above 50-day SMA',
   pctAbove200: '% above 200-day SMA',
   universe: 'Universe',
+}
+
+const METRIC_OF: Record<BreadthColumn | 'universe', MetricId> = {
+  up4: 'breadthUp4',
+  down4: 'breadthDown4',
+  ratio5: 'breadthRatio5',
+  ratio10: 'breadthRatio10',
+  up25q: 'breadthUp25q',
+  down25q: 'breadthDown25q',
+  up25m: 'breadthUp25m',
+  down25m: 'breadthDown25m',
+  up50m: 'breadthUp50m',
+  down50m: 'breadthDown50m',
+  up13x34: 'breadthUp13x34',
+  down13x34: 'breadthDown13x34',
+  atrExt10: 'breadthAtrExt',
+  pctAbove50: 'breadthAbove50',
+  pctAbove200: 'breadthAbove200',
+  universe: 'breadthUniverse',
 }
 
 const COLUMNS: { key: BreadthColumn | 'universe'; label: string; title: string; fmt?: 'ratio' | 'pct' }[] = [
@@ -213,11 +234,15 @@ export function BreadthModule() {
           <table className="w-max border-collapse text-[12px]">
             <thead className="sticky top-0 z-10 bg-terminal-panel">
               <tr className="border-b border-terminal-border text-[10px] uppercase text-terminal-dim">
-                <th className="px-1.5 py-1 text-left align-bottom font-medium">Date</th>
+                <th className="whitespace-nowrap px-1.5 py-1 text-left font-medium">
+                  <MetricTip id="breadthDate">Date</MetricTip>
+                </th>
                 {COLUMNS.map((c) => (
-                  <th key={c.key} title={`${FULL_LABEL[c.key]}: ${c.title}`} className="px-1 py-1 text-right align-bottom font-medium leading-tight">
-                    {/* Narrow wrapping header so the column width follows the values. */}
-                    <span className="ml-auto block w-min min-w-[2.5rem] max-w-[3.75rem] whitespace-normal">{c.label}</span>
+                  <th key={c.key} className="whitespace-nowrap px-1.5 py-1 text-right font-medium">
+                    {/* One-line header: the column is as wide as its label. Tooltip explains the calculation. */}
+                    <MetricTip id={METRIC_OF[c.key]} extra={FULL_LABEL[c.key]}>
+                      {c.label}
+                    </MetricTip>
                   </th>
                 ))}
               </tr>
@@ -229,7 +254,7 @@ export function BreadthModule() {
                   {COLUMNS.map((c) => {
                     const tone = c.key === 'universe' ? null : cellTone(c.key, r)
                     return (
-                      <td key={c.key} className={`whitespace-nowrap px-1 py-0.5 text-right ${tone ? TONE_CLASS[tone] : 'text-terminal-fg'}`}>
+                      <td key={c.key} className={`whitespace-nowrap px-1.5 py-0.5 text-right ${tone ? TONE_CLASS[tone] : 'text-terminal-fg'}`}>
                         {fmt(r[c.key] as number | null, c.fmt)}
                       </td>
                     )
