@@ -170,3 +170,13 @@ test('breadth refresh policy: 30 min in session, once after the close otherwise'
   assert.equal(breadthNeedsRefresh('2026-10-23T20:30:00.000Z', sat), false)
   assert.equal(breadthNeedsRefresh(null, sat), true)
 })
+
+import { splitShares } from '../src/lib/breadth.ts'
+
+test('split bar shares always total 100% with no gap', () => {
+  const a = splitShares(1366, 427)
+  assert.ok(Math.abs(a.leftPct + a.rightPct - 100) < 1e-9)
+  assert.ok(Math.abs(a.leftPct - (1366 / 1793) * 100) < 1e-9)
+  assert.deepEqual(splitShares(0, 0), { leftPct: 50, rightPct: 50 })
+  assert.deepEqual(splitShares(5, 0), { leftPct: 100, rightPct: 0 })
+})

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { cellTone, scaledThreshold, type BreadthColumn, type BreadthRow, type Tone } from '../lib/breadth'
+import { cellTone, scaledThreshold, splitShares, type BreadthColumn, type BreadthRow, type Tone } from '../lib/breadth'
 
 interface BreadthResponse {
   result: {
@@ -48,24 +48,46 @@ function fmt(v: number | null | undefined, kind?: 'ratio' | 'pct'): string {
   return String(v)
 }
 
-function SplitBar({ leftLabel, rightLabel, left, right, base }: { leftLabel: string; rightLabel: string; left: number; right: number; base: number }) {
-  const total = base || left + right || 1
-  const lp = (left / total) * 100
-  const rp = (right / total) * 100
+/**
+ * One continuous two-colour bar. Segment widths are left / (left + right), so
+ * green and red always meet with no gap; labels sit on their own row above.
+ */
+function SplitBar({
+  leftLabel,
+  rightLabel,
+  left,
+  right,
+  note,
+}: {
+  leftLabel: string
+  rightLabel: string
+  left: number
+  right: number
+  note?: string
+}) {
+  const { leftPct, rightPct } = splitShares(left, right)
+  const empty = left + right === 0
   return (
-    <div className="min-w-64 flex-1">
-      <div className="mb-0.5 flex justify-between text-[11px]">
-        <span className="text-terminal-green">
-          {leftLabel} {lp.toFixed(1)}% <span className="text-terminal-dim">({left})</span>
+    <div className="min-w-0 basis-72 flex-1" title={note}>
+      <div className="mb-0.5 flex items-baseline justify-between gap-2 whitespace-nowrap text-[11px]">
+        <span className="min-w-0 truncate text-terminal-green">
+          {leftLabel} {leftPct.toFixed(1)}% <span className="text-terminal-dim">({left})</span>
         </span>
-        <span className="text-terminal-red">
-          {rightLabel} {rp.toFixed(1)}% <span className="text-terminal-dim">({right})</span>
+        <span className="min-w-0 truncate text-right text-terminal-red">
+          {rightLabel} {rightPct.toFixed(1)}% <span className="text-terminal-dim">({right})</span>
         </span>
       </div>
-      <div className="flex h-2 overflow-hidden rounded bg-terminal-elevated">
-        <div className="bg-terminal-green" style={{ width: `${lp}%` }} />
-        <div className="flex-1" />
-        <div className="bg-terminal-red" style={{ width: `${rp}%` }} />
+      <div
+        role="img"
+        aria-label={`${leftLabel} ${left}, ${rightLabel} ${right}`}
+        className="flex h-2 w-full overflow-hidden rounded bg-terminal-elevated"
+      >
+        {empty ? null : (
+          <>
+            <div className="h-full bg-terminal-green" style={{ width: `${leftPct}%` }} />
+            <div className="h-full bg-terminal-red" style={{ width: `${rightPct}%` }} />
+          </>
+        )}
       </div>
     </div>
   )
@@ -117,8 +139,20 @@ export function BreadthModule() {
         <h2 className="text-sm font-semibold text-terminal-fg">Market Monitor</h2>
         {latest ? (
           <>
-            <SplitBar leftLabel="Advancing" rightLabel="Declining" left={latest.advancing} right={latest.declining} base={latest.universe} />
-            <SplitBar leftLabel="New High" rightLabel="New Low" left={latest.newHighs} right={latest.newLows} base={latest.newHighs + latest.newLows} />
+            <SplitBar
+              leftLabel="Advancing"
+              rightLabel="Declining"
+              left={latest.advancing}
+              right={latest.declining}
+              note={`${latest.date}: ${latest.universe - latest.advancing - latest.declining} unchanged of ${latest.universe}`}
+            />
+            <SplitBar
+              leftLabel="New High"
+              rightLabel="New Low"
+              left={latest.newHighs}
+              right={latest.newLows}
+              note={`${latest.date}: 52-week highs vs lows`}
+            />
           </>
         ) : null}
         <div className="ml-auto flex items-center gap-2 text-[11px] text-terminal-dim">

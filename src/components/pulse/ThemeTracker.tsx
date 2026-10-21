@@ -53,7 +53,12 @@ function GroupMembers({ group }: { group: IndustryGroup }) {
 }
 
 const COLUMNS: Column<IndustryGroup>[] = [
-  { key: 'name', label: 'Group', text: (g) => g.name, render: (g) => <span className="text-terminal-fg">{g.name}</span> },
+  { key: 'name', label: 'Group', text: (g) => g.name, render: (g) => (
+      <span className="block max-w-[14rem] truncate text-terminal-fg" title={g.name}>
+        {g.name}
+      </span>
+    ),
+  },
   { key: 'day', label: 'Today', value: (g) => g.dayPct, pct: true },
   { key: 'week', label: '1W', value: (g) => g.weekPct, pct: true },
   { key: 'month', label: '1M', value: (g) => g.perf1m ?? g.monthPct, pct: true },

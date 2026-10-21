@@ -58,7 +58,7 @@ const ETF_COLUMNS: Column<EtfRow>[] = [
     label: 'Company',
     text: (r) => r.name,
     render: (r) => (
-      <span className="block max-w-72 truncate text-terminal-muted" title={r.error ? `${r.name} — ${r.error}` : r.name}>
+      <span className="block max-w-[16rem] truncate text-terminal-muted" title={r.error ? `${r.name} — ${r.error}` : r.name}>
         {r.name}
         {r.error ? <span className="ml-1 text-terminal-red">(no data)</span> : null}
       </span>
