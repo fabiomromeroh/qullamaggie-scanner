@@ -105,12 +105,12 @@ export function getDailySeries(symbol: string, range: '1y' | '2y' = '1y'): Promi
   })
 }
 
-/** Uncached daily bars, for bulk jobs (breadth) that must not fill the 5-min memo. */
-export async function fetchDailyBarsUncached(symbol: string, range: '1y' | '2y' = '2y'): Promise<DailyBar[]> {
+/** Uncached daily series, for bulk jobs (breadth) that must not fill the 5-min memo. */
+export async function fetchDailySeriesUncached(symbol: string, range: '1y' | '2y' = '2y'): Promise<DailySeries> {
   const raw = await getJson(
     `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=${range}&includePrePost=false`,
   )
-  return parseYahooChart(raw, symbol, range).bars
+  return { symbol, ...parseYahooChart(raw, symbol, range) }
 }
 
 export type IntradayInterval = '1m' | '30m' | '1h'
@@ -149,6 +149,42 @@ export function getIntradayBars(symbol: string, interval: IntradayInterval): Pro
   })
 }
 
+/**
+ * Crumb circuit breaker. Yahoo answers getcrumb with 429 from some hosts
+ * (Render's IPs), and each attempt costs several retries. After a failure,
+ * crumb-based calls fail fast for CRUMB_BACKOFF_MS so callers use their
+ * chart-based / Finnhub fallbacks immediately.
+ */
+export const CRUMB_BACKOFF_MS = 15 * 60 * 1000
+let crumbBlockedUntil = 0
+let crumbLastError: string | null = null
+let crumbEverOk = false
+
+export function crumbStatus(now = Date.now()): 'ok' | 'blocked' | 'unknown' {
+  if (now < crumbBlockedUntil) return 'blocked'
+  return crumbEverOk ? 'ok' : 'unknown'
+}
+
+async function crumbAuth(force = false): Promise<{ crumb: string; cookie: string }> {
+  // Test hook: simulate a host where getcrumb is rate-limited.
+  if (process.env.YAHOO_CRUMB_DISABLED === '1') {
+    crumbBlockedUntil = Date.now() + CRUMB_BACKOFF_MS
+    crumbLastError = 'disabled by YAHOO_CRUMB_DISABLED'
+  }
+  if (Date.now() < crumbBlockedUntil) {
+    throw new Error(`Yahoo crumb unavailable (backing off): ${crumbLastError ?? 'blocked'}`)
+  }
+  try {
+    const auth = await refreshYahooCrumb(force)
+    crumbEverOk = true
+    return auth
+  } catch (err) {
+    crumbLastError = err instanceof Error ? err.message.slice(0, 160) : 'crumb failed'
+    crumbBlockedUntil = Date.now() + CRUMB_BACKOFF_MS
+    throw err
+  }
+}
+
 export interface BatchQuote {
   symbol: string
   name?: string
@@ -170,7 +206,7 @@ function num(v: unknown): number | undefined {
 /** Yahoo v7 quote in chunks of 50 symbols (crumb required). */
 export async function getBatchQuotes(symbols: readonly string[]): Promise<BatchQuote[]> {
   const out: BatchQuote[] = []
-  let auth = await refreshYahooCrumb()
+  let auth = await crumbAuth()
   for (let i = 0; i < symbols.length; i += 50) {
     const chunk = symbols.slice(i, i + 50)
     const url = (crumb: string) =>
@@ -180,7 +216,7 @@ export async function getBatchQuotes(symbols: readonly string[]): Promise<BatchQ
       raw = await getJson(url(auth.crumb), { Cookie: auth.cookie })
     } catch (err) {
       if (!/HTTP 40[13]/.test(err instanceof Error ? err.message : '')) throw err
-      auth = await refreshYahooCrumb(true)
+      auth = await crumbAuth(true)
       raw = await getJson(url(auth.crumb), { Cookie: auth.cookie })
     }
     const rows = (raw as { quoteResponse?: { result?: Record<string, unknown>[] } }).quoteResponse?.result ?? []
@@ -208,7 +244,7 @@ export async function getBatchQuotes(symbols: readonly string[]): Promise<BatchQ
 
 /** Yahoo quoteSummary modules (crumb required). */
 export async function getQuoteSummary(symbol: string, modules: readonly string[]): Promise<Record<string, unknown>> {
-  let auth = await refreshYahooCrumb()
+  let auth = await crumbAuth()
   const url = (crumb: string) =>
     `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?modules=${modules.join(',')}&crumb=${encodeURIComponent(crumb)}`
   let raw: unknown
@@ -216,7 +252,7 @@ export async function getQuoteSummary(symbol: string, modules: readonly string[]
     raw = await getJson(url(auth.crumb), { Cookie: auth.cookie })
   } catch (err) {
     if (!/HTTP 40[13]/.test(err instanceof Error ? err.message : '')) throw err
-    auth = await refreshYahooCrumb(true)
+    auth = await crumbAuth(true)
     raw = await getJson(url(auth.crumb), { Cookie: auth.cookie })
   }
   const result = (raw as { quoteSummary?: { result?: Record<string, unknown>[] } }).quoteSummary?.result?.[0]

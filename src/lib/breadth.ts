@@ -329,3 +329,78 @@ export function cellTone(col: BreadthColumn, row: BreadthRow): Tone {
     }
   }
 }
+
+/** Per-ticker quote captured from the chart data the breadth job already fetched. */
+export interface ChartQuote {
+  ticker: string
+  price: number
+  prevClose: number
+  changePct: number
+  /** 20-session average of close × volume. */
+  dollarVolume20: number
+  /** ET date of the last bar. */
+  barDate: string
+}
+
+export function chartQuote(
+  ticker: string,
+  series: { price: number; prevClose: number; bars: readonly BreadthBar[] },
+): ChartQuote | null {
+  const { price, prevClose, bars } = series
+  if (!bars.length || !(price > 0) || !(prevClose > 0)) return null
+  const slice = bars.slice(-20)
+  const dollarVolume20 = slice.reduce((acc, b) => acc + b.c * b.v, 0) / slice.length
+  return {
+    ticker,
+    price,
+    prevClose,
+    changePct: (price / prevClose - 1) * 100,
+    dollarVolume20,
+    barDate: etDate(bars[bars.length - 1]!.t),
+  }
+}
+
+const ET_PARTS = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/New_York',
+  weekday: 'short',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+})
+
+function etClock(ms: number): { weekday: string; minutes: number } {
+  const parts = ET_PARTS.formatToParts(new Date(ms))
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? ''
+  return { weekday: get('weekday'), minutes: Number(get('hour')) * 60 + Number(get('minute')) }
+}
+
+const WEEKDAYS = new Set(['Mon', 'Tue', 'Wed', 'Thu', 'Fri'])
+const OPEN_MIN = 9 * 60 + 30
+const CLOSE_MIN = 16 * 60 + 5
+
+/** Most recent weekday 16:05 ET at or before `now` (holidays not modelled). */
+export function lastCloseMs(now: number): number {
+  for (let d = 0; d < 8; d++) {
+    const day = now - d * 86_400_000
+    const { weekday, minutes } = etClock(day)
+    if (!WEEKDAYS.has(weekday)) continue
+    const close = day - (minutes - CLOSE_MIN) * 60_000
+    if (close <= now) return close
+  }
+  return now - 7 * 86_400_000
+}
+
+/**
+ * Breadth refresh policy: during the US session (weekdays 09:30–16:05 ET)
+ * results older than `maxAgeMs` (default 30 min) are refreshed; outside it,
+ * only when the result predates the most recent 16:05 ET close.
+ */
+export function breadthNeedsRefresh(generatedAtIso: string | null | undefined, now: number, maxAgeMs = 30 * 60_000): boolean {
+  if (!generatedAtIso) return true
+  const at = Date.parse(generatedAtIso)
+  if (!Number.isFinite(at)) return true
+  const { weekday, minutes } = etClock(now)
+  const inSession = WEEKDAYS.has(weekday) && minutes >= OPEN_MIN && minutes < CLOSE_MIN
+  if (inSession) return now - at > maxAgeMs
+  return at < lastCloseMs(now)
+}

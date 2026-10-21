@@ -33,7 +33,7 @@ interface Holdings {
 function HoldingsPanel({ ticker }: { ticker: string }) {
   const { data, error, loading } = useJson<Holdings>(`/api/pulse/holdings/${encodeURIComponent(ticker)}`)
   if (loading && !data) return <span className="text-[11px] text-terminal-muted">Loading top holdings…</span>
-  if (error) return <span className="text-[11px] text-terminal-red">Top holdings unavailable: {error}</span>
+  if (error) return <span className="text-[11px] text-terminal-dim">Top holdings are not available right now.</span>
   if (!data?.holdings.length) return <span className="text-[11px] text-terminal-muted">Yahoo lists no holdings for {ticker}.</span>
   return (
     <div>
@@ -77,6 +77,9 @@ const ETF_COLUMNS: Column<EtfRow>[] = [
 
 export function EtfTable({ list }: { list: EtfListId }) {
   const { data, error, loading, reload } = useJson<EtfListResponse>(`/api/pulse/etfs?list=${list}`, 5 * 60_000)
+  // Holdings come from Yahoo quoteSummary (crumb). Hide row expansion when the server reports it blocked.
+  const caps = useJson<{ holdings: boolean }>('/api/pulse/capabilities')
+  const holdingsOn = caps.data?.holdings !== false
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex shrink-0 items-center gap-3 px-2 py-1 text-[10px] text-terminal-dim">
@@ -102,7 +105,7 @@ export function EtfTable({ list }: { list: EtfListId }) {
           columns={ETF_COLUMNS}
           rowKey={(r) => r.ticker}
           defaultSort={{ key: 'perfDay', dir: 'desc' }}
-          renderExpanded={(r) => <HoldingsPanel ticker={r.ticker} />}
+          renderExpanded={holdingsOn ? (r) => <HoldingsPanel ticker={r.ticker} /> : undefined}
         />
       )}
     </div>

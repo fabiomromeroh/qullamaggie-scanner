@@ -3,7 +3,7 @@
  * Yahoo requests (e.g. the box), then commit/push it like the membership file.
  */
 import { computeBreadth, snapshotPath, writeResultAtomic } from '../server/breadthJob.ts'
-import { membershipUniverse } from '../server/marketPulse.ts'
+import { membershipUniverse } from '../server/pulseShared.ts'
 
 async function main(): Promise<void> {
   const { tickers } = membershipUniverse()

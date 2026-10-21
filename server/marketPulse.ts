@@ -6,9 +6,12 @@
  * Groups themselves come from the scanner's GET /api/groups (Finviz), not from here.
  */
 import { ETF_LISTS, isEtfListId, TAPE_INDEXES, type EtfListId } from '../src/lib/etfLists.ts'
-import { computePerfRow, pickMovers, type PerfRow } from '../src/lib/perfWindows.ts'
+import { computePerfRow, pickMovers, type MoverInput, type PerfRow } from '../src/lib/perfWindows.ts'
 import { loadMembershipSnapshot } from './groupMembers.ts'
-import { getBatchQuotes, getDailySeries, getQuoteSummary, ttlMemo, yahooRequestCount, type BatchQuote } from './yahooClient.ts'
+import { membershipUniverse, sendJson } from './pulseShared.ts'
+import { getBreadthQuotes, maybeRefreshBreadth } from './breadthJob.ts'
+export { membershipUniverse, sendJson }
+import { crumbStatus, getBatchQuotes, getDailySeries, getQuoteSummary, ttlMemo, yahooRequestCount, type BatchQuote } from './yahooClient.ts'
 
 type MiniReq = { url?: string; method?: string }
 type MiniRes = {
@@ -62,25 +65,10 @@ export interface TapeResponse {
   losers: TapeItem[]
   moversUniverse: number
   moversMinDollarVolume: number
+  /** 'quote' = Yahoo v7 batch quotes; 'chart' = last bars from the breadth job's chart fetch. */
+  moversSource?: 'quote' | 'chart'
+  moversAsOf?: string
   moversError?: string
-}
-
-export function membershipUniverse(): { tickers: string[]; companies: Map<string, string>; groupOf: Map<string, string> } {
-  const loaded = loadMembershipSnapshot()
-  const tickers = new Set<string>()
-  const companies = new Map<string, string>()
-  const groupOf = new Map<string, string>()
-  if (loaded.ok) {
-    for (const [slug, g] of Object.entries(loaded.snapshot.groups)) {
-      for (const t of g.tickers) {
-        tickers.add(t)
-        if (!groupOf.has(t)) groupOf.set(t, slug)
-        const name = g.companies?.[t]
-        if (name) companies.set(t, name)
-      }
-    }
-  }
-  return { tickers: [...tickers].sort(), companies, groupOf }
 }
 
 const moversMemo = ttlMemo<BatchQuote[]>(10 * 60 * 1000)
@@ -108,17 +96,37 @@ export function getTape(): Promise<TapeResponse> {
     let gainers: TapeItem[] = []
     let losers: TapeItem[] = []
     let moversError: string | undefined
+    let moversSource: 'quote' | 'chart' | undefined
+    let moversAsOf: string | undefined
+    let inputs: MoverInput[] | null = null
     try {
       const quotes = await moversMemo('universe', () => getBatchQuotes(tickers))
-      const picked = pickMovers(
-        quotes.map((q) => ({ ticker: q.symbol, price: q.price, changePct: q.changePct, avgVolume: q.avgVolume ?? 0 })),
-        10,
-        MOVERS_MIN_DOLLAR_VOLUME,
-      )
+      inputs = quotes.map((q) => ({ ticker: q.symbol, price: q.price, changePct: q.changePct, avgVolume: q.avgVolume ?? 0 }))
+      moversSource = 'quote'
+      moversAsOf = new Date().toISOString()
+    } catch (err) {
+      const quoteError = err instanceof Error ? err.message : 'quotes failed'
+      // Crumb-free fallback: the breadth job's chart data (same Yahoo chart endpoint as the ETF tables).
+      const bq = getBreadthQuotes()
+      if (bq) {
+        inputs = [...bq.quotes.values()].map((q) => ({
+          ticker: q.ticker,
+          price: q.price,
+          changePct: q.changePct,
+          // price × avgVolume = 20-day average dollar volume, which is what the floor checks.
+          avgVolume: q.price > 0 ? q.dollarVolume20 / q.price : 0,
+        }))
+        moversSource = 'chart'
+        moversAsOf = bq.generatedAt
+      } else {
+        moversError = `waiting for the first breadth run (chart data); quote API: ${quoteError}`
+      }
+    }
+    maybeRefreshBreadth()
+    if (inputs) {
+      const picked = pickMovers(inputs, 10, MOVERS_MIN_DOLLAR_VOLUME)
       gainers = picked.gainers.map(({ ticker, price, changePct }) => ({ ticker, price, changePct }))
       losers = picked.losers.map(({ ticker, price, changePct }) => ({ ticker, price, changePct }))
-    } catch (err) {
-      moversError = err instanceof Error ? err.message : 'quotes failed'
     }
     return {
       asOf: new Date().toISOString(),
@@ -127,6 +135,7 @@ export function getTape(): Promise<TapeResponse> {
       losers,
       moversUniverse: tickers.length,
       moversMinDollarVolume: MOVERS_MIN_DOLLAR_VOLUME,
+      ...(moversSource ? { moversSource, moversAsOf } : {}),
       ...(moversError ? { moversError } : {}),
     }
   })
@@ -142,6 +151,38 @@ export interface GroupMemberRow {
   marketCap?: number
 }
 
+/** Member quotes when the batch-quote API is unavailable: breadth chart quotes, then per-ticker charts. */
+const MEMBER_CHART_LIMIT = 150
+
+async function memberChartQuotes(tickers: readonly string[]): Promise<{ rows: Map<string, GroupMemberRow>; source: string }> {
+  const rows = new Map<string, GroupMemberRow>()
+  const bq = getBreadthQuotes()
+  const missing: string[] = []
+  for (const t of tickers) {
+    const q = bq?.quotes.get(t)
+    if (q) rows.set(t, { ticker: t, price: q.price, changePct: q.changePct })
+    else missing.push(t)
+  }
+  await Promise.all(
+    missing.slice(0, MEMBER_CHART_LIMIT).map(async (t) => {
+      try {
+        const s = await getDailySeries(t, '2y')
+        const last = s.bars[s.bars.length - 1]
+        rows.set(t, {
+          ticker: t,
+          price: s.price,
+          changePct: s.prevClose > 0 ? (s.price / s.prevClose - 1) * 100 : undefined,
+          volume: last?.v,
+        })
+      } catch {
+        /* leave the member without a quote */
+      }
+    }),
+  )
+  const source = bq && missing.length < tickers.length ? `Yahoo chart data (breadth run ${bq.generatedAt})` : 'Yahoo chart data'
+  return { rows, source }
+}
+
 const membersMemo = ttlMemo<BatchQuote[]>(5 * 60 * 1000)
 
 export async function getGroupMembers(slug: string): Promise<{
@@ -149,6 +190,7 @@ export async function getGroupMembers(slug: string): Promise<{
   name: string
   generatedAt: string
   members: GroupMemberRow[]
+  quotesSource?: string
   quotesError?: string
 } | null> {
   const loaded = loadMembershipSnapshot()
@@ -157,10 +199,18 @@ export async function getGroupMembers(slug: string): Promise<{
   if (!group) return null
   let quotes: BatchQuote[] = []
   let quotesError: string | undefined
+  let quotesSource = 'Yahoo quotes'
+  let chartRows: Map<string, GroupMemberRow> | null = null
   try {
     quotes = await membersMemo(slug, () => getBatchQuotes(group.tickers))
   } catch (err) {
-    quotesError = err instanceof Error ? err.message : 'quotes failed'
+    try {
+      const fb = await memberChartQuotes(group.tickers)
+      chartRows = fb.rows
+      quotesSource = fb.source
+    } catch {
+      quotesError = err instanceof Error ? err.message : 'quotes failed'
+    }
   }
   const bySym = new Map(quotes.map((q) => [q.symbol, q]))
   return {
@@ -169,6 +219,8 @@ export async function getGroupMembers(slug: string): Promise<{
     generatedAt: loaded.snapshot.generatedAt,
     members: group.tickers.map((t) => {
       const q = bySym.get(t)
+      const c = chartRows?.get(t)
+      if (c) return { ...c, company: group.companies?.[t] }
       return {
         ticker: t,
         company: group.companies?.[t] ?? q?.name,
@@ -177,6 +229,7 @@ export async function getGroupMembers(slug: string): Promise<{
           : {}),
       }
     }),
+    quotesSource,
     ...(quotesError ? { quotesError } : {}),
   }
 }
@@ -206,13 +259,6 @@ export function getEtfHoldings(symbol: string): Promise<{ symbol: string; holdin
     }
     return { symbol, holdings }
   })
-}
-
-export function sendJson(res: MiniRes, status: number, body: unknown): void {
-  res.statusCode = status
-  res.setHeader('Content-Type', 'application/json; charset=utf-8')
-  res.setHeader('Cache-Control', 'no-store')
-  res.end(JSON.stringify(body))
 }
 
 export function createPulseMiddleware() {
@@ -247,6 +293,11 @@ export function createPulseMiddleware() {
       const h = pathname.match(/^\/api\/pulse\/holdings\/([A-Z0-9.^=-]{1,12})$/i)
       if (h) {
         sendJson(res, 200, await getEtfHoldings(h[1]!.toUpperCase()))
+        return
+      }
+      if (pathname === '/api/pulse/capabilities') {
+        // Holdings need Yahoo's crumb; when it is blocked the UI hides the holdings section.
+        sendJson(res, 200, { holdings: crumbStatus() !== 'blocked', yahooCrumb: crumbStatus() })
         return
       }
       if (pathname === '/api/pulse/stats') {
