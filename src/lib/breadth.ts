@@ -461,3 +461,16 @@ export function markPartial(rows: BreadthRow[], generatedAtMs: number): BreadthR
 export function etTime(iso: string): string {
   return new Intl.DateTimeFormat('en-GB', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date(iso)) + ' ET'
 }
+
+/** Grouped header bands over the Market Monitor columns (left to right, after Date). */
+export const BREADTH_BANDS: { label: string; tone: 'primary' | 'secondary' | 'atr' | 'ma' | 'none'; keys: (BreadthColumn | 'universe')[] }[] = [
+  { label: 'Primary Breadth Indicators', tone: 'primary', keys: ['up4', 'down4', 'ratio5', 'ratio10'] },
+  {
+    label: 'Secondary Breadth Indicators',
+    tone: 'secondary',
+    keys: ['up25q', 'down25q', 'up25m', 'down25m', 'up50m', 'down50m', 'up13x34', 'down13x34'],
+  },
+  { label: 'ATR', tone: 'atr', keys: ['atrExt10'] },
+  { label: 'Moving Avg', tone: 'ma', keys: ['pctAbove50', 'pctAbove200'] },
+  { label: '', tone: 'none', keys: ['universe'] },
+]
