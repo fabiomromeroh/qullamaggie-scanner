@@ -33,3 +33,4 @@ dist-server
 data/scan-cache.json
 data/*.tmp
 server/data/*.tmp
+.test-build/

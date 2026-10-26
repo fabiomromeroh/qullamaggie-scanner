@@ -1,6 +1,6 @@
 /**
  * Refresh server/data/finviz-group-members.json from Finviz.
- * Run where finviz.com/screener.ashx answers. Does not overwrite the file
+ * Run where finviz.com/screener/stocks answers (new screener: embedded JSON rows + totalCount). Does not overwrite the file
  * unless every group page succeeds. Exits non-zero on a block or parse failure.
  */
 import { membershipSnapshotPath } from '../server/groupMembers.ts'

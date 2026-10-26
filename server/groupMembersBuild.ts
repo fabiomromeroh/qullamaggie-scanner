@@ -30,10 +30,99 @@ export class FinvizScreenerBlocked extends Error {
   }
 }
 
+type MemberRow = { ticker: string; company: string }
+
+/** Extract the bracket-balanced JSON value starting at `start` ('{' or '['). */
+function balancedJson(text: string, start: number): string | null {
+  const open = text[start]
+  if (open !== '{' && open !== '[') return null
+  let depth = 0
+  let inStr = false
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i]!
+    if (inStr) {
+      if (ch === '\\') i++
+      else if (ch === '"') inStr = false
+      continue
+    }
+    if (ch === '"') inStr = true
+    else if (ch === '{' || ch === '[') depth++
+    else if (ch === '}' || ch === ']') {
+      depth--
+      if (depth === 0) return text.slice(start, i + 1)
+    }
+  }
+  return null
+}
+
+/** New screener (finviz.com/screener/stocks): embedded `"rows":[…],"totalCount":N`. */
+export function parseScreenerEmbeddedJson(html: string): { rows: MemberRow[]; totalCount: number } | null {
+  const re = /"rows":\[/g
+  for (let m = re.exec(html); m; m = re.exec(html)) {
+    const arr = balancedJson(html, m.index + 7)
+    if (!arr) continue
+    const tail = html.slice(m.index + 7 + arr.length, m.index + 7 + arr.length + 200)
+    const tc = /^\s*,\s*"totalCount"\s*:\s*(\d+)/.exec(tail)
+    if (!tc) continue
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(arr)
+    } catch {
+      continue
+    }
+    if (!Array.isArray(parsed)) continue
+    const rows: MemberRow[] = []
+    for (const item of parsed) {
+      const text = (item as { text?: { ticker?: unknown; company?: unknown } })?.text
+      if (typeof text?.ticker !== 'string') continue
+      rows.push({ ticker: text.ticker, company: typeof text.company === 'string' ? text.company : '' })
+    }
+    return { rows, totalCount: Number(tc[1]) }
+  }
+  return null
+}
+
+/** Fallback: ticker cells / quote links when the JSON blob is absent. */
+export function parseScreenerTickerLinks(html: string): MemberRow[] {
+  const seen = new Set<string>()
+  const rows: MemberRow[] = []
+  const re = /data-ticker="([A-Z0-9.-]+)"|quote(?:\.ashx)?\?t=([A-Z0-9.-]+)/g
+  for (let m = re.exec(html); m; m = re.exec(html)) {
+    const t = (m[1] ?? m[2])!
+    if (seen.has(t)) continue
+    seen.add(t)
+    rows.push({ ticker: t, company: '' })
+  }
+  return rows
+}
+
+function totalCountOf(html: string): number | null {
+  const m = /"totalCount"\s*:\s*(\d+)/.exec(html)
+  return m ? Number(m[1]) : null
+}
+
+/** One screener page: rows plus Finviz's total match count when present. */
+export function screenerPageFromHtml(status: number, html: string): { rows: MemberRow[]; totalCount: number | null } {
+  if (status === 403 || status === 429 || status === 503) {
+    throw new FinvizScreenerBlocked(`Finviz screener blocked (HTTP ${status})`)
+  }
+  if (status < 200 || status >= 300) throw new Error(`Finviz screener HTTP ${status}`)
+  const embedded = parseScreenerEmbeddedJson(html)
+  if (embedded && (embedded.rows.length > 0 || embedded.totalCount === 0)) return embedded
+  if (looksLikeFinvizChallenge(html) && !embedded) {
+    throw new FinvizScreenerBlocked('Finviz screener blocked (challenge page)')
+  }
+  const total = totalCountOf(html)
+  if (total === 0) return { rows: [], totalCount: 0 }
+  const links = parseScreenerTickerLinks(html)
+  if (links.length > 0 && !html.includes('screener_table')) return { rows: links, totalCount: total }
+  return { rows: screenerRowsFromHtml(status, html), totalCount: total }
+}
+
 export function screenerRowsFromHtml(
   status: number,
   html: string,
-): { ticker: string; company: string }[] {
+): MemberRow[] {
   if (status === 403 || status === 429 || status === 503) {
     throw new FinvizScreenerBlocked(`Finviz screener blocked (HTTP ${status})`)
   }
@@ -137,7 +226,7 @@ export async function buildMembershipSnapshot(opts?: {
           )
           try {
             const page = await fetchTextRetried(url)
-            return screenerRowsFromHtml(page.status, page.html)
+            return screenerPageFromHtml(page.status, page.html)
           } catch (err) {
             const message = err instanceof Error ? err.message : 'page failed'
             throw new Error(`${item.slug} r=${offset}: ${message}`)
