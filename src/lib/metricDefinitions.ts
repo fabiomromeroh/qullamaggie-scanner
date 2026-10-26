@@ -291,7 +291,7 @@ const setupChipNote = (name: string) =>
 const earningsChipNote = (status: string) =>
   `The earnings chip includes or excludes status "${status}". Clearing the last chip selects every status again.`
 
-const BREADTH_UNIVERSE_TEXT = `Universe: Finviz membership snapshot tickers; a stock counts on a day only if that day's close ≥ $${BR.minPrice}, its 20-session average dollar volume (close × volume) ≥ $${BR.minDollarVolume20 / 1e6}M, and it has ≥ 21 prior daily bars. Yahoo 2y daily bars. The newest row uses today's partial (intraday) bar until the close.`
+const BREADTH_UNIVERSE_TEXT = `Universe: all US-listed common stocks from Nasdaq Trader's nasdaqlisted.txt + otherlisted.txt (ETFs, test issues, warrants, units, rights, preferreds and notes excluded; refreshed daily; falls back to the Finviz membership snapshot if the lists cannot be fetched); a stock counts on a day only if that day's close ≥ $${BR.minPrice}, its 20-session average dollar volume (close × volume) ≥ $${BR.minDollarVolume20 / 1e6}M, and it has ≥ 21 prior daily bars. Yahoo 2y daily bars. The newest row uses today's partial (intraday) bar until the close.`
 const BREADTH_SCALE_TEXT = `Colour thresholds for counts are Stockbee's (built on ~${STOCKBEE_UNIVERSE.toLocaleString('en-US')} stocks) scaled by universe ÷ ${STOCKBEE_UNIVERSE}.`
 
 export const METRIC_DEFS = {
@@ -962,26 +962,26 @@ export const METRIC_DEFS = {
   breadthDate: d('Date', 'Trading session (America/New_York date), newest first.', `The newest row is marked “intraday · as of HH:MM ET” while the US session is open (before 16:05 ET); it is replaced by the final row after the close. One row per session that has bars for at least half of the largest daily universe. ${BREADTH_UNIVERSE_TEXT}`),
   breadthUp4: d(
     'Up 4% Today',
-    'Stocks up 4% or more today on higher volume.',
-    `Count of eligible stocks with close ≥ +${BR.movePct}% vs the prior close AND volume above the prior day's volume (Stockbee 4% breakout). ${BREADTH_UNIVERSE_TEXT}`,
-    `Strong green when ≥ 300 scaled to the universe (scaledThreshold); otherwise green when it exceeds Down 4%. ${BREADTH_SCALE_TEXT} Intraday the volume test compares today's partial volume with yesterday's full volume, so the newest row undercounts until late in the session. While the session is open that row is flagged “intraday · as of HH:MM ET” and shows two counts: price-only (close ≥ +4%, no volume test) followed by “(N w/ vol)”, the full Stockbee rule. The row is finalised by the refresh after the 16:05 ET close.`,
+    'Stocks up 4% or more today; in brackets, those also on higher volume.',
+    `Main number: eligible stocks with close ≥ +${BR.movePct}% vs the prior close (price only). Bracketed “(N)”: the subset whose volume is also above the prior day's volume (Stockbee 4% breakout). ${BREADTH_UNIVERSE_TEXT}`,
+    `Strong green when ≥ 300 scaled to the universe (scaledThreshold); otherwise green when it exceeds Down 4%. ${BREADTH_SCALE_TEXT} Colours and the 5/10-day ratios use the price-only count. Intraday the bracketed volume test compares today's partial volume with yesterday's full volume, so it undercounts until late in the session; that row is flagged “intraday · as of HH:MM ET” and finalised by the refresh after the 16:05 ET close.`,
   ),
   breadthDown4: d(
     'Down 4% Today',
-    'Stocks down 4% or more today on higher volume.',
-    `Count of eligible stocks with close ≤ −${BR.movePct}% vs the prior close AND volume above the prior day's volume. ${BREADTH_UNIVERSE_TEXT}`,
-    `Strong red when ≥ 300 scaled to the universe; otherwise red when it exceeds Up 4%. ${BREADTH_SCALE_TEXT} Same intraday volume caveat as Up 4%: on the intraday row it shows the price-only count (close ≤ −4%) followed by “(N w/ vol)”, the full rule.`,
+    'Stocks down 4% or more today; in brackets, those also on higher volume.',
+    `Main number: eligible stocks with close ≤ −${BR.movePct}% vs the prior close (price only). Bracketed “(N)”: the subset whose volume is also above the prior day's volume. ${BREADTH_UNIVERSE_TEXT}`,
+    `Strong red when ≥ 300 scaled to the universe; otherwise red when it exceeds Up 4%. ${BREADTH_SCALE_TEXT} Same price-only colours / ratios and intraday volume caveat as Up 4%.`,
   ),
   breadthRatio5: d(
     '5 Day Ratio',
     'Up-4% total ÷ down-4% total over 5 sessions.',
-    `Σ Up 4% counts ÷ Σ Down 4% counts over the latest 5 rows (this row and the 4 before it). ∞ when the down total is 0; blank until 5 rows exist. ${BREADTH_UNIVERSE_TEXT}`,
+    `Σ price-only Up 4% counts ÷ Σ price-only Down 4% counts over the latest 5 rows (this row and the 4 before it). ∞ when the down total is 0; blank until 5 rows exist. ${BREADTH_UNIVERSE_TEXT}`,
     `Green ≥ 2 (strong ≥ 3), red ≤ 0.5 (strong ≤ 0.33).`,
   ),
   breadthRatio10: d(
     '10 Day Ratio',
     'Up-4% total ÷ down-4% total over 10 sessions.',
-    `Σ Up 4% counts ÷ Σ Down 4% counts over the latest 10 rows. ∞ when the down total is 0; blank until 10 rows exist. ${BREADTH_UNIVERSE_TEXT}`,
+    `Σ price-only Up 4% counts ÷ Σ price-only Down 4% counts over the latest 10 rows. ∞ when the down total is 0; blank until 10 rows exist. ${BREADTH_UNIVERSE_TEXT}`,
     `Green ≥ 2 (strong ≥ 3), red ≤ 0.5 (strong ≤ 0.33).`,
   ),
   breadthUp25q: d(
@@ -1022,14 +1022,14 @@ export const METRIC_DEFS = {
   ),
   breadthUp13x34: d(
     'Up 13% 34D',
-    'Stocks up 13% or more in 34 sessions.',
-    `Count of eligible stocks whose close is ≥ +${BR.days34Pct}% vs the close ${BR.daysSessions34} sessions earlier. ${BREADTH_UNIVERSE_TEXT}`,
+    'Stocks up 13% or more in 34 calendar days.',
+    `Count of eligible stocks whose close is ≥ +${BR.days34Pct}% vs the last close on or before ${BR.days34Calendar} calendar days earlier (≈ 23 sessions). ${BREADTH_UNIVERSE_TEXT}`,
     `Green when it exceeds Down 13% 34D.`,
   ),
   breadthDown13x34: d(
     'Dn 13% 34D',
-    'Stocks down 13% or more in 34 sessions.',
-    `Count of eligible stocks whose close is ≤ −${BR.days34Pct}% vs the close ${BR.daysSessions34} sessions earlier. ${BREADTH_UNIVERSE_TEXT}`,
+    'Stocks down 13% or more in 34 calendar days.',
+    `Count of eligible stocks whose close is ≤ −${BR.days34Pct}% vs the last close on or before ${BR.days34Calendar} calendar days earlier (≈ 23 sessions). ${BREADTH_UNIVERSE_TEXT}`,
     `Red when it exceeds Up 13% 34D.`,
   ),
   breadthAtrExt: d(
@@ -1053,7 +1053,7 @@ export const METRIC_DEFS = {
   breadthUniverse: d(
     'Universe',
     'Eligible stocks counted that day.',
-    `Number of membership-snapshot tickers that pass the day's price and liquidity filter. ${BREADTH_UNIVERSE_TEXT}`,
+    `Number of listed common stocks that pass the day's price and liquidity filter. ${BREADTH_UNIVERSE_TEXT}`,
     `Not coloured. Tickers Yahoo cannot serve are skipped (see the job's failed count).`,
   ),
 } as const satisfies Record<string, MetricDef>

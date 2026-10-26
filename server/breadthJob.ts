@@ -1,8 +1,9 @@
 /**
- * Breadth background job: Yahoo 2y daily bars for every membership-snapshot
- * ticker → per-day Stockbee-style counts (src/lib/breadth.ts).
+ * Breadth background job: Yahoo 2y daily bars for every US-listed common stock
+ * (server/breadthUniverse.ts, Finviz snapshot fallback) → per-day Stockbee-style
+ * counts (src/lib/breadth.ts).
  *
- * Cost: one Yahoo chart request per ticker (~1,850), gated by
+ * Cost: one Yahoo chart request per ticker (~5,500), gated by
  * BREADTH_CONCURRENCY (default 3) plus a short pause per request. Bars are
  * folded into per-day counters and discarded, so memory stays small.
  * Results go to memory and to a JSON file; a committed snapshot
@@ -28,6 +29,7 @@ import {
 } from '../src/lib/breadth.ts'
 import { sendJson, membershipUniverse } from './pulseShared.ts'
 import { fetchDailySeriesUncached } from './yahooClient.ts'
+import { loadBreadthUniverse, type UniverseSource } from './breadthUniverse.ts'
 import { createJobQueue } from './requestBudget.ts'
 
 export const BREADTH_DAYS = Number(process.env.BREADTH_DAYS) || 60
@@ -44,6 +46,9 @@ export interface BreadthResult {
   /** Last price / change / 20d $vol per ticker from the same chart data (tape movers, group members). */
   quotes?: ChartQuote[]
   source: 'yahoo'
+  /** Where the ticker list came from. */
+  universeSource?: UniverseSource
+  universeError?: string
 }
 
 export interface BreadthJobState {
@@ -152,14 +157,24 @@ export async function computeBreadth(
 
 export function startBreadthJob(): BreadthJobState {
   if (running) return job
-  const { tickers } = membershipUniverse()
-  job = { status: 'running', startedAt: new Date().toISOString(), done: 0, total: tickers.length, failed: 0 }
-  running = computeBreadth(tickers, {
-    onProgress: (done, failed) => {
-      job = { ...job, done, failed }
-    },
-  })
-    .then((r) => {
+  job = { status: 'running', startedAt: new Date().toISOString(), done: 0, total: 0, failed: 0 }
+  let universe: Awaited<ReturnType<typeof loadBreadthUniverse>> | null = null
+  running = loadBreadthUniverse(() => membershipUniverse().tickers)
+    .then((u) => {
+      universe = u
+      job = { ...job, total: u.tickers.length }
+      return computeBreadth(u.tickers, {
+        onProgress: (done, failed) => {
+          job = { ...job, done, failed }
+        },
+      })
+    })
+    .then((computed) => {
+      const r: BreadthResult = {
+        ...computed,
+        universeSource: universe?.source,
+        ...(universe?.error ? { universeError: universe.error } : {}),
+      }
       result = r
       try {
         writeResultAtomic(runtimeCachePath(), r)
@@ -167,7 +182,7 @@ export function startBreadthJob(): BreadthJobState {
         console.warn(`breadth cache write failed: ${err instanceof Error ? err.message : err}`)
       }
       job = { status: 'idle', done: job.done, total: job.total, failed: job.failed }
-      console.log(`breadth: ${r.rows.length} rows, ${r.requests} requests, ${r.failed} failed, ${r.runtimeMs}ms`)
+      console.log(`breadth: ${r.rows.length} rows, universe ${r.tickers} (${r.universeSource}), ${r.requests} requests, ${r.failed} failed, ${r.runtimeMs}ms`)
     })
     .catch((err: unknown) => {
       job = { ...job, status: 'error', error: err instanceof Error ? err.message : 'breadth job failed' }

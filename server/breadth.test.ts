@@ -102,11 +102,11 @@ test('10x ATR extension above the 50 SMA', () => {
   assert.equal(lastRow(series(80))!.atrExt10, 0)
 })
 
-test('ratios sum up/down 4% counts over 5 and 10 sessions, newest first', () => {
+test('ratios sum price-only up/down 4% counts over 5 and 10 sessions, newest first', () => {
   const acc = new Map<string, DayCounts>()
   for (let d = 1; d <= 12; d++) {
     const date = `2026-10-${String(d).padStart(2, '0')}`
-    acc.set(date, { ...emptyCounts(date), universe: 100, up4: d, down4: 2 })
+    acc.set(date, { ...emptyCounts(date), universe: 100, up4Price: d, down4Price: 2, up4: 0, down4: 0 })
   }
   const rows = finalizeRows(acc, 60)
   assert.equal(rows[0]!.date, '2026-10-12')
@@ -128,10 +128,10 @@ test('colour thresholds', () => {
   })
   assert.equal(scaledThreshold(300, 6000), 300)
   assert.equal(scaledThreshold(300, 1800), 90)
-  assert.equal(cellTone('up4', base({ up4: 300 })), 'strong-green')
-  assert.equal(cellTone('up4', base({ up4: 120, down4: 50 })), 'green')
-  assert.equal(cellTone('down4', base({ down4: 310 })), 'strong-red')
-  assert.equal(cellTone('up4', base({ universe: 1800, up4: 90 })), 'strong-green')
+  assert.equal(cellTone('up4', base({ up4Price: 300 })), 'strong-green')
+  assert.equal(cellTone('up4', base({ up4Price: 120, down4Price: 50 })), 'green')
+  assert.equal(cellTone('down4', base({ down4Price: 310 })), 'strong-red')
+  assert.equal(cellTone('up4', base({ universe: 1800, up4Price: 90 })), 'strong-green')
   assert.equal(cellTone('ratio5', base({ ratio5: 2.1 })), 'green')
   assert.equal(cellTone('ratio5', base({ ratio5: 3 })), 'strong-green')
   assert.equal(cellTone('ratio10', base({ ratio10: 0.45 })), 'red')
@@ -155,11 +155,11 @@ test('chart quote: change vs prior close and 20-day dollar volume', () => {
   assert.equal(chartQuote('X', { price: 0, prevClose: 10, bars }), null)
 })
 
-test('breadth refresh policy: 30 min in session, once after the close otherwise', () => {
+test('breadth refresh policy: 60 min in session, once after the close otherwise', () => {
   // Wed 2026-10-21 14:00 ET = 18:00Z (EDT).
   const inSession = Date.UTC(2026, 9, 21, 18, 0)
-  assert.equal(breadthNeedsRefresh(new Date(inSession - 20 * 60_000).toISOString(), inSession), false)
-  assert.equal(breadthNeedsRefresh(new Date(inSession - 40 * 60_000).toISOString(), inSession), true)
+  assert.equal(breadthNeedsRefresh(new Date(inSession - 50 * 60_000).toISOString(), inSession), false)
+  assert.equal(breadthNeedsRefresh(new Date(inSession - 70 * 60_000).toISOString(), inSession), true)
   // Wed 20:00 ET (00:00Z Thu): fresh if computed after 16:05 ET, stale if before.
   const evening = Date.UTC(2026, 9, 22, 0, 0)
   assert.equal(new Date(lastCloseMs(evening)).toISOString(), '2026-10-21T20:05:00.000Z')
@@ -191,4 +191,37 @@ test('markPartial flags only an in-session same-day newest row', async () => {
   assert.equal(etTime((r[0] as { asOf: string }).asOf), '12:48 ET')
   const after = markPartial([mk('2026-10-21')], Date.parse('2026-10-21T20:10:00Z'))
   assert.equal((after[0] as { partial?: boolean }).partial, undefined)
+})
+
+test('34-day move uses calendar days; header counts are unfiltered', async () => {
+  const { accumulateStock, emptyCounts: _e } = await import('../src/lib/breadth')
+  // 40 weekday sessions of a $1 penny stock and a liquid $10 stock; liquid one jumps +20% on the last day.
+  const start = Date.UTC(2026, 7, 3, 20) / 1000
+  const mk = (px: (i: number) => number, v: number) => {
+    const bars = []
+    let t = start
+    for (let i = 0; i < 60; i++) {
+      while ([0, 6].includes(new Date(t * 1000).getUTCDay())) t += 86_400
+      const c = px(i)
+      bars.push({ t, o: c, h: c, l: c, c, v })
+      t += 86_400
+    }
+    return bars
+  }
+  const liquid = mk((i) => (i === 59 ? 12 : 10), 1_000_000)
+  const penny = mk((i) => (i === 59 ? 1.1 : 1), 1_000_000)
+  const acc = new Map()
+  accumulateStock(liquid, 5, acc)
+  accumulateStock(penny, 5, acc)
+  const last = [...acc.values()].sort((a, b) => a.date.localeCompare(b.date)).at(-1)
+  assert.equal(last.listed, 2)
+  assert.equal(last.universe, 1)
+  assert.equal(last.advancing, 2)
+  assert.equal(last.up4Price, 1)
+  assert.equal(last.up13x34, 1)
+  // 34 calendar days ≈ 24 weekday sessions back: a +13% move 30 sessions ago is outside the window.
+  const old = mk((i) => (i >= 29 ? 12 : 10), 1_000_000)
+  const acc2 = new Map()
+  accumulateStock(old, 1, acc2)
+  assert.equal([...acc2.values()][0].up13x34, 0)
 })

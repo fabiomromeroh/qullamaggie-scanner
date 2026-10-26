@@ -63,8 +63,8 @@ const METRIC_OF: Record<BreadthColumn | 'universe', MetricId> = {
 }
 
 const COLUMNS: { key: BreadthColumn | 'universe'; label: string; title: string; fmt?: 'ratio' | 'pct' }[] = [
-  { key: 'up4', label: 'Up 4% Today', title: 'Close ≥ +4% vs prior close on higher volume than the prior day' },
-  { key: 'down4', label: 'Dn 4% Today', title: 'Close ≤ −4% vs prior close on higher volume than the prior day' },
+  { key: 'up4', label: 'Up 4% Today', title: 'Close ≥ +4% vs prior close (in brackets: also on higher volume than the prior day)' },
+  { key: 'down4', label: 'Dn 4% Today', title: 'Close ≤ −4% vs prior close (in brackets: also on higher volume than the prior day)' },
   { key: 'ratio5', label: '5D Ratio', title: 'Σ up-4% ÷ Σ down-4% over the last 5 sessions', fmt: 'ratio' },
   { key: 'ratio10', label: '10D Ratio', title: 'Σ up-4% ÷ Σ down-4% over the last 10 sessions', fmt: 'ratio' },
   { key: 'up25q', label: 'Up 25% Qtr', title: 'Close ≥ +25% vs 65 sessions ago' },
@@ -73,8 +73,8 @@ const COLUMNS: { key: BreadthColumn | 'universe'; label: string; title: string; 
   { key: 'down25m', label: 'Dn 25% Mo', title: 'Close ≤ −25% vs 21 sessions ago' },
   { key: 'up50m', label: 'Up 50% Mo', title: 'Close ≥ +50% vs 21 sessions ago' },
   { key: 'down50m', label: 'Dn 50% Mo', title: 'Close ≤ −50% vs 21 sessions ago' },
-  { key: 'up13x34', label: 'Up 13% 34D', title: 'Close ≥ +13% vs 34 sessions ago' },
-  { key: 'down13x34', label: 'Dn 13% 34D', title: 'Close ≤ −13% vs 34 sessions ago' },
+  { key: 'up13x34', label: 'Up 13% 34D', title: 'Close ≥ +13% vs 34 calendar days ago' },
+  { key: 'down13x34', label: 'Dn 13% 34D', title: 'Close ≤ −13% vs 34 calendar days ago' },
   { key: 'atrExt10', label: '10x ATR', title: '(Close − SMA50) ÷ ATR14 ≥ 10' },
   { key: 'pctAbove50', label: '>50dma', title: '% of stocks closing above their 50-day SMA', fmt: 'pct' },
   { key: 'pctAbove200', label: '>200dma', title: '% of stocks closing above their 200-day SMA', fmt: 'pct' },
@@ -185,14 +185,14 @@ export function BreadthModule() {
               rightLabel="Declining"
               left={latest.advancing}
               right={latest.declining}
-              note={`${latest.date}: ${latest.universe - latest.advancing - latest.declining} unchanged of ${latest.universe}`}
+              note={`${latest.date}: all ${(latest.listed ?? latest.universe).toLocaleString('en-US')} listed stocks (unfiltered), ${(latest.listed ?? latest.universe) - latest.advancing - latest.declining} unchanged`}
             />
             <SplitBar
               leftLabel="New High"
               rightLabel="New Low"
               left={latest.newHighs}
               right={latest.newLows}
-              note={`${latest.date}: 52-week highs vs lows`}
+              note={`${latest.date}: 52-week highs vs lows, all listed stocks (unfiltered)`}
             />
           </>
         ) : null}
@@ -260,9 +260,14 @@ export function BreadthModule() {
                     const tone = c.key === 'universe' ? null : cellTone(c.key, r)
                     return (
                       <td key={c.key} className={`whitespace-nowrap px-1.5 py-0.5 text-right ${tone ? TONE_CLASS[tone] : 'text-terminal-fg'}`}>
-                        {r.partial && (c.key === 'up4' || c.key === 'down4') && typeof r[c.key === 'up4' ? 'up4Price' : 'down4Price'] === 'number'
-                          ? `${r[c.key === 'up4' ? 'up4Price' : 'down4Price']} (${r[c.key]} w/ vol)`
-                          : fmt(r[c.key] as number | null, c.fmt)}
+                        {(c.key === 'up4' || c.key === 'down4') && typeof r[c.key === 'up4' ? 'up4Price' : 'down4Price'] === 'number' ? (
+                          <>
+                            {r[c.key === 'up4' ? 'up4Price' : 'down4Price']}
+                            <span className="ml-1 opacity-70">({r[c.key]})</span>
+                          </>
+                        ) : (
+                          fmt(r[c.key] as number | null, c.fmt)
+                        )}
                       </td>
                     )
                   })}
@@ -273,7 +278,7 @@ export function BreadthModule() {
         </div>
       )}
       <footer className="shrink-0 border-t border-terminal-border px-3 py-1 text-[10px] leading-snug text-terminal-dim">
-        Universe: Finviz membership snapshot, price ≥ $5 and 20-day avg $ volume ≥ $5M per day. Yahoo daily bars (2y).
+        Universe: all US-listed common stocks (Nasdaq Trader lists; Finviz snapshot fallback), price ≥ $5 and 20-day avg $ volume ≥ $5M per day; the Advancing/Declining and New High/Low bars use every listed stock unfiltered. Up/Down 4%: price-only, volume-rule count in brackets. Yahoo daily bars (2y).
         Colours: Up/Down 4% strong at ≥ {latest ? scaledThreshold(300, latest.universe) : '—'} (Stockbee's 300 scaled to this universe
         from ~6,000); 5/10-day ratio ≥ 2 green, ≤ 0.5 red; up/down pairs tint the larger side; Up 25% quarter ≤{' '}
         {latest ? scaledThreshold(200, latest.universe) : '—'} red; &gt;50/200dma ≥ 60% green, ≤ 40% red; 10x ATR ≥ 0.5% of universe amber.

@@ -4,15 +4,17 @@
  * Definitions (all per stock, per session `i`, using closes unless noted):
  *  - Eligible: close ≥ $5 and 20-session average dollar volume (close × volume) ≥ $5M,
  *    with at least 21 prior bars. Only eligible stocks count toward any column that day.
- *  - Up 4% today: close ≥ +4% vs prior close AND volume > prior volume (Stockbee 4% breakout).
- *    Down 4%: close ≤ −4% AND volume > prior volume.
- *  - 5 / 10 day ratio: Σ up-4% counts ÷ Σ down-4% counts over the last 5 / 10 sessions.
+ *  - Up 4% today (primary, `up4Price`): close ≥ +4% vs prior close. Down 4%: close ≤ −4%.
+ *    Secondary (`up4` / `down4`): the same AND volume > prior volume (Stockbee 4% breakout).
+ *  - 5 / 10 day ratio: Σ price-only up-4% ÷ Σ price-only down-4% over the last 5 / 10 sessions.
  *  - Up / down 25%+ quarter: close vs close 65 sessions earlier ≥ +25% / ≤ −25%.
  *  - Up / down 25%+ month: same vs 21 sessions; 50%+ month: ±50% vs 21 sessions.
- *  - Up / down 13%+ in 34 days: ±13% vs 34 sessions.
+ *  - Up / down 13%+ in 34 days: ±13% vs the last close on or before 34 calendar days earlier.
  *  - 10x ATR ext.: (close − SMA50) ÷ ATR14 ≥ 10 (Wilder-free simple mean of true range).
  *  - >50dma / >200dma: % of eligible stocks with close above the 50 / 200 SMA
  *    (denominator: eligible stocks that have that many bars).
+ *  - Advancing / declining and new highs / lows are counted over EVERY stock with a bar that
+ *    day (no price / liquidity filter), like the reference header bar.
  *  - Advancing / declining: close above / below prior close.
  *  - New 52w high / low: today's high ≥ max high of the prior 252 sessions /
  *    today's low ≤ min low of the prior 252 sessions (needs 252 prior bars).
@@ -33,7 +35,8 @@ export const BREADTH_RULES = {
   movePct: 4,
   quarterSessions: 65,
   monthSessions: 21,
-  daysSessions34: 34,
+  /** 13% move lookback in calendar days. */
+  days34Calendar: 34,
   quarterPct: 25,
   monthPct: 25,
   month50Pct: 50,
@@ -46,6 +49,8 @@ export const BREADTH_RULES = {
 export interface DayCounts {
   date: string
   universe: number
+  /** Every stock with a bar that day (no filter); denominator of advancing / declining / highs / lows. */
+  listed: number
   up4: number
   down4: number
   /** Price-only ±4% counts (no volume condition). */
@@ -97,6 +102,7 @@ export function emptyCounts(date: string): DayCounts {
   return {
     date,
     universe: 0,
+    listed: 0,
     up4: 0,
     down4: 0,
     up4Price: 0,
@@ -149,21 +155,37 @@ export function accumulateStock(bars: readonly BreadthBar[], days: number, acc: 
   const avg = (sum: Float64Array, end: number, len: number) => (sum[end + 1]! - sum[end + 1 - len]!) / len
 
   const start = Math.max(21, n - days)
+  let cal34 = 0
   for (let i = start; i < n; i++) {
     const b = bars[i]!
     const prev = bars[i - 1]!
-    if (!(b.c >= R.minPrice) || !(prev.c > 0)) continue
-    if (avg(dvSum, i, 20) < R.minDollarVolume20) continue
+    if (!(prev.c > 0) || !(b.c > 0)) continue
     const date = etDate(b.t)
     let row = acc.get(date)
     if (!row) {
       row = emptyCounts(date)
       acc.set(date, row)
     }
-    row.universe++
-    const day = pct(prev.c, b.c)
+    // Unfiltered header counts: every listed stock with a bar today.
+    row.listed++
     if (b.c > prev.c) row.advancing++
     else if (b.c < prev.c) row.declining++
+    if (i >= R.highLowSessions) {
+      let hi = -Infinity
+      let lo = Infinity
+      for (let k = i - R.highLowSessions; k < i; k++) {
+        const x = bars[k]!
+        if (x.h > hi) hi = x.h
+        if (x.l < lo) lo = x.l
+      }
+      row.baseHighLow++
+      if (b.h >= hi) row.newHighs++
+      if (b.l <= lo) row.newLows++
+    }
+    if (!(b.c >= R.minPrice)) continue
+    if (avg(dvSum, i, 20) < R.minDollarVolume20) continue
+    row.universe++
+    const day = pct(prev.c, b.c)
     if (day >= R.movePct) row.up4Price++
     else if (day <= -R.movePct) row.down4Price++
     if (b.v > prev.v) {
@@ -185,7 +207,10 @@ export function accumulateStock(bars: readonly BreadthBar[], days: number, acc: 
       if (p >= R.month50Pct) row.up50m++
       else if (p <= -R.month50Pct) row.down50m++
     }
-    const d34 = back(R.daysSessions34)
+    // Last close on or before 34 calendar days earlier.
+    const cutoff = b.t - R.days34Calendar * 86_400
+    while (cal34 + 1 < i && bars[cal34 + 1]!.t <= cutoff) cal34++
+    const d34 = bars[cal34]!.t <= cutoff ? bars[cal34]!.c : null
     if (d34 && d34 > 0) {
       const p = pct(d34, b.c)
       if (p >= R.days34Pct) row.up13x34++
@@ -204,18 +229,6 @@ export function accumulateStock(bars: readonly BreadthBar[], days: number, acc: 
       row.base200++
       if (b.c > avg(closeSum, i, 200)) row.above200++
     }
-    if (i >= R.highLowSessions) {
-      let hi = -Infinity
-      let lo = Infinity
-      for (let k = i - R.highLowSessions; k < i; k++) {
-        const x = bars[k]!
-        if (x.h > hi) hi = x.h
-        if (x.l < lo) lo = x.l
-      }
-      row.baseHighLow++
-      if (b.h >= hi) row.newHighs++
-      if (b.l <= lo) row.newLows++
-    }
   }
 }
 
@@ -233,8 +246,8 @@ export function finalizeRows(acc: Map<string, DayCounts>, keep: number, minUnive
       let up = 0
       let down = 0
       for (let j = i - k + 1; j <= i; j++) {
-        up += asc[j]!.up4
-        down += asc[j]!.down4
+        up += asc[j]!.up4Price ?? asc[j]!.up4
+        down += asc[j]!.down4Price ?? asc[j]!.down4
       }
       return ratio(up, down)
     }
@@ -285,6 +298,14 @@ export type BreadthColumn =
  *  - >50dma / >200dma: ≥ 80 strong green, ≥ 60 green, ≤ 40 red, ≤ 20 strong red.
  *  - 10x ATR ext.: ≥ 0.5% of universe → amber (extended tape).
  */
+/** Primary (price-only) 4% counts; older cached rows without them fall back to the volume-rule count. */
+export function up4Of(row: DayCounts): number {
+  return typeof row.up4Price === 'number' ? row.up4Price : row.up4
+}
+export function down4Of(row: DayCounts): number {
+  return typeof row.down4Price === 'number' ? row.down4Price : row.down4
+}
+
 export function cellTone(col: BreadthColumn, row: BreadthRow): Tone {
   const u = row.universe
   const pair = (up: number, down: number, side: 'up' | 'down'): Tone => {
@@ -294,11 +315,11 @@ export function cellTone(col: BreadthColumn, row: BreadthRow): Tone {
   }
   switch (col) {
     case 'up4':
-      if (row.up4 >= scaledThreshold(300, u)) return 'strong-green'
-      return pair(row.up4, row.down4, 'up')
+      if (up4Of(row) >= scaledThreshold(300, u)) return 'strong-green'
+      return pair(up4Of(row), down4Of(row), 'up')
     case 'down4':
-      if (row.down4 >= scaledThreshold(300, u)) return 'strong-red'
-      return pair(row.up4, row.down4, 'down')
+      if (down4Of(row) >= scaledThreshold(300, u)) return 'strong-red'
+      return pair(up4Of(row), down4Of(row), 'down')
     case 'ratio5':
     case 'ratio10': {
       const r = row[col]
@@ -403,10 +424,10 @@ export function lastCloseMs(now: number): number {
 
 /**
  * Breadth refresh policy: during the US session (weekdays 09:30–16:05 ET)
- * results older than `maxAgeMs` (default 30 min) are refreshed; outside it,
+ * results older than `maxAgeMs` (default 60 min) are refreshed; outside it,
  * only when the result predates the most recent 16:05 ET close.
  */
-export function breadthNeedsRefresh(generatedAtIso: string | null | undefined, now: number, maxAgeMs = 30 * 60_000): boolean {
+export function breadthNeedsRefresh(generatedAtIso: string | null | undefined, now: number, maxAgeMs = 60 * 60_000): boolean {
   if (!generatedAtIso) return true
   const at = Date.parse(generatedAtIso)
   if (!Number.isFinite(at)) return true
