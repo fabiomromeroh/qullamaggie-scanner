@@ -11,7 +11,7 @@
     "start": "node server/prod.mjs",
     "build:breadth": "mkdir -p node_modules/.tmp && esbuild scripts/buildBreadth.ts --bundle --platform=node --format=esm --outfile=node_modules/.tmp/buildBreadth.mjs && node node_modules/.tmp/buildBreadth.mjs",
     "lint": "oxlint",
-    "test": "rm -rf node_modules/.tmp/tests && mkdir -p node_modules/.tmp/tests && esbuild server/*.test.ts --bundle --platform=node --format=esm --out-extension:.js=.mjs --outdir=node_modules/.tmp/tests && node --test node_modules/.tmp/tests/*.test.mjs",
+    "test": "rm -rf .test-build && mkdir -p .test-build && esbuild server/*.test.ts --bundle --platform=node --format=esm --out-extension:.js=.mjs --outdir=.test-build && node --test .test-build/*.test.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

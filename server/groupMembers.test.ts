@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { FinvizScreenerBlocked, screenerRowsFromHtml } from './groupMembersBuild.ts'
+import { readFileSync } from 'node:fs'
+import { FinvizScreenerBlocked, parseScreenerTickerLinks, screenerPageFromHtml, screenerRowsFromHtml } from './groupMembersBuild.ts'
 import {
   buildMembershipScreenerUrl,
   collectGroupMembers,
@@ -119,12 +120,12 @@ test('withRetries returns after two failures', async () => {
 
 test('membership screener url uses the performance view and liquidity filters', () => {
   const url = buildMembershipScreenerUrl('oilgasrefiningmarketing', 21, 5, 750_000)
-  assert.match(url, /finviz\.com\/screener\.ashx/)
+  assert.match(url, /finviz\.com\/screener\/stocks\?/)
   assert.match(url, /v=141/)
   assert.match(url, /r=21/)
   assert.match(url, /sh_price_o5/)
   assert.match(url, /sh_avgvol_o750/)
-  assert.match(url, /ind_oilgasrefiningmarketing/)
+  assert.match(url, /industry_oilgasrefiningmarketing/)
 })
 
 test('an empty Finviz screen is zero members; a missing table still fails', () => {
@@ -149,4 +150,45 @@ test('the built membership file loads', () => {
   assert.ok(oil?.tickers.includes('MPC'))
   assert.ok(oil?.tickers.includes('VLO'))
   assert.equal(isMembershipStale(loaded.snapshot.generatedAt, Date.parse(loaded.snapshot.generatedAt)), false)
+})
+
+const V2 = readFileSync('server/fixtures/finviz-screener-v2-sample.html', 'utf8')
+
+test('new Finviz screener: embedded JSON rows and totalCount', () => {
+  const page = screenerPageFromHtml(200, V2)
+  assert.equal(page.totalCount, 41)
+  assert.deepEqual(page.rows.map((r) => r.ticker), ['ADI', 'ALAB', page.rows[2]!.ticker])
+  assert.equal(page.rows[0]!.company, 'Analog Devices Inc')
+})
+
+test('new Finviz screener: falls back to ticker cells / quote links without the JSON', () => {
+  const noJson = V2.replace(/<script[\s\S]*?<\/script>/, '')
+  const page = screenerPageFromHtml(200, noJson)
+  assert.equal(page.rows.length, 3)
+  assert.equal(page.rows[0]!.ticker, 'ADI')
+  assert.deepEqual(parseScreenerTickerLinks('<a href="/quote?t=NVDA">x</a><a href="/quote?t=NVDA">'), [{ ticker: 'NVDA', company: '' }])
+})
+
+test('new Finviz screener: empty, blocked, challenge, and unparseable pages', () => {
+  assert.deepEqual(screenerPageFromHtml(200, '<html>{"rows":[],"totalCount":0}</html>'), { rows: [], totalCount: 0 })
+  assert.throws(() => screenerPageFromHtml(429, ''), (err: unknown) => err instanceof FinvizScreenerBlocked)
+  assert.throws(
+    () => screenerPageFromHtml(200, '<html><title>Just a moment...</title></html>'),
+    (err: unknown) => err instanceof FinvizScreenerBlocked,
+  )
+  assert.throws(() => screenerPageFromHtml(200, '<html>nothing</html>'), /parse failed/)
+})
+
+test('collectGroupMembers stops once totalCount is covered (no extra request)', async () => {
+  const offsets: number[] = []
+  const mk = (from: number) => Array.from({ length: 20 }, (_, i) => ({ ticker: `T${from + i}`, company: '' }))
+  const got = await collectGroupMembers(async (offset) => {
+    offsets.push(offset)
+    return { rows: mk(offset), totalCount: 40 }
+  })
+  assert.deepEqual(offsets, [1, 21])
+  assert.equal(got.tickers.length, 40)
+  assert.equal(got.truncated, false)
+  const capped = await collectGroupMembers(async (offset) => ({ rows: mk(offset), totalCount: 500 }), { maxPages: 2 })
+  assert.equal(capped.truncated, true)
 })

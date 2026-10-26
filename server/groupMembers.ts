@@ -58,9 +58,10 @@ export function buildMembershipScreenerUrl(
   minAvgVol: number,
 ): string {
   const tokens = finvizLiquidityTokens(minPrice, minAvgVol)
-  const url = new URL('https://finviz.com/screener.ashx')
+  // Finviz's current screener (screener.ashx is retired): industry_<slug> filter, 1-based r offset.
+  const url = new URL('https://finviz.com/screener/stocks')
   url.searchParams.set('v', '141')
-  url.searchParams.set('f', `ind_${slug},${tokens.price},${tokens.avgVol}`)
+  url.searchParams.set('f', `industry_${slug},${tokens.price},${tokens.avgVol}`)
   url.searchParams.set('r', String(offset))
   return url.toString()
 }
@@ -245,9 +246,18 @@ export interface CollectedMembers {
   truncated: boolean
 }
 
-/** Dedupe tickers. Stop on a short page, a page that adds nothing, or the page cap. */
+export interface MemberPage {
+  rows: { ticker: string; company: string }[]
+  /** Total matches reported by Finviz, when the page exposes it. */
+  totalCount?: number | null
+}
+
+/**
+ * Dedupe tickers. Stop on a short page, a page that adds nothing, once
+ * `totalCount` rows are covered, or the page cap.
+ */
 export async function collectGroupMembers(
-  fetchPage: (offset: number) => Promise<{ ticker: string; company: string }[]>,
+  fetchPage: (offset: number) => Promise<{ ticker: string; company: string }[] | MemberPage>,
   opts?: { maxPages?: number; pageSize?: number },
 ): Promise<CollectedMembers> {
   const maxPages = opts?.maxPages ?? MEMBERSHIP_MAX_PAGES
@@ -257,7 +267,9 @@ export async function collectGroupMembers(
   const seen = new Set<string>()
   let truncated = false
   for (let page = 0; page < maxPages; page++) {
-    const rows = await fetchPage(pageOffset(page, pageSize))
+    const got = await fetchPage(pageOffset(page, pageSize))
+    const rows = Array.isArray(got) ? got : got.rows
+    const total = Array.isArray(got) ? null : (got.totalCount ?? null)
     let added = 0
     for (const row of rows) {
       const ticker = row.ticker.trim().toUpperCase()
@@ -269,11 +281,12 @@ export async function collectGroupMembers(
       added++
     }
     const full = rows.length >= pageSize
-    if (!full || added === 0) {
+    const covered = total != null && (page + 1) * pageSize >= total
+    if (!full || added === 0 || covered) {
       truncated = false
       break
     }
-    if (page === maxPages - 1) truncated = true
+    if (page === maxPages - 1) truncated = total == null || total > maxPages * pageSize
   }
   return { tickers, companies, truncated }
 }
