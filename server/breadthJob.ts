@@ -29,6 +29,7 @@ import {
 } from '../src/lib/breadth.ts'
 import { sendJson, membershipUniverse } from './pulseShared.ts'
 import { fetchDailySeriesUncached } from './yahooClient.ts'
+import { getBreadthSummary } from './breadthSummary.ts'
 import { loadBreadthUniverse, type UniverseSource } from './breadthUniverse.ts'
 import { createJobQueue } from './requestBudget.ts'
 
@@ -224,6 +225,13 @@ export function createBreadthMiddleware() {
       maybeRefreshBreadth()
       const { quotes: _quotes, ...light } = body.result ?? {}
       sendJson(res, 200, { result: body.result ? light : null, job })
+      return
+    }
+    if (pathname === '/api/breadth/summary') {
+      if (!result) result = loadBestCached()
+      const ai = url.searchParams.get('ai') === '1'
+      const body = await getBreadthSummary(result ? { generatedAt: result.generatedAt, rows: result.rows } : null, { ai })
+      sendJson(res, 200, body)
       return
     }
     if (pathname === '/api/breadth/recompute') {
