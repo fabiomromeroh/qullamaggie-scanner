@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { MetricTip } from '../components/MetricTip'
 import type { MetricId } from '../lib/metricDefinitions'
-import { cellTone, etTime, scaledThreshold, splitShares, type BreadthColumn, type BreadthRow, type Tone } from '../lib/breadth'
+import { BREADTH_BANDS, cellTone, etTime, scaledThreshold, splitShares, type BreadthColumn, type BreadthRow, type Tone } from '../lib/breadth'
 
 interface BreadthResponse {
   result: {
@@ -62,6 +62,15 @@ const METRIC_OF: Record<BreadthColumn | 'universe', MetricId> = {
   universe: 'breadthUniverse',
 }
 
+/** Dark-theme band tints (reference: yellow / green / purple / blue). */
+const BAND_CLASS: Record<(typeof BREADTH_BANDS)[number]['tone'], string> = {
+  primary: 'bg-terminal-amber-dim text-terminal-amber border-terminal-amber/40',
+  secondary: 'bg-terminal-green-dim text-terminal-green border-terminal-green/40',
+  atr: 'bg-[#2b2140] text-[#c4a7ff] border-[#c4a7ff]/40',
+  ma: 'bg-[#16283d] text-terminal-blue border-terminal-blue/40',
+  none: 'border-transparent',
+}
+
 const COLUMNS: { key: BreadthColumn | 'universe'; label: string; title: string; fmt?: 'ratio' | 'pct' }[] = [
   { key: 'up4', label: 'Up 4% Today', title: 'Close ≥ +4% vs prior close (in brackets: also on higher volume than the prior day)' },
   { key: 'down4', label: 'Dn 4% Today', title: 'Close ≤ −4% vs prior close (in brackets: also on higher volume than the prior day)' },
@@ -109,19 +118,19 @@ function SplitBar({
   const { leftPct, rightPct } = splitShares(left, right)
   const empty = left + right === 0
   return (
-    <div className="min-w-0 basis-72 flex-1" title={note}>
-      <div className="mb-0.5 flex items-baseline justify-between gap-2 whitespace-nowrap text-[11px]">
-        <span className="min-w-0 truncate text-terminal-green">
-          {leftLabel} {leftPct.toFixed(1)}% <span className="text-terminal-dim">({left})</span>
+    <div className="w-[200px] shrink-0" title={note ? `${note} · ${leftLabel} ${left.toLocaleString('en-US')} / ${rightLabel} ${right.toLocaleString('en-US')}` : undefined}>
+      <div className="mb-0.5 flex items-baseline justify-between gap-2 whitespace-nowrap text-[10px] leading-tight">
+        <span className="text-terminal-green">
+          {leftLabel} {leftPct.toFixed(1)}%
         </span>
-        <span className="min-w-0 truncate text-right text-terminal-red">
-          {rightLabel} {rightPct.toFixed(1)}% <span className="text-terminal-dim">({right})</span>
+        <span className="text-right text-terminal-red">
+          {rightLabel} {rightPct.toFixed(1)}%
         </span>
       </div>
       <div
         role="img"
         aria-label={`${leftLabel} ${left}, ${rightLabel} ${right}`}
-        className="flex h-2 w-full overflow-hidden rounded bg-terminal-elevated"
+        className="flex h-1.5 w-full overflow-hidden rounded-sm bg-terminal-elevated"
       >
         {empty ? null : (
           <>
@@ -176,8 +185,10 @@ export function BreadthModule() {
   const latest = rows[0]
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-terminal-panel">
-      <div className="flex shrink-0 flex-wrap items-center gap-4 border-b border-terminal-border px-3 py-2">
+      <div className="grid shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-4 border-b border-terminal-border px-3 py-1.5">
         <h2 className="text-sm font-semibold text-terminal-fg">Market Monitor</h2>
+        {/* Compact bars, centred like the reference. */}
+        <div className="flex items-center justify-center gap-6">
         {latest ? (
           <>
             <SplitBar
@@ -196,7 +207,8 @@ export function BreadthModule() {
             />
           </>
         ) : null}
-        <div className="ml-auto flex items-center gap-2 text-[11px] text-terminal-dim">
+        </div>
+        <div className="flex items-center justify-end gap-2 text-[11px] text-terminal-dim">
           {running ? (
             <span className="text-terminal-amber">
               Computing… {data!.job.done}/{data!.job.total}
@@ -233,6 +245,18 @@ export function BreadthModule() {
           {/* Auto-width: columns size to content; narrow screens scroll horizontally. */}
           <table className="w-max border-collapse text-[12px]">
             <thead className="sticky top-0 z-10 bg-terminal-panel">
+              <tr className="text-[10px] font-semibold uppercase tracking-wide">
+                <th className="px-1.5" />
+                {BREADTH_BANDS.map((b) => (
+                  <th
+                    key={b.tone}
+                    colSpan={b.keys.length}
+                    className={`whitespace-nowrap border-b-2 border-x border-x-terminal-panel px-1.5 py-0.5 text-center ${BAND_CLASS[b.tone]}`}
+                  >
+                    {b.label}
+                  </th>
+                ))}
+              </tr>
               <tr className="border-b border-terminal-border text-[10px] uppercase text-terminal-dim">
                 <th className="whitespace-nowrap px-1.5 py-1 text-left font-medium">
                   <MetricTip id="breadthDate">Date</MetricTip>

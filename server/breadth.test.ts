@@ -225,3 +225,11 @@ test('34-day move uses calendar days; header counts are unfiltered', async () =>
   accumulateStock(old, 1, acc2)
   assert.equal([...acc2.values()][0].up13x34, 0)
 })
+
+test('header bands cover every Market Monitor column once, in order', async () => {
+  const { BREADTH_BANDS } = await import('../src/lib/breadth')
+  const keys = BREADTH_BANDS.flatMap((b) => b.keys)
+  assert.deepEqual(keys, ['up4', 'down4', 'ratio5', 'ratio10', 'up25q', 'down25q', 'up25m', 'down25m', 'up50m', 'down50m', 'up13x34', 'down13x34', 'atrExt10', 'pctAbove50', 'pctAbove200', 'universe'])
+  assert.equal(BREADTH_BANDS[0]!.label, 'Primary Breadth Indicators')
+  assert.equal(BREADTH_BANDS[1]!.label, 'Secondary Breadth Indicators')
+})
