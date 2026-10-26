@@ -51,10 +51,11 @@ test('partial intraday row is flagged in the read and the prompt', () => {
   assert.equal(summarizeBreadth([]), null)
 })
 
-test('provider selection prefers Grok, keys never leak, built-in fallback on failure', async () => {
+test('provider selection prefers Gemini, keys never leak, built-in fallback on failure', async () => {
   assert.equal(configuredProvider({}), null)
-  assert.deepEqual(configuredProvider({ XAI_API_KEY: 'k', GEMINI_API_KEY: 'g' }), { provider: 'grok', model: 'grok-4.7' })
-  assert.deepEqual(configuredProvider({ GEMINI_API_KEY: 'g' }), { provider: 'gemini', model: 'gemini-2.5-flash' })
+  assert.deepEqual(configuredProvider({ XAI_API_KEY: 'k', GEMINI_API_KEY: 'g' }), { provider: 'gemini', model: 'gemini-flash-latest' })
+  assert.deepEqual(configuredProvider({ XAI_API_KEY: 'k' }), { provider: 'grok', model: 'grok-4.7' })
+  assert.deepEqual(configuredProvider({ GEMINI_API_KEY: 'g' }), { provider: 'gemini', model: 'gemini-flash-latest' })
   resetSummaryCache()
   const input = { generatedAt: '2026-10-26T13:00:00.000Z', rows: series({}) }
   let calls = 0
@@ -82,4 +83,19 @@ test('provider selection prefers Grok, keys never leak, built-in fallback on fai
   assert.equal(f.source, 'built-in')
   assert.match(f.error ?? '', /Grok HTTP 401/)
   assert.ok(f.builtIn)
+})
+
+test('Gemini falls back to the lite alias when the first model is overloaded', async () => {
+  resetSummaryCache()
+  const urls: string[] = []
+  const f = (async (url: string) => {
+    urls.push(url)
+    if (url.includes('/gemini-flash-latest:')) return new Response('busy', { status: 503 })
+    return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: 'Regime: neutral' }] } }] }))
+  }) as unknown as typeof fetch
+  const r = await getBreadthSummary({ generatedAt: 'g1', rows: series({}) }, { ai: true, env: { GEMINI_API_KEY: 'g' } as NodeJS.ProcessEnv, fetchImpl: f })
+  assert.equal(r.source, 'gemini')
+  assert.equal(r.llm?.model, 'gemini-flash-lite-latest')
+  assert.equal(urls.length, 2)
+  assert.ok(!urls.some((u) => u.includes('key=')), 'key goes in a header, not the URL')
 })

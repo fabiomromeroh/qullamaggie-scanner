@@ -102,10 +102,10 @@ export function BreadthSummaryPanel({ snapshot }: { snapshot: string | null }) {
               disabled={asking}
               className="self-start rounded border border-terminal-border-bright px-2 py-0.5 text-[11px] text-terminal-fg hover:border-terminal-blue disabled:opacity-50"
             >
-              {asking ? 'Asking…' : data.llm ? `Refresh ${SOURCE_LABEL[data.llmProvider]} read` : `Ask ${SOURCE_LABEL[data.llmProvider]}`}
+              {asking ? 'Asking…' : 'Ask AI'}
             </button>
           ) : (
-            <div className="text-[10px] text-terminal-dim">Set XAI_API_KEY (Grok) or GEMINI_API_KEY on the server to add an AI read.</div>
+            <div className="text-[10px] text-terminal-dim">Set GEMINI_API_KEY (or XAI_API_KEY for Grok) on the server to add an AI read.</div>
           )}
           <div className="text-[10px] text-terminal-dim">Rules-based read of the breadth numbers only; not financial advice.</div>
         </>
