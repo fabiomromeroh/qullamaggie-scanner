@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { MetricTip } from '../components/MetricTip'
+import { BreadthSummaryPanel } from '../components/BreadthSummaryPanel'
 import type { MetricId } from '../lib/metricDefinitions'
 import { BREADTH_BANDS, cellTone, etTime, scaledThreshold, splitShares, type BreadthColumn, type BreadthRow, type Tone } from '../lib/breadth'
 
@@ -241,7 +242,8 @@ export function BreadthModule() {
               : 'Loading…'}
         </div>
       ) : (
-        <div className="min-h-0 flex-1 overflow-auto">
+        <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+        <div className="min-h-0 shrink overflow-auto max-lg:flex-1">
           {/* Auto-width: columns size to content; narrow screens scroll horizontally. */}
           <table className="w-max border-collapse text-[12px]">
             <thead className="sticky top-0 z-10 bg-terminal-panel">
@@ -299,6 +301,8 @@ export function BreadthModule() {
               ))}
             </tbody>
           </table>
+        </div>
+        <BreadthSummaryPanel snapshot={data?.result?.generatedAt ?? null} />
         </div>
       )}
       <footer className="shrink-0 border-t border-terminal-border px-3 py-1 text-[10px] leading-snug text-terminal-dim">
