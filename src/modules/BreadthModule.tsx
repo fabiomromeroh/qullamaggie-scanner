@@ -88,7 +88,7 @@ const COLUMNS: { key: BreadthColumn | 'universe'; label: string; title: string; 
   { key: 'atrExt10', label: '10x ATR', title: '(Close − SMA50) ÷ ATR14 ≥ 10' },
   { key: 'pctAbove50', label: '>50dma', title: '% of stocks closing above their 50-day SMA', fmt: 'pct' },
   { key: 'pctAbove200', label: '>200dma', title: '% of stocks closing above their 200-day SMA', fmt: 'pct' },
-  { key: 'universe', label: 'Univ.', title: 'Stocks passing the filter that day (price ≥ $5, 20d avg $vol ≥ $5M) — the base for every count and ratio; the Computed line’s larger number is all tickers fetched' },
+  { key: 'universe', label: 'Univ.', title: 'Stocks passing the filter that day (price ≥ $5, 20d avg volume > 100K shares, 20d avg $vol ≥ $5M) — the base for every count and ratio; the Computed line’s larger number is all tickers fetched' },
 ]
 
 function fmt(v: number | null | undefined, kind?: 'ratio' | 'pct'): string {
@@ -220,7 +220,7 @@ export function BreadthModule() {
           {data?.result ? (
             <span title={`${data.result.requests} Yahoo requests · ${data.result.failed} failed · ${(data.result.runtimeMs / 1000).toFixed(0)}s`}>
               Computed {new Date(data.result.generatedAt).toLocaleString()} ·{' '}
-              <span title="Tickers requested from Yahoo (all listed common stocks) · stocks with a bar on the latest day (Advancing/Declining and New High/Low use these) · stocks passing price ≥ $5 and 20-day avg $vol ≥ $5M (the Univ. column; every count and ratio in the table uses these)">
+              <span title="Tickers requested from Yahoo (all listed common stocks) · stocks with a bar on the latest day (Advancing/Declining and New High/Low use these) · stocks passing price ≥ $5, 20-day avg volume > 100K shares and 20-day avg $vol ≥ $5M (the Univ. column; every count and ratio in the table uses these)">
                 {data.result.tickers.toLocaleString('en-US')} fetched
                 {latest?.listed ? ` · ${latest.listed.toLocaleString('en-US')} listed` : ''}
                 {latest ? ` · ${latest.universe.toLocaleString('en-US')} in filter` : ''}
@@ -311,7 +311,7 @@ export function BreadthModule() {
         </div>
       )}
       <footer className="shrink-0 border-t border-terminal-border px-3 py-1 text-[10px] leading-snug text-terminal-dim">
-        Universe: all US-listed common stocks (Nasdaq Trader lists; Finviz snapshot fallback), price ≥ $5 and 20-day avg $ volume ≥ $5M per day; the Advancing/Declining and New High/Low bars use every listed stock unfiltered. Up/Down 4%: price-only, volume-rule count in brackets. Yahoo daily bars (2y).
+        Universe: all US-listed common stocks (Nasdaq Trader lists; Finviz snapshot fallback), price ≥ $5, 20-day avg volume &gt; 100K shares and 20-day avg $ volume ≥ $5M per day; the Advancing/Declining and New High/Low bars use every listed stock unfiltered. Up/Down 4%: price-only, volume-rule count in brackets. Yahoo daily bars (2y).
         Colours: Up/Down 4% strong at ≥ {latest ? scaledThreshold(300, latest.universe) : '—'} (Stockbee's 300 scaled to this universe
         from ~6,000); 5/10-day ratio ≥ 2 green, ≤ 0.5 red; up/down pairs tint the larger side; Up 25% quarter ≤{' '}
         {latest ? scaledThreshold(200, latest.universe) : '—'} red; &gt;50/200dma ≥ 60% green, ≤ 40% red; 10x ATR ≥ 0.5% of universe amber.

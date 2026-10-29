@@ -2,7 +2,8 @@
  * Stockbee-style Market Monitor breadth, computed from daily bars.
  *
  * Definitions (all per stock, per session `i`, using closes unless noted):
- *  - Eligible: close ≥ $5 and 20-session average dollar volume (close × volume) ≥ $5M,
+ *  - Eligible: close ≥ $5, 20-session average volume > 100,000 shares, and 20-session
+ *    average dollar volume (close × volume) ≥ $5M,
  *    with at least 21 prior bars. Only eligible stocks count toward any column that day.
  *  - Up 4% today (primary, `up4Price`): close ≥ +4% vs prior close. Down 4%: close ≤ −4%.
  *    Secondary (`up4` / `down4`): the same AND volume > prior volume (Stockbee 4% breakout).
@@ -31,6 +32,8 @@ export interface BreadthBar {
 
 export const BREADTH_RULES = {
   minPrice: 5,
+  /** 20-session average share volume must exceed this (strict >). */
+  minAvgVolume20: 100_000,
   minDollarVolume20: 5_000_000,
   movePct: 4,
   quarterSessions: 65,
@@ -143,11 +146,13 @@ export function accumulateStock(bars: readonly BreadthBar[], days: number, acc: 
   // Prefix sums for SMA / dollar volume / true range.
   const closeSum = new Float64Array(n + 1)
   const dvSum = new Float64Array(n + 1)
+  const volSum = new Float64Array(n + 1)
   const trSum = new Float64Array(n + 1)
   for (let i = 0; i < n; i++) {
     const b = bars[i]!
     closeSum[i + 1] = closeSum[i]! + b.c
     dvSum[i + 1] = dvSum[i]! + b.c * b.v
+    volSum[i + 1] = volSum[i]! + b.v
     const prevC = i > 0 ? bars[i - 1]!.c : b.c
     const tr = Math.max(b.h - b.l, Math.abs(b.h - prevC), Math.abs(b.l - prevC))
     trSum[i + 1] = trSum[i]! + tr
@@ -183,6 +188,7 @@ export function accumulateStock(bars: readonly BreadthBar[], days: number, acc: 
       if (b.l <= lo) row.newLows++
     }
     if (!(b.c >= R.minPrice)) continue
+    if (!(avg(volSum, i, 20) > R.minAvgVolume20)) continue
     if (avg(dvSum, i, 20) < R.minDollarVolume20) continue
     row.universe++
     const day = pct(prev.c, b.c)

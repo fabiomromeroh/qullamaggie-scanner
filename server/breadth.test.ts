@@ -233,3 +233,20 @@ test('header bands cover every Market Monitor column once, in order', async () =
   assert.equal(BREADTH_BANDS[0]!.label, 'Primary Breadth Indicators')
   assert.equal(BREADTH_BANDS[1]!.label, 'Secondary Breadth Indicators')
 })
+
+test('universe needs 20-day average volume > 100K shares as well as $5M', () => {
+  const mk = (c: number, v: number) => {
+    const bars = []
+    for (let i = 0; i < 30; i++) bars.push({ t: Date.UTC(2026, 8, 1 + i, 20) / 1000, o: c, h: c, l: c, c, v })
+    return bars
+  }
+  const count = (c: number, v: number) => {
+    const acc = new Map<string, DayCounts>()
+    accumulateStock(mk(c, v), 1, acc)
+    return [...acc.values()][0]!.universe
+  }
+  assert.equal(count(60, 100_000), 0, '100K exactly fails (strict >), though $6M passes')
+  assert.equal(count(60, 100_001), 1)
+  assert.equal(count(5, 900_000), 0, '$4.5M fails the dollar rule')
+  assert.equal(count(4.99, 5_000_000), 0, 'price < $5')
+})

@@ -291,7 +291,7 @@ const setupChipNote = (name: string) =>
 const earningsChipNote = (status: string) =>
   `The earnings chip includes or excludes status "${status}". Clearing the last chip selects every status again.`
 
-const BREADTH_UNIVERSE_TEXT = `Universe: all US-listed common stocks from Nasdaq Trader's nasdaqlisted.txt + otherlisted.txt (ETFs, test issues, warrants, units, rights, preferreds and notes excluded; refreshed daily; falls back to the Finviz membership snapshot if the lists cannot be fetched); a stock counts on a day only if that day's close ≥ $${BR.minPrice}, its 20-session average dollar volume (close × volume) ≥ $${BR.minDollarVolume20 / 1e6}M, and it has ≥ 21 prior daily bars. Yahoo 2y daily bars. The newest row uses today's partial (intraday) bar until the close.`
+const BREADTH_UNIVERSE_TEXT = `Universe: all US-listed common stocks from Nasdaq Trader's nasdaqlisted.txt + otherlisted.txt (ETFs, test issues, warrants, units, rights, preferreds and notes excluded; refreshed daily; falls back to the Finviz membership snapshot if the lists cannot be fetched); a stock counts on a day only if that day's close ≥ $${BR.minPrice}, its 20-session average volume > ${BR.minAvgVolume20.toLocaleString('en-US')} shares, its 20-session average dollar volume (close × volume) ≥ $${BR.minDollarVolume20 / 1e6}M, and it has ≥ 21 prior daily bars. Yahoo 2y daily bars. The newest row uses today's partial (intraday) bar until the close.`
 const BREADTH_SCALE_TEXT = `Colour thresholds for counts are Stockbee's (built on ~${STOCKBEE_UNIVERSE.toLocaleString('en-US')} stocks) scaled by universe ÷ ${STOCKBEE_UNIVERSE}.`
 
 export const METRIC_DEFS = {
@@ -1054,7 +1054,7 @@ export const METRIC_DEFS = {
     'Universe',
     'Eligible stocks counted that day.',
     `Number of listed common stocks that pass the day's price and liquidity filter. ${BREADTH_UNIVERSE_TEXT}`,
-    `Not coloured. Smaller than the “fetched” / “listed” numbers on the Computed line by design: about half of all listed stocks trade under $5 or under $5M a day and are left out of every column except the unfiltered Advancing/Declining and New High/Low bars. Tickers Yahoo cannot serve are skipped (see the job's failed count).`,
+    `Not coloured. Smaller than the “fetched” / “listed” numbers on the Computed line by design: about half of all listed stocks trade under $5, under 100K shares or under $5M a day and are left out of every column except the unfiltered Advancing/Declining and New High/Low bars. Tickers Yahoo cannot serve are skipped (see the job's failed count).`,
   ),
 } as const satisfies Record<string, MetricDef>
 
