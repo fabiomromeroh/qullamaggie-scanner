@@ -64,6 +64,8 @@ export function buildPrompt(summary: BreadthSummary, recent: readonly BreadthRow
       'You are a market-breadth analyst for a Qullamaggie-style momentum swing trader. Use ONLY the numbers given; never invent data, prices or news. Be concise.',
     user: [
       'Stockbee-style Market Monitor breadth, newest first (US common stocks, price >= $5, 20-day avg $vol >= $5M; advancing/declining and new highs/lows are unfiltered).',
+      'Field meanings (use these names, do not rename them): up4/down4 = stocks up/down >= 4% today (price only); ratio5/ratio10 = sum of up4 / sum of down4 over 5/10 sessions; up25q/down25q = up/down >= 25% vs 65 sessions ago (a QUARTER); up13x34/down13x34 = up/down >= 13% vs 34 calendar days ago; pctAbove50/pctAbove200 = % above the 50/200-day SMA; newHighs/newLows = 52-week highs/lows; advancing/declining = stocks closing up/down (counts, not volume).',
+      `Thrust rule: an up-thrust is up4 >= thrustThreshold (${summary.facts.thrustThreshold}); a down-thrust is down4 >= thrustThreshold. A count equal to or above the threshold CLEARS it. Today: up4 ${summary.facts.up4}, down4 ${summary.facts.down4}.`,
       `Rule-based read: regime=${summary.regime}, score=${summary.score}.`,
       `Latest facts: ${JSON.stringify(summary.facts)}`,
       `Last 10 sessions: ${JSON.stringify(history)}`,

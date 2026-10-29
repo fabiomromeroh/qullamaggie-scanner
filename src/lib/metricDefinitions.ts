@@ -1054,7 +1054,7 @@ export const METRIC_DEFS = {
     'Universe',
     'Eligible stocks counted that day.',
     `Number of listed common stocks that pass the day's price and liquidity filter. ${BREADTH_UNIVERSE_TEXT}`,
-    `Not coloured. Tickers Yahoo cannot serve are skipped (see the job's failed count).`,
+    `Not coloured. Smaller than the “fetched” / “listed” numbers on the Computed line by design: about half of all listed stocks trade under $5 or under $5M a day and are left out of every column except the unfiltered Advancing/Declining and New High/Low bars. Tickers Yahoo cannot serve are skipped (see the job's failed count).`,
   ),
 } as const satisfies Record<string, MetricDef>
 

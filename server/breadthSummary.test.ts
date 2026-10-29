@@ -46,7 +46,8 @@ test('weak and washout tapes; neutral when mixed', () => {
 test('partial intraday row is flagged in the read and the prompt', () => {
   const s = summarizeBreadth(series({ partial: true, asOf: '2026-10-26T17:00:00.000Z' }))!
   assert.equal(s.partial, true)
-  assert.ok(s.conclusions.some((c) => /intraday/.test(c)))
+  assert.ok(s.conclusions.some((c) => c.includes('intraday · as of 13:00 ET')))
+  assert.ok(!s.conclusions.some((c) => c.includes('T17:00')))
   assert.match(buildPrompt(s, series({ partial: true })).user, /intraday partial/)
   assert.equal(summarizeBreadth([]), null)
 })
@@ -99,3 +100,12 @@ test('Gemini falls back to the lite alias when the first model is overloaded', a
   assert.equal(urls.length, 2)
   assert.ok(!urls.some((u) => u.includes('key=')), 'key goes in a header, not the URL')
 })
+
+test('prompt defines column names and the thrust rule', () => {
+  const s = summarizeBreadth(series({ up4Price: 141, down4Price: 20 }))!
+  const p = buildPrompt(s, series({})).user
+  assert.match(p, /up25q\/down25q = up\/down >= 25% vs 65 sessions ago \(a QUARTER\)/)
+  assert.match(p, new RegExp(`thrustThreshold \\(${s.facts.thrustThreshold}\\)`))
+  assert.match(p, /CLEARS it/)
+})
+

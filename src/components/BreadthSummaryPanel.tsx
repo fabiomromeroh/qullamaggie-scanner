@@ -8,6 +8,7 @@ interface SummaryResponse {
   llmProvider: 'grok' | 'gemini' | null
   snapshot: string | null
   error?: string
+  job?: { status: 'idle' | 'running' | 'error'; done: number; total: number }
 }
 
 const REGIME_CLASS: Record<Regime, string> = {
@@ -28,12 +29,21 @@ export function BreadthSummaryPanel({ snapshot }: { snapshot: string | null }) {
 
   useEffect(() => {
     let alive = true
-    fetch('/api/breadth/summary')
-      .then((r) => r.json() as Promise<SummaryResponse>)
-      .then((j) => alive && setData(j))
-      .catch(() => alive && setError('Summary unavailable'))
+    let timer: ReturnType<typeof setTimeout> | undefined
+    // The endpoint starts the breadth job when nothing is cached; poll until a summary exists.
+    const load = () =>
+      fetch('/api/breadth/summary')
+        .then((r) => r.json() as Promise<SummaryResponse>)
+        .then((j) => {
+          if (!alive) return
+          setData(j)
+          if (!j.builtIn && j.job?.status === 'running') timer = setTimeout(load, 10_000)
+        })
+        .catch(() => alive && setError('Summary unavailable'))
+    load()
     return () => {
       alive = false
+      if (timer) clearTimeout(timer)
     }
   }, [snapshot])
 
@@ -62,7 +72,12 @@ export function BreadthSummaryPanel({ snapshot }: { snapshot: string | null }) {
         </span>
       </div>
       {!s ? (
-        <div className="text-terminal-muted">{error ?? (data ? 'No breadth data yet.' : 'Loading…')}</div>
+        <div className="text-terminal-muted">{error ??
+            (data?.job?.status === 'running'
+              ? `Computing breadth… ${data.job.done}/${data.job.total}`
+              : data
+                ? 'No breadth data yet.'
+                : 'Loading…')}</div>
       ) : (
         <>
           <div className="flex items-center gap-2">

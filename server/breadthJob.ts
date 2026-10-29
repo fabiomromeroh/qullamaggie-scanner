@@ -228,10 +228,13 @@ export function createBreadthMiddleware() {
       return
     }
     if (pathname === '/api/breadth/summary') {
-      if (!result) result = loadBestCached()
+      // Same as /api/breadth: load the cache, start the job when nothing is cached, refresh when stale.
+      const current = getBreadth()
+      maybeRefreshBreadth()
       const ai = url.searchParams.get('ai') === '1'
-      const body = await getBreadthSummary(result ? { generatedAt: result.generatedAt, rows: result.rows } : null, { ai })
-      sendJson(res, 200, body)
+      const r = current.result
+      const body = await getBreadthSummary(r ? { generatedAt: r.generatedAt, rows: r.rows } : null, { ai })
+      sendJson(res, 200, { ...body, job })
       return
     }
     if (pathname === '/api/breadth/recompute') {
