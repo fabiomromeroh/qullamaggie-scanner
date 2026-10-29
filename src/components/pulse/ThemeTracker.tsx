@@ -1,4 +1,5 @@
 import { useJson } from '../../hooks/useJson'
+import { membershipFilterFootnote } from '../../lib/membershipFootnote'
 import { fmtCompact, fmtPct, fmtPrice, pctClass } from '../../lib/pulseFormat'
 import type { GroupsResponse, IndustryGroup } from '../../types'
 import { TickerLink } from '../TickerModal'
@@ -8,6 +9,11 @@ interface MembersResponse {
   slug: string
   name: string
   generatedAt: string
+  filters?: { minPrice: number; minAvgVolume: number }
+  totalMembers?: number
+  filteredOut?: number
+  dollarVolumeFilterApplied?: boolean
+  minDollarVolume20?: number
   members: {
     ticker: string
     company?: string
@@ -16,6 +22,7 @@ interface MembersResponse {
     volume?: number
     avgVolume?: number
     marketCap?: number
+    dollarVolume20?: number
   }[]
   quotesSource?: string
   quotesError?: string
@@ -31,8 +38,8 @@ function GroupMembers({ group }: { group: IndustryGroup }) {
   return (
     <div>
       <div className="mb-1 text-[10px] text-terminal-dim">
-        {members.length} members from the Finviz membership snapshot ({data.generatedAt.slice(0, 10)}; price &gt; $5, avg vol
-        &gt; 750K) · {data.quotesSource ?? 'Yahoo quotes'}
+        {members.length} members from the Finviz membership snapshot ({data.generatedAt.slice(0, 10)};{' '}
+        {membershipFilterFootnote(data)}) · {data.quotesSource ?? 'Yahoo quotes'}
         {data.quotesError ? <span className="text-terminal-red"> · quotes unavailable: {data.quotesError}</span> : null}
       </div>
       <div className="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-x-4 gap-y-0.5 text-[11px]">
@@ -72,7 +79,7 @@ export function ThemeTracker() {
   const { data, error, loading, reload } = useJson<GroupsResponse>('/api/groups', 5 * 60_000)
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 items-center gap-3 px-2 py-1 text-[10px] text-terminal-dim">
+      <div className="flex w-0 min-w-full shrink-0 flex-wrap items-center gap-3 px-2 py-1 text-[10px] text-terminal-dim">
         <span>
           {data?.source === 'finviz'
             ? `Finviz industry groups${data.stale ? ' (stale cache)' : ''} · fetched ${new Date(data.fetchedAt).toLocaleTimeString()}`

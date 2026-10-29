@@ -7,9 +7,10 @@ export interface TickerModalTarget {
 
 export interface TickerModalApi {
   open: (target: TickerModalTarget) => void
+  close: () => void
 }
 
-export const TickerModalContext = createContext<TickerModalApi>({ open: () => {} })
+export const TickerModalContext = createContext<TickerModalApi>({ open: () => {}, close: () => {} })
 
 export function useTickerModal(): TickerModalApi {
   return useContext(TickerModalContext)

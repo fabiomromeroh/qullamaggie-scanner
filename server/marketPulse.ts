@@ -8,6 +8,7 @@
 import { ETF_LISTS, isEtfListId, TAPE_INDEXES, type EtfListId } from '../src/lib/etfLists.ts'
 import { computePerfRow, pickMovers, type MoverInput, type PerfRow } from '../src/lib/perfWindows.ts'
 import { loadMembershipSnapshot } from './groupMembers.ts'
+import { filterMembersByDollarVolume } from './memberDollarVolume.ts'
 import { membershipUniverse, sendJson } from './pulseShared.ts'
 import { getBreadthQuotes, maybeRefreshBreadth } from './breadthJob.ts'
 export { membershipUniverse, sendJson }
@@ -149,6 +150,8 @@ export interface GroupMemberRow {
   volume?: number
   avgVolume?: number
   marketCap?: number
+  /** 20-session average dollar volume from the breadth chart quotes, when known. */
+  dollarVolume20?: number
 }
 
 /** Member quotes when the batch-quote API is unavailable: breadth chart quotes, then per-ticker charts. */
@@ -189,7 +192,13 @@ export async function getGroupMembers(slug: string): Promise<{
   slug: string
   name: string
   generatedAt: string
+  filters: { minPrice: number; minAvgVolume: number }
   members: GroupMemberRow[]
+  totalMembers: number
+  filteredOut: number
+  /** False when breadth chart quotes are not loaded yet. Unknown names are kept either way. */
+  dollarVolumeFilterApplied: boolean
+  minDollarVolume20: number
   quotesSource?: string
   quotesError?: string
 } | null> {
@@ -213,22 +222,38 @@ export async function getGroupMembers(slug: string): Promise<{
     }
   }
   const bySym = new Map(quotes.map((q) => [q.symbol, q]))
+  const rows: GroupMemberRow[] = group.tickers.map((t) => {
+    const q = bySym.get(t)
+    const c = chartRows?.get(t)
+    if (c) return { ...c, company: group.companies?.[t] }
+    return {
+      ticker: t,
+      company: group.companies?.[t] ?? q?.name,
+      ...(q
+        ? { price: q.price, changePct: q.changePct, volume: q.volume, avgVolume: q.avgVolume, marketCap: q.marketCap }
+        : {}),
+    }
+  })
+  const breadth = getBreadthQuotes()
+  const dollarQuotes = breadth
+    ? new Map(
+        [...breadth.quotes.entries()].map(([ticker, quote]) => [
+          ticker.toUpperCase(),
+          { dollarVolume20: quote.dollarVolume20 },
+        ]),
+      )
+    : null
+  const filtered = filterMembersByDollarVolume(rows, dollarQuotes)
   return {
     slug,
     name: group.name,
     generatedAt: loaded.snapshot.generatedAt,
-    members: group.tickers.map((t) => {
-      const q = bySym.get(t)
-      const c = chartRows?.get(t)
-      if (c) return { ...c, company: group.companies?.[t] }
-      return {
-        ticker: t,
-        company: group.companies?.[t] ?? q?.name,
-        ...(q
-          ? { price: q.price, changePct: q.changePct, volume: q.volume, avgVolume: q.avgVolume, marketCap: q.marketCap }
-          : {}),
-      }
-    }),
+    filters: loaded.snapshot.filters,
+    members: filtered.members,
+    totalMembers: filtered.totalMembers,
+    filteredOut: filtered.filteredOut,
+    dollarVolumeFilterApplied: filtered.dollarVolumeFilterApplied,
+    minDollarVolume20: filtered.minDollarVolume20,
     quotesSource,
     ...(quotesError ? { quotesError } : {}),
   }

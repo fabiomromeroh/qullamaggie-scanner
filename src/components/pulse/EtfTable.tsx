@@ -82,7 +82,7 @@ export function EtfTable({ list }: { list: EtfListId }) {
   const holdingsOn = caps.data?.holdings !== false
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="flex shrink-0 items-center gap-3 px-2 py-1 text-[10px] text-terminal-dim">
+      <div className="flex w-0 min-w-full shrink-0 flex-wrap items-center gap-3 px-2 py-1 text-[10px] text-terminal-dim">
         <span>
           Yahoo daily bars · windows in sessions (W 5, M 21, 3M 63, 6M 126, Y 252) · YTD from last close of prior year
         </span>
