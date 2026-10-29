@@ -88,7 +88,7 @@ const COLUMNS: { key: BreadthColumn | 'universe'; label: string; title: string; 
   { key: 'atrExt10', label: '10x ATR', title: '(Close − SMA50) ÷ ATR14 ≥ 10' },
   { key: 'pctAbove50', label: '>50dma', title: '% of stocks closing above their 50-day SMA', fmt: 'pct' },
   { key: 'pctAbove200', label: '>200dma', title: '% of stocks closing above their 200-day SMA', fmt: 'pct' },
-  { key: 'universe', label: 'Univ.', title: 'Eligible stocks that day (price ≥ $5, 20d avg $vol ≥ $5M)' },
+  { key: 'universe', label: 'Univ.', title: 'Stocks passing the filter that day (price ≥ $5, 20d avg $vol ≥ $5M) — the base for every count and ratio; the Computed line’s larger number is all tickers fetched' },
 ]
 
 function fmt(v: number | null | undefined, kind?: 'ratio' | 'pct'): string {
@@ -219,7 +219,12 @@ export function BreadthModule() {
           {data?.job.status === 'error' ? <span className="text-terminal-red">Job failed: {data.job.error}</span> : null}
           {data?.result ? (
             <span title={`${data.result.requests} Yahoo requests · ${data.result.failed} failed · ${(data.result.runtimeMs / 1000).toFixed(0)}s`}>
-              Computed {new Date(data.result.generatedAt).toLocaleString()} · {data.result.tickers} tickers
+              Computed {new Date(data.result.generatedAt).toLocaleString()} ·{' '}
+              <span title="Tickers requested from Yahoo (all listed common stocks) · stocks with a bar on the latest day (Advancing/Declining and New High/Low use these) · stocks passing price ≥ $5 and 20-day avg $vol ≥ $5M (the Univ. column; every count and ratio in the table uses these)">
+                {data.result.tickers.toLocaleString('en-US')} fetched
+                {latest?.listed ? ` · ${latest.listed.toLocaleString('en-US')} listed` : ''}
+                {latest ? ` · ${latest.universe.toLocaleString('en-US')} in filter` : ''}
+              </span>
             </span>
           ) : null}
           <button

@@ -3,7 +3,7 @@
  * Pure: the same rows always give the same summary. Uses only fields the
  * breadth job computes; anything missing is skipped, never guessed.
  */
-import { down4Of, scaledThreshold, up4Of, type BreadthRow } from './breadth'
+import { down4Of, etTime, scaledThreshold, up4Of, type BreadthRow } from './breadth'
 
 export type Regime = 'strong' | 'healthy' | 'neutral' | 'weak' | 'washout'
 
@@ -125,7 +125,7 @@ export function summarizeBreadth(rows: readonly BreadthRow[]): BreadthSummary | 
   if (p50 != null && p50 >= 80) conclusions.push('Over 80% above the 50-day: extended; expect a pause, avoid chasing.')
   if (t.atrExt10 > 0 && t.atrExt10 >= Math.max(3, Math.round(t.universe * 0.005)))
     conclusions.push(`${t.atrExt10} stocks are 10× ATR above the 50-day: froth; trim extended leaders.`)
-  if (t.partial) conclusions.push(`Today's row is intraday (as of ${t.asOf ?? 'unknown'}); counts can still change before the close.`)
+  if (t.partial) conclusions.push(`Today's row is intraday · as of ${t.asOf ? etTime(t.asOf) : 'unknown time'}; counts can still change before the close.`)
 
   return {
     date: t.date,
