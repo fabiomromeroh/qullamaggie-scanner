@@ -13,6 +13,7 @@ import {
 } from '../lib/ideaFilters'
 import { metricTipAttrs, type MetricId } from '../lib/metricDefinitions'
 import { stageLabel } from '../lib/setupStage'
+import { LiquidityFilterBar } from './LiquidityFilterBar'
 import { MetricTip } from './MetricTip'
 
 const FILTERS_EXPAND_KEY = 'qm-filters-expanded'
@@ -545,9 +546,12 @@ export function FiltersBar({
           <span className="text-terminal-purple">Coiled</span> +{' '}
           <span className="text-terminal-amber">Triggering</span> (enable Watching to see
           base-builders). Group view starts with every stage. &gt; 10/20/50 SMA, Surfer, and
-          Tight consolidation start off in group view.
+          Tight consolidation start off in group view. Liquidity chips (Price &gt; $5, Avg vol
+          &gt; 100K, $Vol &gt; $20M) default on and stay visible.
         </p>
       ) : null}
+
+      <LiquidityFilterBar className={dense ? 'mb-1' : 'mb-2'} />
 
       <div className={`${expanded ? 'mt-1.5 block' : 'hidden'} md:mt-0 md:block`}>
         {filterBody}

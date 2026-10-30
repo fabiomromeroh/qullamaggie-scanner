@@ -307,6 +307,32 @@ async function loadProfile(
   return payload
 }
 
+const marketCapCache = createSymbolCache<number | null>({
+  ttlMs: PROFILE_CACHE_TTL_MS,
+  negativeTtlMs: PROFILE_NEGATIVE_TTL_MS,
+  isNegative: (value) => value == null,
+  staleOnError: true,
+})
+
+/**
+ * Finnhub profile2 market cap in dollars, without the Wikipedia lookup.
+ * Null when the key is missing, the profile has no cap, or the request fails.
+ */
+export async function fetchFinnhubMarketCap(
+  symbol: string,
+  token: string | undefined,
+): Promise<number | null> {
+  if (!token) return null
+  try {
+    return await marketCapCache.get(symbol, async () => {
+      const facts = await loadFinnhubFacts(symbol, token)
+      return facts.marketCap != null && facts.marketCap > 0 ? facts.marketCap : null
+    })
+  } catch {
+    return null
+  }
+}
+
 export async function fetchTickerProfile(
   symbol: string,
   finnhubKey: string | undefined,

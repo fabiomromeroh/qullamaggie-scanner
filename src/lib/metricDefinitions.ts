@@ -41,6 +41,12 @@ import {
   MEMBERSHIP_STALE_DAYS,
 } from './groupPeriod'
 import { LEADER_POOL_SIZE, PERIOD_SESSIONS } from './memberPerf'
+import {
+  LIQUIDITY_AVG_VOL_FLOOR,
+  LIQUIDITY_DOLLAR_VOL_FLOOR,
+  LIQUIDITY_FILTERS_KEY,
+  LIQUIDITY_PRICE_FLOOR,
+} from './liquidityFilters'
 import { SCAN_MIN_AVG_VOL_DEFAULT, SCAN_MIN_PRICE_DEFAULT, SCAN_STAGE1_CAP_DEFAULT, SCAN_STAGE1_PAGE_SIZE } from './scanDefaults'
 import { DEFAULT_FILTERS, DEFAULT_MIN_ADR_PCT, DEFAULT_MIN_AVG_DOLLAR_VOL, GROUP_VIEW_DEFAULT_FILTERS, MAX_EXTENSION_ADR50_PRESETS, MIN_ADR_PCT_PRESETS, NEAR_HIGHS_PRESETS } from '../types'
 import { SEARCH_POOL_NOTE } from './ideaFilters'
@@ -641,11 +647,29 @@ export const METRIC_DEFS = {
     `${rvolHow()} passesFilters drops the row when effective rvol < minRvol.`,
     `A blank or non-numeric input is stored as ${DEFAULT_FILTERS.minRvol}, which hides nothing. Finviz uses about a 3-month average, so this RVOL will not match Finviz.`,
   ),
+  filterPriceGt5: d(
+    'Price > $5',
+    'Hide names at or under $5.',
+    `Client-side liquidity toggle. A finite last price at or under $${LIQUIDITY_PRICE_FLOOR} is dropped when this is on. Unknown price is kept and shown as "?" — never guessed. Default on. Shared with Market Pulse (${LIQUIDITY_FILTERS_KEY}).`,
+    `Scanner Stage 1 still uses a looser universe floor (price ≥ $${SCAN_MIN_PRICE_DEFAULT}). This toggle does not change the server universe.`,
+  ),
+  filterAvgVol100k: d(
+    'Avg vol > 100K',
+    'Hide names at or under 100K average shares.',
+    `Client-side liquidity toggle. 20-day average share volume; derived as 20d dollar volume ÷ price when that pair is known. A finite value at or under ${LIQUIDITY_AVG_VOL_FLOOR.toLocaleString('en-US')} is dropped when this is on. Unknown is kept. Default on.`,
+    `Scanner Stage 1 still uses a looser universe floor (avg vol ≥ ${SCAN_MIN_AVG_VOL_DEFAULT.toLocaleString('en-US')}).`,
+  ),
+  filterDollarVol20m: d(
+    '$Vol > $20M',
+    'Hide names under $20M 20-day average dollar volume.',
+    `Client-side liquidity toggle. 20-session average of close × volume. A finite value below $${LIQUIDITY_DOLLAR_VOL_FLOOR / 1_000_000}M is dropped when this is on. Unknown is kept. Default on.`,
+    `On the scanner this sits next to Min DolVol (default $${DEFAULT_MIN_AVG_DOLLAR_VOL / 1_000_000}M). The stricter of the two floors applies. Breadth keeps its own $5 + $5M universe and does not use these toggles.`,
+  ),
   filterMinDollarVol: d(
     'Min DolVol',
     'Hide names under an average dollar-volume floor.',
     `${dolHow()} passesFilters drops the row when that average is a finite number below minAvgDollarVol. A missing average is kept.`,
-    `The box is millions of dollars. Default on a normal scan is ${dollarVolFloorM(DEFAULT_MIN_AVG_DOLLAR_VOL)} (${DEFAULT_MIN_AVG_DOLLAR_VOL} dollars). Group view defaults to ${dollarVolFloorM(GROUP_VIEW_DEFAULT_FILTERS.minAvgDollarVol)} (${GROUP_VIEW_DEFAULT_FILTERS.minAvgDollarVol} dollars). A blank input is stored as 0. migrateStoredFilters fills a missing value with the normal-scan default.`,
+    `The box is millions of dollars. Default on a normal scan is ${dollarVolFloorM(DEFAULT_MIN_AVG_DOLLAR_VOL)} (${DEFAULT_MIN_AVG_DOLLAR_VOL} dollars). Group view defaults to ${dollarVolFloorM(GROUP_VIEW_DEFAULT_FILTERS.minAvgDollarVol)} (${GROUP_VIEW_DEFAULT_FILTERS.minAvgDollarVol} dollars). A blank input is stored as 0. migrateStoredFilters fills a missing value with the normal-scan default. The shared $Vol > $20M toggle is independent; when both are on, the stricter (higher) floor applies.`,
   ),
   filterMaxPctFromHigh: d(
     'Near highs ≤',
@@ -749,7 +773,7 @@ export const METRIC_DEFS = {
   groupLeaders: d(
     'Leaders',
     'In-scan leaders over names with a number.',
-    `countGroupLeaders: N is how many of the pool have selected-period performance > 0 and also appear in the current scan. D is parsedCount, the pool rows that were passed in. The pool is the top ${LEADER_POOL_SIZE} snapshot members that have a real performance number, from names that cleared price > ${SCAN_MIN_PRICE_DEFAULT} and average volume > ${SCAN_MIN_AVG_VOL_DEFAULT} when the file was built. Scan membership stands in for above the 200-day and 50-day SMAs. inScanCount is null when the scan cache is not ready.`,
+    `countGroupLeaders: N is how many of the pool have selected-period performance > 0 and also appear in the current scan. D is parsedCount, the pool rows that were passed in. The pool is the top ${LEADER_POOL_SIZE} snapshot members that have a real performance number. The membership file is a size floor only; Price > $5 / Avg vol > 100K / $Vol > $20M are client-side UI toggles, not a hard-coded rebuild filter. Scan membership stands in for above the 200-day and 50-day SMAs. inScanCount is null when the scan cache is not ready.`,
     `On the internal fallback the cell is leaderCount instead: scan members in the group with pctFrom52wHigh >= -${FALLBACK_LEADER_NEAR_HIGH_PCT}. Leaders are requested for the first 25 groups in the current sort, plus the selected group. The amber line under the count lists the top names and whether each is in the scan.`,
   ),
   groupPerf1d: groupColumn('1d'),
@@ -780,7 +804,7 @@ export const METRIC_DEFS = {
   groupMembershipSnapshot: d(
     'Membership snapshot',
     'Date the industry membership file was built.',
-    `The YYYY-MM-DD prefix of membership.generatedAt. That file lists Finviz screener members (price > ${SCAN_MIN_PRICE_DEFAULT}, average volume > ${SCAN_MIN_AVG_VOL_DEFAULT}) and is read at request time. It is not rebuilt on the server.`,
+    `The YYYY-MM-DD prefix of membership.generatedAt. That file lists Finviz screener members at a size floor only (currently price > $1 and average volume > 50K on rebuild; older files may still carry a tighter stored floor). The $5 / 100K / $20M liquidity rules are client-side UI toggles. The file is read at request time and is not rebuilt on the server.`,
   ),
   groupScoreStale: d(
     'Score cache stale',
@@ -826,12 +850,12 @@ export const METRIC_DEFS = {
   scanUniverse: d(
     'Scan size',
     'How many symbols the run started with.',
-    `scanUniverseSize is the Stage 1 list length after the cap. The default universe is the members of the top 12 Finviz industry groups for the selected period (default ${GROUP_PERIODS[DEFAULT_GROUP_PERIOD].label}). If that build fails, Stage 1 asks Yahoo for US equities (quote type EQUITY) on NMS, NYQ, NGM, and NCM, price above the default ${SCAN_MIN_PRICE_DEFAULT}, average 3-month volume at least the default ${SCAN_MIN_AVG_VOL_DEFAULT}, page size ${SCAN_STAGE1_PAGE_SIZE}, cap default ${SCAN_STAGE1_CAP_DEFAULT}. The same cap applies to the leading-groups list. Env overrides of the Yahoo price, volume, and cap are applied on the server and are not shown here.`,
+    `scanUniverseSize is the Stage 1 list length after the cap. The default universe is the members of the top 12 Finviz industry groups for the selected period (default ${GROUP_PERIODS[DEFAULT_GROUP_PERIOD].label}). If that build fails, Stage 1 asks Yahoo for US equities (quote type EQUITY) on NMS, NYQ, NGM, and NCM, universe floor price ≥ ${SCAN_MIN_PRICE_DEFAULT} and average 3-month volume at least ${SCAN_MIN_AVG_VOL_DEFAULT}, page size ${SCAN_STAGE1_PAGE_SIZE}, cap default ${SCAN_STAGE1_CAP_DEFAULT}. The $5 / 100K / $20M liquidity rules are client-side UI toggles on the returned ideas. The same cap applies to the leading-groups list. Env overrides of the Yahoo price, volume, and cap are applied on the server and are not shown here.`,
   ),
   stage1Universe: d(
     'Stage 1 universe',
     'Names before the SMA prefilter.',
-    `stage1Count is the leading-groups list (members of the top 12 Finviz industries for the selected period, default ${GROUP_PERIODS[DEFAULT_GROUP_PERIOD].label}) or, when that build fails, the Yahoo screener (or the predefined-screen fallback, or the emergency fixed list). Yahoo fallback uses price above the default ${SCAN_MIN_PRICE_DEFAULT}, average volume at least the default ${SCAN_MIN_AVG_VOL_DEFAULT}, cap ${SCAN_STAGE1_CAP_DEFAULT}. The cap also applies to the leading-groups list.`,
+    `stage1Count is the leading-groups list (members of the top 12 Finviz industries for the selected period, default ${GROUP_PERIODS[DEFAULT_GROUP_PERIOD].label}) or, when that build fails, the Yahoo screener (or the predefined-screen fallback, or the emergency fixed list). Yahoo fallback uses a universe floor of price ≥ ${SCAN_MIN_PRICE_DEFAULT} and average volume at least ${SCAN_MIN_AVG_VOL_DEFAULT}, cap ${SCAN_STAGE1_CAP_DEFAULT}. The $5 / 100K / $20M liquidity rules are client-side. The cap also applies to the leading-groups list.`,
   ),
   leadingGroupsUniverse: d(
     'Leading groups',

@@ -134,9 +134,11 @@ export function parseSlugList(
 
 /**
  * Finviz price / average-volume filters are discrete buckets.
- * Scanner defaults (price > $5, avg volume >= 750_000) map to `sh_price_o5` and
- * `sh_avgvol_o750`. Any other pair falls back to those tokens — Finviz has no
- * bucket for an arbitrary env override, and we do not widen the screen.
+ * Membership size floor (price > $1, avg volume >= 50_000) maps to
+ * `sh_price_o1` and `sh_avgvol_o50`. Scanner Yahoo fallback uses its own
+ * universe floor. Any unmapped pair falls back to `sh_price_o5` /
+ * `sh_avgvol_o750` — Finviz has no bucket for an arbitrary env override.
+ * The $5 / 100K / $20M rules are client-side UI toggles, not these tokens.
  */
 const PRICE_TOKENS: Record<number, string> = {
   1: 'sh_price_o1',
@@ -193,12 +195,13 @@ export interface LeaderCandidate {
  * appears in the current scan results.
  *
  * The snapshot path passes pool members that have a performance number (top 20
- * by the selected period, from names that cleared price > $5 and average
- * volume > 750K when the membership file was built). The optional live
- * screener path passes that page's rows. Scan membership stands in for "above
- * the 200-day SMA": the cached scan only contains names that passed Stage 1,
- * Stage 1.5 (above 200 and above 50), and Stage 2. `inScanCount` is null when
- * `scanTickers` is null (cache not ready). `parsedCount` is `rows.length`.
+ * by the selected period, from names in the membership snapshot). The snapshot
+ * is a size floor only; $5 / 100K / $20M live in the UI liquidity toggles.
+ * The optional live screener path passes that page's rows. Scan membership
+ * stands in for "above the 200-day SMA": the cached scan only contains names
+ * that passed Stage 1, Stage 1.5 (above 200 and above 50), and Stage 2.
+ * `inScanCount` is null when `scanTickers` is null (cache not ready).
+ * `parsedCount` is `rows.length`.
  */
 export function countGroupLeaders(
   rows: LeaderCandidate[],

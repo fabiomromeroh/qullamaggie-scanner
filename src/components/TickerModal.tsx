@@ -1,21 +1,43 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useJson } from '../hooks/useJson'
+import { marketCapTag } from '../lib/marketCapTag'
 import { fmtCompact, fmtPct, fmtPrice, pctClass } from '../lib/pulseFormat'
+import { isTypingTarget } from '../lib/splitLayout'
+import {
+  normalizeTickerList,
+  stepTickerIndex,
+  tickerListPosition,
+} from '../lib/tickerListNav'
 import { TickerModalContext, useTickerModal, type TickerModalTarget } from '../lib/tickerModalContext'
 import { IntradayChart, type IntradayInterval } from './IntradayChart'
 import { TickerNews } from './TickerNews'
 
 const DailyChartPanel = lazy(() => import('./DailyChartPanel'))
 
-/** Clickable ticker that opens the shared ticker modal. */
-export function TickerLink({ ticker, name, className = '' }: { ticker: string; name?: string; className?: string }) {
+const EMPTY_TICKER_LIST: string[] = []
+
+/** Clickable ticker that opens the shared ticker modal. Pass `list` for arrow-key navigation. */
+export function TickerLink({
+  ticker,
+  name,
+  className = '',
+  list,
+  names,
+}: {
+  ticker: string
+  name?: string
+  className?: string
+  list?: readonly string[]
+  names?: Record<string, string>
+}) {
   const { open } = useTickerModal()
   return (
     <button
       type="button"
       onClick={(e) => {
         e.stopPropagation()
-        open({ ticker, name })
+        open({ ticker, name, list: list ? [...list] : undefined, names })
       }}
       className={`font-mono font-semibold text-terminal-blue hover:underline ${className}`}
     >
@@ -24,9 +46,30 @@ export function TickerLink({ ticker, name, className = '' }: { ticker: string; n
   )
 }
 
+function normalizeTarget(t: TickerModalTarget): TickerModalTarget {
+  const ticker = t.ticker.trim().toUpperCase()
+  const list = normalizeTickerList(t.list)
+  const names: Record<string, string> = {}
+  if (t.names) {
+    for (const [key, value] of Object.entries(t.names)) {
+      if (!value) continue
+      names[key.trim().toUpperCase()] = value
+    }
+  }
+  if (t.name) names[ticker] = t.name
+  return {
+    ticker,
+    name: names[ticker] ?? t.name,
+    ...(list.length ? { list } : {}),
+    ...(Object.keys(names).length ? { names } : {}),
+  }
+}
+
 interface Summary {
   symbol: string
   name?: string
+  /** Dollars. Null when neither the Yahoo quote nor the Finnhub profile has a cap. */
+  marketCap?: number | null
   quote: {
     price: number
     prevClose: number | null
@@ -256,9 +299,156 @@ function ChartTab({ target, summary }: { target: TickerModalTarget; summary: Sum
   )
 }
 
-function TickerModalBody({ target, onClose }: { target: TickerModalTarget; onClose: () => void }) {
+function MarketCapBadge({ marketCap }: { marketCap: number | null | undefined }) {
+  const tag = marketCapTag(marketCap)
+  if (!tag) return null
+  const title = marketCap != null && Number.isFinite(marketCap) ? `Market cap $${fmtCompact(marketCap)}` : undefined
+  return (
+    <span
+      className="rounded border border-terminal-border-bright bg-terminal-elevated px-1 py-px font-mono text-[10px] leading-none text-terminal-muted"
+      title={title}
+    >
+      {tag}
+    </span>
+  )
+}
+
+/** Shared ticker header, quote, and Chart / Fundamentals / News / Filings tabs. No overlay and no dismiss keys. */
+export function TickerDetail({ target, onClose }: { target: TickerModalTarget; onClose: () => void }) {
+  const { open } = useTickerModal()
   const [tab, setTab] = useState<Tab>('chart')
   const { data: summary, error } = useJson<Summary>(`/api/ticker/${encodeURIComponent(target.ticker)}/summary`, 60_000)
+  const name = summary?.name ?? target.name
+  const marketCap = summary?.marketCap ?? summary?.quote.marketCap
+  const list = target.list ?? EMPTY_TICKER_LIST
+  const position = tickerListPosition(list, target.ticker)
+  const canNav = list.length > 1 && position.index >= 0
+  const atStart = !canNav || position.index <= 0
+  const atEnd = !canNav || position.index >= list.length - 1
+
+  const go = useCallback(
+    (direction: 1 | -1) => {
+      const next = stepTickerIndex(list, target.ticker, direction)
+      if (next < 0) return false
+      const ticker = list[next]
+      if (!ticker) return false
+      open({
+        ticker,
+        name: target.names?.[ticker],
+        list,
+        names: target.names,
+      })
+      return true
+    },
+    [list, open, target.names, target.ticker],
+  )
+
+  useEffect(() => {
+    if (!canNav) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
+      if (isTypingTarget(e.target)) return
+      const direction: 1 | -1 = e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 1
+      if (!go(direction)) return
+      e.preventDefault()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [canNav, go])
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-terminal-border px-3 py-2">
+        {canNav ? (
+          <span className="flex items-center gap-0.5">
+            <button
+              type="button"
+              onClick={() => go(-1)}
+              disabled={atStart}
+              aria-label="Previous ticker"
+              className="rounded px-1 py-0.5 text-terminal-muted hover:bg-terminal-elevated hover:text-terminal-fg disabled:opacity-30"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => go(1)}
+              disabled={atEnd}
+              aria-label="Next ticker"
+              className="rounded px-1 py-0.5 text-terminal-muted hover:bg-terminal-elevated hover:text-terminal-fg disabled:opacity-30"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </span>
+        ) : null}
+        <span className="font-mono text-lg font-bold text-terminal-fg">{target.ticker}</span>
+        {canNav ? (
+          <span className="font-mono text-[11px] text-terminal-dim">
+            {position.index + 1} / {position.total}
+          </span>
+        ) : null}
+        {name ? <span className="max-w-96 truncate text-xs text-terminal-muted">{name}</span> : null}
+        <MarketCapBadge marketCap={marketCap} />
+        <span className="text-[11px] text-terminal-dim">
+          $Vol <span className="font-mono text-terminal-fg">{summary?.dollarVolume20 != null ? `$${fmtCompact(summary.dollarVolume20)}` : '—'}</span>
+        </span>
+        <span className="text-[11px] text-terminal-dim">
+          ADR% <span className="font-mono text-terminal-fg">{summary?.adrPct != null ? `${summary.adrPct.toFixed(2)}%` : '—'}</span>
+        </span>
+        <a
+          href={`https://www.tradingview.com/chart/?symbol=${encodeURIComponent(target.ticker)}`}
+          target="_blank"
+          rel="noreferrer"
+          className="text-[11px] text-terminal-blue hover:underline"
+        >
+          TradingView ↗
+        </a>
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          className="ml-auto rounded px-2 py-0.5 text-sm text-terminal-muted hover:bg-terminal-elevated hover:text-terminal-fg"
+        >
+          ✕
+        </button>
+      </div>
+      {summary ? <QuoteCard s={summary} /> : (
+        <div className="border-b border-terminal-border px-3 py-2 text-xs text-terminal-muted">
+          {error ? `Quote unavailable: ${error}` : 'Loading quote…'}
+        </div>
+      )}
+      <div role="tablist" className="flex shrink-0 gap-1 border-b border-terminal-border px-2 pt-1">
+        {(['chart', 'fundamentals', 'news', 'filings'] as Tab[]).map((t) => (
+          <button
+            key={t}
+            type="button"
+            role="tab"
+            aria-selected={tab === t}
+            onClick={() => setTab(t)}
+            className={`rounded-t px-3 py-1 text-xs capitalize ${
+              tab === t ? 'border border-b-0 border-terminal-border-bright bg-terminal-elevated text-terminal-fg' : 'text-terminal-muted hover:text-terminal-fg'
+            }`}
+          >
+            {t}
+          </button>
+        ))}
+      </div>
+      <div className="min-h-0 flex-1">
+        {tab === 'chart' ? <ChartTab target={target} summary={summary} /> : null}
+        {tab === 'fundamentals' ? <FundamentalsTab symbol={target.ticker} /> : null}
+        {tab === 'news' ? (
+          <div className="h-full overflow-auto p-3">
+            <TickerNews symbol={target.ticker} />
+          </div>
+        ) : null}
+        {tab === 'filings' ? <FilingsTab symbol={target.ticker} /> : null}
+      </div>
+    </div>
+  )
+}
+
+function TickerModalBody({ target, onClose }: { target: TickerModalTarget; onClose: () => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
@@ -266,7 +456,6 @@ function TickerModalBody({ target, onClose }: { target: TickerModalTarget; onClo
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [onClose])
-  const name = summary?.name ?? target.name
   return (
     <div
       className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 p-2 sm:p-6"
@@ -280,63 +469,7 @@ function TickerModalBody({ target, onClose }: { target: TickerModalTarget; onClo
         aria-label={`${target.ticker} details`}
         className="flex h-[90dvh] w-full max-w-6xl flex-col overflow-hidden rounded-lg border border-terminal-border-bright bg-terminal-panel shadow-2xl"
       >
-        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-terminal-border px-3 py-2">
-          <span className="font-mono text-lg font-bold text-terminal-fg">{target.ticker}</span>
-          {name ? <span className="max-w-96 truncate text-xs text-terminal-muted">{name}</span> : null}
-          <span className="text-[11px] text-terminal-dim">
-            $Vol <span className="font-mono text-terminal-fg">{summary?.dollarVolume20 != null ? `$${fmtCompact(summary.dollarVolume20)}` : '—'}</span>
-          </span>
-          <span className="text-[11px] text-terminal-dim">
-            ADR% <span className="font-mono text-terminal-fg">{summary?.adrPct != null ? `${summary.adrPct.toFixed(2)}%` : '—'}</span>
-          </span>
-          <a
-            href={`https://www.tradingview.com/chart/?symbol=${encodeURIComponent(target.ticker)}`}
-            target="_blank"
-            rel="noreferrer"
-            className="text-[11px] text-terminal-blue hover:underline"
-          >
-            TradingView ↗
-          </a>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="ml-auto rounded px-2 py-0.5 text-sm text-terminal-muted hover:bg-terminal-elevated hover:text-terminal-fg"
-          >
-            ✕
-          </button>
-        </div>
-        {summary ? <QuoteCard s={summary} /> : (
-          <div className="border-b border-terminal-border px-3 py-2 text-xs text-terminal-muted">
-            {error ? `Quote unavailable: ${error}` : 'Loading quote…'}
-          </div>
-        )}
-        <div role="tablist" className="flex shrink-0 gap-1 border-b border-terminal-border px-2 pt-1">
-          {(['chart', 'fundamentals', 'news', 'filings'] as Tab[]).map((t) => (
-            <button
-              key={t}
-              type="button"
-              role="tab"
-              aria-selected={tab === t}
-              onClick={() => setTab(t)}
-              className={`rounded-t px-3 py-1 text-xs capitalize ${
-                tab === t ? 'border border-b-0 border-terminal-border-bright bg-terminal-elevated text-terminal-fg' : 'text-terminal-muted hover:text-terminal-fg'
-              }`}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
-        <div className="min-h-0 flex-1">
-          {tab === 'chart' ? <ChartTab target={target} summary={summary} /> : null}
-          {tab === 'fundamentals' ? <FundamentalsTab symbol={target.ticker} /> : null}
-          {tab === 'news' ? (
-            <div className="h-full overflow-auto p-3">
-              <TickerNews symbol={target.ticker} />
-            </div>
-          ) : null}
-          {tab === 'filings' ? <FilingsTab symbol={target.ticker} /> : null}
-        </div>
+        <TickerDetail key={target.ticker} target={target} onClose={onClose} />
       </div>
     </div>
   )
@@ -344,9 +477,9 @@ function TickerModalBody({ target, onClose }: { target: TickerModalTarget; onClo
 
 export function TickerModalProvider({ children }: { children: ReactNode }) {
   const [target, setTarget] = useState<TickerModalTarget | null>(null)
-  const open = useCallback((t: TickerModalTarget) => setTarget({ ...t, ticker: t.ticker.toUpperCase() }), [])
+  const open = useCallback((t: TickerModalTarget) => setTarget(normalizeTarget(t)), [])
   const close = useCallback(() => setTarget(null), [])
-  const value = useMemo(() => ({ open }), [open])
+  const value = useMemo(() => ({ open, close }), [open, close])
   return (
     <TickerModalContext.Provider value={value}>
       {children}

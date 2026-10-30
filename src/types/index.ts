@@ -675,6 +675,12 @@ export const DEFAULT_MIN_AVG_DOLLAR_VOL = 30_000_000
 /** Group-view cap on ADR extension from the 50 SMA. Selectable in {@link MAX_EXTENSION_ADR50_PRESETS}. */
 export const GROUP_VIEW_MAX_EXTENSION_ADR50 = 4
 
+/**
+ * Liquidity toggles (Price > $5, Avg vol > 100K, $Vol > $20M) are shared
+ * client-side filters in `src/lib/liquidityFilters.ts`, default ON, and
+ * are not fields of this object. Min DolVol ($30M) still applies; when the
+ * $20M toggle is also on, the stricter floor wins.
+ */
 export const DEFAULT_FILTERS: IdeaFilters = {
   minRvol: 0,
   /** $30M. Group view uses the same floor. */

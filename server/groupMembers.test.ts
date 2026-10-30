@@ -1,7 +1,15 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { readFileSync } from 'node:fs'
-import { FinvizScreenerBlocked, parseScreenerTickerLinks, screenerPageFromHtml, screenerRowsFromHtml } from './groupMembersBuild.ts'
+import { finvizLiquidityTokens } from '../src/lib/groupPeriod.ts'
+import { SCAN_MIN_AVG_VOL_DEFAULT } from '../src/lib/scanDefaults.ts'
+import {
+  appliedFilters,
+  FinvizScreenerBlocked,
+  parseScreenerTickerLinks,
+  screenerPageFromHtml,
+  screenerRowsFromHtml,
+} from './groupMembersBuild.ts'
 import {
   buildMembershipScreenerUrl,
   collectGroupMembers,
@@ -11,6 +19,9 @@ import {
   lookupMembershipGroup,
   validateMembershipSnapshot,
   withRetries,
+  MEMBERSHIP_MIN_AVG_VOL,
+  MEMBERSHIP_MIN_PRICE,
+  MEMBERSHIP_SOURCE_NOTE,
   MEMBERSHIP_STALE_MS,
   type MembershipSnapshot,
 } from './groupMembers.ts'
@@ -126,6 +137,30 @@ test('membership screener url uses the performance view and liquidity filters', 
   assert.match(url, /sh_price_o5/)
   assert.match(url, /sh_avgvol_o750/)
   assert.match(url, /industry_oilgasrefiningmarketing/)
+})
+
+test('membership snapshot size floor is price > $1 and average volume > 50K', () => {
+  assert.equal(MEMBERSHIP_MIN_PRICE, 1)
+  assert.equal(MEMBERSHIP_MIN_AVG_VOL, 50_000)
+  assert.equal(SCAN_MIN_AVG_VOL_DEFAULT, 100_000)
+  const tokens = finvizLiquidityTokens(MEMBERSHIP_MIN_PRICE, MEMBERSHIP_MIN_AVG_VOL)
+  assert.equal(tokens.mapped, true)
+  assert.deepEqual(tokens, { price: 'sh_price_o1', avgVol: 'sh_avgvol_o50', mapped: true })
+  assert.deepEqual(appliedFilters(), { minPrice: 1, minAvgVolume: 50_000 })
+  const url = buildMembershipScreenerUrl('semiconductors', 1, MEMBERSHIP_MIN_PRICE, MEMBERSHIP_MIN_AVG_VOL)
+  assert.match(url, /sh_price_o1/)
+  assert.match(url, /sh_avgvol_o50/)
+  assert.doesNotMatch(url, /sh_price_o5/)
+  assert.doesNotMatch(url, /sh_avgvol_o750/)
+  assert.match(MEMBERSHIP_SOURCE_NOTE, /sh_price_o1/)
+  assert.match(MEMBERSHIP_SOURCE_NOTE, /sh_avgvol_o50/)
+  assert.match(MEMBERSHIP_SOURCE_NOTE, /price > \$1/)
+  assert.match(MEMBERSHIP_SOURCE_NOTE, /average volume > 50K/)
+  assert.match(MEMBERSHIP_SOURCE_NOTE, /client-side UI toggles/)
+  const build = readFileSync('scripts/buildGroupMembers.ts', 'utf8')
+  assert.match(build, /MEMBERSHIP_MIN_AVG_VOL/)
+  assert.match(build, /sh_price_o1/)
+  assert.match(build, /sh_avgvol_o50/)
 })
 
 test('an empty Finviz screen is zero members; a missing table still fails', () => {

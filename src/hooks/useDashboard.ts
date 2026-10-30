@@ -14,6 +14,7 @@ import {
 } from '../lib/ideaFilters'
 import { DEFAULT_GROUP_PERIOD, GROUP_PERIODS, isGroupPeriod, isGroupSlug } from '../lib/groupPeriod'
 import { selectGroupViewRows } from '../lib/groupView'
+import { resetLiquidityFilters, useLiquidityFilters } from '../lib/liquidityFilters'
 import { stageSortRank } from '../lib/setupStage'
 import type {
   DashboardData,
@@ -95,6 +96,7 @@ export function useDashboard() {
   const [groupCatalystPoll, setGroupCatalystPoll] = useState(0)
 
   const userWatchlist = useUserWatchlist()
+  const { filters: liquidity } = useLiquidityFilters()
   const { payload: groupsPayload, loading: groupsFetchLoading } = useGroups()
   const pollStartedAt = useRef<number | null>(null)
   const periodRef = useRef<GroupPeriod>(period)
@@ -363,8 +365,8 @@ export function useDashboard() {
 
   const groupRows = useMemo(() => {
     if (!groupView?.ideas) return null
-    return selectGroupViewRows(groupView.ideas, filters, groupView.finvizPerf)
-  }, [groupView, filters])
+    return selectGroupViewRows(groupView.ideas, filters, groupView.finvizPerf, liquidity)
+  }, [groupView, filters, liquidity])
 
   const poolTickers = useMemo(() => {
     const set = new Set<string>()
@@ -383,8 +385,8 @@ export function useDashboard() {
     const downtrend = data?.marketRegime?.stDirection === 'Downtrend'
     const groupSource = groupsMeta?.source ?? null
     const filterOpts = groupView
-      ? { groupView: true as const }
-      : { groupSource, groups: groupsView }
+      ? { groupView: true as const, liquidity }
+      : { groupSource, groups: groupsView, liquidity }
     const rows = groupView
       ? (groupRows?.rows ?? [])
       : !data
@@ -416,7 +418,7 @@ export function useDashboard() {
       ...rows,
       { ...extra, outsideScan: true, searchOverride: override },
     ]
-  }, [data, filters, groupsMeta, groupsView, groupView, groupRows, tickerLookup.idea])
+  }, [data, filters, groupsMeta, groupsView, groupView, groupRows, tickerLookup.idea, liquidity])
 
   const selectedIdea = useMemo(() => {
     if (!selectedTicker) return null
@@ -498,6 +500,7 @@ export function useDashboard() {
     const result = applyFilterReset({ scan: scanFilters, group: groupFilters })
     setScanFilters(result.scan)
     setGroupFilters(result.group)
+    resetLiquidityFilters()
   }, [scanFilters, groupFilters])
 
   const resetGroup = useCallback(() => {
@@ -547,6 +550,7 @@ export function useDashboard() {
     resetGroup,
     retryGroup,
     showAllGroupStocks,
+    liquidity,
     groupView: groupView
       ? {
           ...groupView,

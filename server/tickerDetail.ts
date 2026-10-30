@@ -7,8 +7,10 @@
  * News stays on the scanner's /api/market/news/:symbol.
  */
 import { adrPct, avgDollarVolume, buildTickerCikMap, parseRecentFilings, type FilingRow } from '../src/lib/tickerStats.ts'
+import { resolveSummaryMarketCap } from '../src/lib/marketCapTag.ts'
 import { finnhubToFundamentals } from '../src/lib/finnhubFundamentals.ts'
 import { getFinnhubKey } from './marketProxy.ts'
+import { fetchFinnhubMarketCap } from './tickerProfile.ts'
 import { sendJson } from './pulseShared.ts'
 import {
   getBatchQuotes,
@@ -34,9 +36,14 @@ export async function getTickerSummary(symbol: string) {
   const last = series?.bars[series.bars.length - 1]
   const price = q?.price ?? series!.price
   const prevClose = q?.prevClose ?? series?.prevClose
+  let marketCap = resolveSummaryMarketCap(q?.marketCap)
+  if (marketCap == null) {
+    marketCap = resolveSummaryMarketCap(await fetchFinnhubMarketCap(symbol, getFinnhubKey()))
+  }
   return {
     symbol,
     name: q?.name ?? series?.name,
+    marketCap,
     quote: {
       price,
       prevClose: prevClose ?? null,
@@ -47,7 +54,7 @@ export async function getTickerSummary(symbol: string) {
       low: q?.low ?? last?.l ?? null,
       volume: q?.volume ?? last?.v ?? null,
       avgVolume: q?.avgVolume ?? null,
-      marketCap: q?.marketCap ?? null,
+      marketCap,
     },
     adrPct: series ? adrPct(series.bars, 20) : null,
     dollarVolume20: series ? avgDollarVolume(series.bars, 20) : null,

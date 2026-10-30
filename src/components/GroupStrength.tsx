@@ -158,7 +158,7 @@ function sortGroups(
 }
 
 const LEADER_HELP =
-  'A leader is one of the top 20 membership-snapshot names in this group (price > $5 and average volume > 750K when the snapshot was built) whose selected-period performance is above 0 and that also appears in the current scan (above the 200-day SMA). Performance is computed from those members with market-data providers (Yahoo, then Finnhub/Stooq), not Finviz’s live screener, and can differ slightly from Finviz (4-week / 13-week / 26-week versus 21 / 63 / 126 sessions; 1W is 5 sessions). Shown as in-scan / names with data, for example 3/20.'
+  'A leader is one of the top 20 membership-snapshot names in this group whose selected-period performance is above 0 and that also appears in the current scan (above the 200-day SMA). The membership file is a size floor only; Price > $5, Avg vol > 100K, and $Vol > $20M are client-side UI toggles, not a hard-coded rebuild filter. Performance is computed from those members with market-data providers (Yahoo, then Finnhub/Stooq), not Finviz’s live screener, and can differ slightly from Finviz (4-week / 13-week / 26-week versus 21 / 63 / 126 sessions; 1W is 5 sessions). Shown as in-scan / names with data, for example 3/20.'
 
 function leaderTooltip(entry: GroupLeadersEntry, periodLabel: string): string {
   const lines = [

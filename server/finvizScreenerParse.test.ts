@@ -205,6 +205,16 @@ test('period order, slug validation, liquidity tokens, and leader count', () => 
 
   const tokens = finvizLiquidityTokens(5, 750_000)
   assert.deepEqual(tokens, { price: 'sh_price_o5', avgVol: 'sh_avgvol_o750', mapped: true })
+  assert.deepEqual(finvizLiquidityTokens(1, 50_000), {
+    price: 'sh_price_o1',
+    avgVol: 'sh_avgvol_o50',
+    mapped: true,
+  })
+  assert.deepEqual(finvizLiquidityTokens(1, 100_000), {
+    price: 'sh_price_o1',
+    avgVol: 'sh_avgvol_o100',
+    mapped: true,
+  })
   const fallback = finvizLiquidityTokens(6, 750_000)
   assert.equal(fallback.mapped, false)
   assert.equal(fallback.price, 'sh_price_o5')
@@ -216,7 +226,7 @@ test('period order, slug validation, liquidity tokens, and leader count', () => 
   assert.equal(url.searchParams.get('o'), '-perf13w')
   assert.equal(
     url.searchParams.get('f'),
-    'ind_oilgasrefiningmarketing,sh_price_o5,sh_avgvol_o750',
+    'ind_oilgasrefiningmarketing,sh_price_o1,sh_avgvol_o100',
   )
 
   const rows = [

@@ -1,8 +1,12 @@
 /**
- * Yahoo Finance EquityQuery screener (Stage 1 universe).
+ * Yahoo Finance EquityQuery screener (Stage 1 universe, fallback path).
  * Unofficial API — cookie + crumb with retry/backoff.
  *
- * Liquidity gate: avgdailyvol3m >= 750_000 (mid-band of 500k–1M).
+ * Universe floor only: price ≥ $1 and avgdailyvol3m ≥ 100_000.
+ * The $5 / 100K / $20M rules are client-side UI toggles — they are not
+ * applied here. STAGE1_CAP (default 800) plus page size 250 keep the
+ * request budget bounded; loosening this floor further would not return
+ * more names than the cap.
  * Equities only (quoteType EQUITY — excludes ETFs/funds).
  * Region US; exchanges NMS / NYQ / NGM / NCM.
  */
@@ -147,7 +151,7 @@ function buildEquityQuery(): Record<string, unknown> {
     operator: 'AND',
     operands: [
       { operator: 'EQ', operands: ['region', 'us'] },
-      { operator: 'GT', operands: ['intradayprice', MIN_PRICE] },
+      { operator: 'GTE', operands: ['intradayprice', MIN_PRICE] },
       { operator: 'GTE', operands: ['avgdailyvol3m', MIN_AVG_DAILY_VOL] },
       {
         operator: 'IS-IN',
@@ -246,7 +250,7 @@ function isEquityHit(q: ScreenerHit): boolean {
   if (!sym || sym.includes('=') || sym.includes('^')) return false
   if (/\.(ETF|FUND)$/i.test(sym)) return false
   const price = q.regularMarketPrice
-  if (typeof price === 'number' && price > 0 && price <= MIN_PRICE) return false
+  if (typeof price === 'number' && price > 0 && price < MIN_PRICE) return false
   const vol = q.averageDailyVolume3Month
   if (typeof vol === 'number' && vol > 0 && vol < MIN_AVG_DAILY_VOL) return false
   return true
