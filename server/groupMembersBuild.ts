@@ -149,17 +149,18 @@ export function screenerRowsFromHtml(
 }
 
 /**
- * Price and average-volume floors written into the snapshot and sent to Finviz.
- * Unmapped constants fall back to the same default tokens as `finvizLiquidityTokens`
- * (price > $5, average volume > 750K), and the stored filters match those tokens.
+ * Size floor written into the snapshot and sent to Finviz (`sh_price_o1`,
+ * `sh_avgvol_o50`). This is not the UI $5 / 100K / $20M liquidity rules.
+ * Unmapped constants fall back to the same default tokens as
+ * `finvizLiquidityTokens`, and the stored filters match those tokens.
  */
 export function appliedFilters(): { minPrice: number; minAvgVolume: number } {
   const tokens = finvizLiquidityTokens(MEMBERSHIP_MIN_PRICE, MEMBERSHIP_MIN_AVG_VOL)
   if (!tokens.mapped) {
     process.stdout.write(
-      `membership constants ${MEMBERSHIP_MIN_PRICE}/${MEMBERSHIP_MIN_AVG_VOL} are not a Finviz bucket; snapshot uses price > 5 and average volume > 750000\n`,
+      `membership constants ${MEMBERSHIP_MIN_PRICE}/${MEMBERSHIP_MIN_AVG_VOL} are not a Finviz bucket; snapshot uses price > 1 and average volume > 50000\n`,
     )
-    return { minPrice: 5, minAvgVolume: 750_000 }
+    return { minPrice: 1, minAvgVolume: 50_000 }
   }
   return { minPrice: MEMBERSHIP_MIN_PRICE, minAvgVolume: MEMBERSHIP_MIN_AVG_VOL }
 }

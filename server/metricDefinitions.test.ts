@@ -357,11 +357,15 @@ test('tooltip text is built from the live scanner constants', () => {
   includes('groupPerf6m', `${PERIOD_SESSIONS['6m']}`)
   includes('groupLeaders', `${LEADER_POOL_SIZE}`)
   includes('groupLeaders', `${FALLBACK_LEADER_NEAR_HIGH_PCT}`)
-  includes('groupLeaders', `${SCAN_MIN_PRICE_DEFAULT}`)
-  includes('groupLeaders', `${SCAN_MIN_AVG_VOL_DEFAULT}`)
+  includes('groupLeaders', 'client-side UI toggles')
+  includes('groupMembershipSnapshot', 'size floor')
   includes('groupMembershipStale', `${MEMBERSHIP_STALE_DAYS}`)
   includes('scanUniverse', `${SCAN_MIN_PRICE_DEFAULT}`)
+  includes('scanUniverse', `${SCAN_MIN_AVG_VOL_DEFAULT}`)
   includes('scanUniverse', `${SCAN_STAGE1_CAP_DEFAULT}`)
+  includes('filterPriceGt5', 'Price > $5')
+  includes('filterAvgVol100k', '100K')
+  includes('filterDollarVol20m', '$20M')
 })
 
 test('component metric ids match the registry', () => {

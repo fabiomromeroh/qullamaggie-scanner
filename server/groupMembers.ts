@@ -13,16 +13,17 @@ export const MEMBERSHIP_PAGE_SIZE = 20
 export const MEMBERSHIP_MAX_PAGES = 15
 
 /**
- * Membership snapshot screen only. Scanner stage-1 still uses
- * `SCAN_MIN_AVG_VOL_DEFAULT` / `MIN_AVG_DAILY_VOL` (750K). 100_000 maps to
- * Finviz `sh_avgvol_o100`. The 20-day $20M dollar-volume cut is applied when
- * serving `/api/pulse/group-members`, not stored in this file.
+ * Membership snapshot size floor only. The $5 / 100K / $20M rules live in the
+ * UI liquidity toggles (`src/lib/liquidityFilters.ts`) and are not stored here.
+ * `sh_price_o1` + `sh_avgvol_o50` is the loosest practical free Finviz screen
+ * so the client filters have names to hide. Scanner Stage 1 still uses
+ * `SCAN_MIN_PRICE_DEFAULT` / `SCAN_MIN_AVG_VOL_DEFAULT` (universe floor).
  */
-export const MEMBERSHIP_MIN_PRICE = 5
-export const MEMBERSHIP_MIN_AVG_VOL = 100_000
+export const MEMBERSHIP_MIN_PRICE = 1
+export const MEMBERSHIP_MIN_AVG_VOL = 50_000
 
 export const MEMBERSHIP_SOURCE_NOTE =
-  'Membership from the public Finviz performance screener (v=141) filtered with f=ind_<slug>,sh_price_o5,sh_avgvol_o100 (price > $5, average volume > 100K). Paginated with r=1,21,41… up to 15 pages per group. Built on a host that can reach finviz.com because Render IPs receive HTTP 403 from screener.ashx. Performance is not stored.'
+  'Membership from the public Finviz performance screener (v=141) filtered with f=ind_<slug>,sh_price_o1,sh_avgvol_o50 (size floor: price > $1, average volume > 50K). The $5 / 100K / $20M liquidity rules are client-side UI toggles, not this snapshot. Paginated with r=1,21,41… up to 15 pages per group. Built on a host that can reach finviz.com because Render IPs receive HTTP 403 from screener.ashx. Performance is not stored.'
 
 export interface MembershipGroup {
   name: string

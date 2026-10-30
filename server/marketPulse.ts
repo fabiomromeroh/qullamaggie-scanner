@@ -8,7 +8,7 @@
 import { ETF_LISTS, isEtfListId, TAPE_INDEXES, type EtfListId } from '../src/lib/etfLists.ts'
 import { computePerfRow, pickMovers, type MoverInput, type PerfRow } from '../src/lib/perfWindows.ts'
 import { loadMembershipSnapshot } from './groupMembers.ts'
-import { filterMembersByDollarVolume } from './memberDollarVolume.ts'
+import { enrichMembersWithLiquidity } from './memberDollarVolume.ts'
 import { membershipUniverse, sendJson } from './pulseShared.ts'
 import { getBreadthQuotes, maybeRefreshBreadth } from './breadthJob.ts'
 export { membershipUniverse, sendJson }
@@ -163,8 +163,15 @@ async function memberChartQuotes(tickers: readonly string[]): Promise<{ rows: Ma
   const missing: string[] = []
   for (const t of tickers) {
     const q = bq?.quotes.get(t)
-    if (q) rows.set(t, { ticker: t, price: q.price, changePct: q.changePct })
-    else missing.push(t)
+    if (q) {
+      rows.set(t, {
+        ticker: t,
+        price: q.price,
+        changePct: q.changePct,
+        dollarVolume20: q.dollarVolume20,
+        avgVolume: q.price > 0 ? q.dollarVolume20 / q.price : undefined,
+      })
+    } else missing.push(t)
   }
   await Promise.all(
     missing.slice(0, MEMBER_CHART_LIMIT).map(async (t) => {
@@ -192,13 +199,10 @@ export async function getGroupMembers(slug: string): Promise<{
   slug: string
   name: string
   generatedAt: string
+  /** Snapshot size floor only. $5 / 100K / $20M live in the client toggles. */
   filters: { minPrice: number; minAvgVolume: number }
   members: GroupMemberRow[]
   totalMembers: number
-  filteredOut: number
-  /** False when breadth chart quotes are not loaded yet. Unknown names are kept either way. */
-  dollarVolumeFilterApplied: boolean
-  minDollarVolume20: number
   quotesSource?: string
   quotesError?: string
 } | null> {
@@ -239,21 +243,20 @@ export async function getGroupMembers(slug: string): Promise<{
     ? new Map(
         [...breadth.quotes.entries()].map(([ticker, quote]) => [
           ticker.toUpperCase(),
-          { dollarVolume20: quote.dollarVolume20 },
+          { price: quote.price, dollarVolume20: quote.dollarVolume20 },
         ]),
       )
     : null
-  const filtered = filterMembersByDollarVolume(rows, dollarQuotes)
+  // Return every snapshot member. Price / 20d shares / 20d $vol are attached when
+  // known; the UI liquidity toggles filter the list. Unknown values stay blank.
+  const enriched = enrichMembersWithLiquidity(rows, dollarQuotes)
   return {
     slug,
     name: group.name,
     generatedAt: loaded.snapshot.generatedAt,
     filters: loaded.snapshot.filters,
-    members: filtered.members,
-    totalMembers: filtered.totalMembers,
-    filteredOut: filtered.filteredOut,
-    dollarVolumeFilterApplied: filtered.dollarVolumeFilterApplied,
-    minDollarVolume20: filtered.minDollarVolume20,
+    members: enriched.members,
+    totalMembers: enriched.totalMembers,
     quotesSource,
     ...(quotesError ? { quotesError } : {}),
   }

@@ -1,6 +1,10 @@
+import { useMemo } from 'react'
 import { useJson } from '../../hooks/useJson'
 import type { EtfListId } from '../../lib/etfLists'
+import { membershipFilterFootnote } from '../../lib/membershipFootnote'
+import { passesLiquidityFilters, useLiquidityFilters } from '../../lib/liquidityFilters'
 import { fmtPrice } from '../../lib/pulseFormat'
+import { normalizeTickerList, tickerNamesMap } from '../../lib/tickerListNav'
 import { TickerLink } from '../TickerModal'
 import { SortableTable, type Column } from './SortableTable'
 
@@ -32,6 +36,19 @@ interface Holdings {
 
 function HoldingsPanel({ ticker }: { ticker: string }) {
   const { data, error, loading } = useJson<Holdings>(`/api/pulse/holdings/${encodeURIComponent(ticker)}`)
+  const list = useMemo(
+    () => normalizeTickerList((data?.holdings ?? []).map((h) => h.symbol).filter((s): s is string => Boolean(s))),
+    [data],
+  )
+  const names = useMemo(
+    () =>
+      tickerNamesMap(
+        (data?.holdings ?? [])
+          .filter((h): h is { symbol: string; name?: string; weightPct: number } => Boolean(h.symbol))
+          .map((h) => ({ ticker: h.symbol, name: h.name })),
+      ),
+    [data],
+  )
   if (loading && !data) return <span className="text-[11px] text-terminal-muted">Loading top holdings…</span>
   if (error) return <span className="text-[11px] text-terminal-dim">Top holdings are not available right now.</span>
   if (!data?.holdings.length) return <span className="text-[11px] text-terminal-muted">Yahoo lists no holdings for {ticker}.</span>
@@ -41,7 +58,7 @@ function HoldingsPanel({ ticker }: { ticker: string }) {
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
         {data.holdings.map((h, i) => (
           <span key={`${h.symbol ?? h.name}-${i}`} className="inline-flex items-baseline gap-1">
-            {h.symbol ? <TickerLink ticker={h.symbol} name={h.name} /> : null}
+            {h.symbol ? <TickerLink ticker={h.symbol} name={h.name} list={list} names={names} /> : null}
             <span className="max-w-48 truncate text-terminal-muted">{h.name}</span>
             <span className="font-mono text-terminal-fg">{h.weightPct.toFixed(2)}%</span>
           </span>
@@ -52,7 +69,19 @@ function HoldingsPanel({ ticker }: { ticker: string }) {
 }
 
 const ETF_COLUMNS: Column<EtfRow>[] = [
-  { key: 'ticker', label: 'Ticker', text: (r) => r.ticker, render: (r) => <TickerLink ticker={r.ticker} name={r.name} /> },
+  {
+    key: 'ticker',
+    label: 'Ticker',
+    text: (r) => r.ticker,
+    render: (r, ctx) => (
+      <TickerLink
+        ticker={r.ticker}
+        name={r.name}
+        list={normalizeTickerList(ctx.rows.map((row) => row.ticker))}
+        names={tickerNamesMap(ctx.rows)}
+      />
+    ),
+  },
   {
     key: 'name',
     label: 'Company',
@@ -76,10 +105,15 @@ const ETF_COLUMNS: Column<EtfRow>[] = [
 ]
 
 export function EtfTable({ list }: { list: EtfListId }) {
+  const { filters } = useLiquidityFilters()
   const { data, error, loading, reload } = useJson<EtfListResponse>(`/api/pulse/etfs?list=${list}`, 5 * 60_000)
   // Holdings come from Yahoo quoteSummary (crumb). Hide row expansion when the server reports it blocked.
   const caps = useJson<{ holdings: boolean }>('/api/pulse/capabilities')
   const holdingsOn = caps.data?.holdings !== false
+  const rows = useMemo(
+    () => (data?.rows ?? []).filter((r) => passesLiquidityFilters({ price: r.price }, filters)),
+    [data, filters],
+  )
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex w-0 min-w-full shrink-0 flex-wrap items-center gap-3 px-2 py-1 text-[10px] text-terminal-dim">
@@ -87,6 +121,7 @@ export function EtfTable({ list }: { list: EtfListId }) {
           Yahoo daily bars · windows in sessions (W 5, M 21, 3M 63, 6M 126, Y 252) · YTD from last close of prior year
         </span>
         {data ? <span>as of {new Date(data.asOf).toLocaleTimeString()}</span> : null}
+        {data ? <span>{membershipFilterFootnote({ shown: rows.length, total: data.rows.length, filters })}</span> : null}
         {error ? <span className="text-terminal-red">{error}</span> : null}
         <button
           type="button"
@@ -101,7 +136,7 @@ export function EtfTable({ list }: { list: EtfListId }) {
         <div className="p-6 text-center text-xs text-terminal-muted">Loading ETF performance…</div>
       ) : (
         <SortableTable
-          rows={data?.rows ?? []}
+          rows={rows}
           columns={ETF_COLUMNS}
           rowKey={(r) => r.ticker}
           defaultSort={{ key: 'perfDay', dir: 'desc' }}

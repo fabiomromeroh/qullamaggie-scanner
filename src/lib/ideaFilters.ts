@@ -1,5 +1,10 @@
 import { ideaMatchesFinvizGroup } from './groupMatch'
 import {
+  liquidityRowFromIdea,
+  passesLiquidityFilters,
+  type LiquidityFilters,
+} from './liquidityFilters'
+import {
   readJsonFrom,
   removeKeyFrom,
   writeJsonTo,
@@ -74,6 +79,10 @@ export interface FilterableIdea {
   name: string
   groupId?: string
   groupName: string
+  /** Last price. Unknown is kept by the liquidity toggles. */
+  price?: number
+  /** 20-day average share volume when known. Else derived from $vol / price. */
+  avgVolume?: number
   setupStage: SetupStage
   aboveSma200?: boolean
   aboveSma50: boolean
@@ -117,6 +126,12 @@ export interface PassesFiltersOptions {
   groupView?: boolean
   groupSource?: 'finviz' | 'fallback' | null
   groups?: readonly IndustryGroup[]
+  /**
+   * Shared Price > $5 / Avg vol > 100K / $Vol > $20M toggles.
+   * Omitted → those gates are skipped (tests and callers that only set
+   * IdeaFilters). Scanner and group view pass the live shared state.
+   */
+  liquidity?: LiquidityFilters
 }
 
 export interface DashboardFilterState {
@@ -542,6 +557,11 @@ export function passesFilters(
     const raw = idea.avgDollarVol ?? idea.dollarVolume
     const dol = typeof raw === 'number' && Number.isFinite(raw) ? raw : null
     if (dol != null && dol < f.minAvgDollarVol) return false
+  }
+  // Shared liquidity toggles. Unknown values are kept. When the $20M $vol
+  // toggle is on together with minAvgDollarVol, the stricter floor wins.
+  if (options.liquidity && !passesLiquidityFilters(liquidityRowFromIdea(idea), options.liquidity)) {
+    return false
   }
   const pct = typeof idea.pctFrom52wHigh === 'number' ? idea.pctFrom52wHigh : 0
   const distance = Math.abs(Math.min(0, pct))

@@ -1,7 +1,8 @@
 import { lazy, Suspense, useEffect, useRef, useState } from 'react'
-import { Maximize2, Minimize2, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Maximize2, Minimize2, X } from 'lucide-react'
 import { useSplitLayout } from '../hooks/useSplitLayout'
-import { escClosesSheet, isTypingTarget, nextTickerIndex } from '../lib/splitLayout'
+import { escClosesSheet, isTypingTarget } from '../lib/splitLayout'
+import { stepTickerIndex, tickerListPosition } from '../lib/tickerListNav'
 import type { TradingIdea } from '../types'
 import type { IdeaGroupRank } from '../lib/groupPeriod'
 import { DetailDrawer } from './DetailDrawer'
@@ -85,11 +86,18 @@ export function SplitDetailSheet({
         })
         return
       }
-      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
-      if (e.altKey || e.ctrlKey || e.metaKey) return
+      if (
+        e.key !== 'ArrowUp' &&
+        e.key !== 'ArrowDown' &&
+        e.key !== 'ArrowLeft' &&
+        e.key !== 'ArrowRight'
+      ) {
+        return
+      }
+      if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return
       if (isTypingTarget(e.target)) return
-      const direction = e.key === 'ArrowDown' ? 1 : -1
-      const idx = nextTickerIndex(tickersRef.current, tickerRef.current, direction)
+      const direction: 1 | -1 = e.key === 'ArrowDown' || e.key === 'ArrowRight' ? 1 : -1
+      const idx = stepTickerIndex(tickersRef.current, tickerRef.current, direction)
       if (idx < 0) return
       e.preventDefault()
       const next = tickersRef.current[idx]
@@ -142,8 +150,49 @@ export function SplitDetailSheet({
         <div className="flex min-w-0 flex-1 flex-col lg:min-h-0">
           <header className="qm-split-header sticky top-0 z-10 flex shrink-0 items-center gap-2 border-b border-terminal-border bg-terminal-panel px-3 py-1.5">
             <div className="min-w-0 flex-1">
-              <div className="truncate font-mono text-base font-bold text-terminal-fg">
-                {idea.ticker}
+              <div className="flex items-center gap-1">
+                {tickers.length > 1 ? (
+                  <>
+                    <button
+                      type="button"
+                      aria-label="Previous ticker"
+                      disabled={tickerListPosition(tickers, idea.ticker).index <= 0}
+                      className="rounded px-1 py-0.5 text-terminal-dim hover:bg-terminal-elevated hover:text-terminal-fg disabled:opacity-30"
+                      onClick={() => {
+                        const idx = stepTickerIndex(tickers, idea.ticker, -1)
+                        if (idx < 0) return
+                        const next = tickers[idx]
+                        if (next) onSelectTicker(next)
+                      }}
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Next ticker"
+                      disabled={
+                        tickerListPosition(tickers, idea.ticker).index >= tickers.length - 1
+                      }
+                      className="rounded px-1 py-0.5 text-terminal-dim hover:bg-terminal-elevated hover:text-terminal-fg disabled:opacity-30"
+                      onClick={() => {
+                        const idx = stepTickerIndex(tickers, idea.ticker, 1)
+                        if (idx < 0) return
+                        const next = tickers[idx]
+                        if (next) onSelectTicker(next)
+                      }}
+                    >
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
+                  </>
+                ) : null}
+                <div className="truncate font-mono text-base font-bold text-terminal-fg">
+                  {idea.ticker}
+                </div>
+                {tickers.length > 1 && tickerListPosition(tickers, idea.ticker).index >= 0 ? (
+                  <span className="shrink-0 font-mono text-[11px] text-terminal-dim">
+                    {tickerListPosition(tickers, idea.ticker).index + 1} / {tickers.length}
+                  </span>
+                ) : null}
               </div>
               <div className="truncate text-xs text-terminal-muted">{idea.name}</div>
             </div>

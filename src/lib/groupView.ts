@@ -1,5 +1,6 @@
 import type { EarningsStatus, IdeaFilters, SetupStage, SetupType } from '../types'
 import { selectVisibleIdeas } from './ideaFilters'
+import type { LiquidityFilters } from './liquidityFilters'
 
 /**
  * Rows for a Finviz group drill-down.
@@ -12,6 +13,10 @@ export interface GroupViewRow {
   ticker: string
   name: string
   groupName: string
+  price?: number
+  avgVolume?: number
+  avgDollarVol?: number
+  dollarVolume?: number
   setupStage: SetupStage
   aboveSma200: boolean
   aboveSma50: boolean
@@ -86,8 +91,9 @@ export function selectGroupViewRows<T extends GroupViewRow>(
   ideas: readonly T[],
   filters: IdeaFilters,
   perfByTicker: Readonly<Record<string, number | null>> | null | undefined,
+  liquidity?: LiquidityFilters,
 ): GroupViewSelection<T> {
-  const rows = selectVisibleIdeas(ideas, filters, { groupView: true })
+  const rows = selectVisibleIdeas(ideas, filters, { groupView: true, liquidity })
   rows.sort((a, b) => compareByPeriodPerf(a, b, perfByTicker))
   return {
     rows,

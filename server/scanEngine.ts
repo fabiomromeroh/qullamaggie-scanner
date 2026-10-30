@@ -1,7 +1,8 @@
 /**
  * Three-stage US liquid equity scan.
  * Stage 1: members of the top-12 Finviz leading groups for the selected period.
- *          Yahoo screener if that universe cannot be built.
+ *          Yahoo screener if that universe cannot be built (universe floor
+ *          price ≥ $1 and avg vol ≥ 100K; $5 / 100K / $20M are client UI toggles).
  * Stage 1.5: cheap Yahoo quote SMA prefilter (above 200 AND above 50).
  * Stage 2: deep Kyle/Qullamaggie metrics on survivors (Yahoo-first cascade).
  */

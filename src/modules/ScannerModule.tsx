@@ -44,6 +44,7 @@ export function ScannerModule() {
     retryGroup,
     showAllGroupStocks,
     groupView,
+    liquidity,
   } = useDashboard()
 
   const { widths: panelWidths, resizeGroups, resizeWatchlist } = useResizablePanels()
@@ -62,6 +63,7 @@ export function ScannerModule() {
   const catalystIdeas = groupView?.ideas ?? data?.ideas ?? []
   const uncheckedCatalysts = countCatalystUnchecked(catalystIdeas, filters, {
     groupView: Boolean(groupView),
+    liquidity,
   })
 
   const selectedGroupUnmatched = useMemo(() => {

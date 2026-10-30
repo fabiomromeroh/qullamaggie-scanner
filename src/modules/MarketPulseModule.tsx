@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { DockedTickerPanel } from '../components/DockedTickerPanel'
+import { LiquidityFilterBar } from '../components/LiquidityFilterBar'
 import { EtfTable } from '../components/pulse/EtfTable'
 import { ThemeTracker } from '../components/pulse/ThemeTracker'
 import { TickerTape } from '../components/pulse/TickerTape'
 import { subFromHash } from '../lib/modules'
+import { normalizeTickerList } from '../lib/tickerListNav'
 import { TickerModalContext, useTickerModal, type TickerModalTarget } from '../lib/tickerModalContext'
 
 const PULSE_TABS = [
@@ -57,7 +59,22 @@ export function MarketPulseModule() {
 
   const open = useCallback(
     (t: TickerModalTarget) => {
-      const target = { ...t, ticker: t.ticker.toUpperCase() }
+      const ticker = t.ticker.toUpperCase()
+      const list = normalizeTickerList(t.list)
+      const names: Record<string, string> = {}
+      if (t.names) {
+        for (const [key, value] of Object.entries(t.names)) {
+          if (!value) continue
+          names[key.trim().toUpperCase()] = value
+        }
+      }
+      if (t.name) names[ticker] = t.name
+      const target: TickerModalTarget = {
+        ticker,
+        name: names[ticker] ?? t.name,
+        ...(list.length ? { list } : {}),
+        ...(Object.keys(names).length ? { names } : {}),
+      }
       if (isLgUp()) {
         parent.close()
         setDocked(target)
@@ -126,6 +143,13 @@ export function MarketPulseModule() {
               : 'flex min-h-0 min-w-0 flex-1 flex-col'
           }
         >
+          <div
+            className={`shrink-0 border-b border-terminal-border bg-terminal-panel px-2 py-1 ${
+              dockOpen ? 'w-0 min-w-full [contain:inline-size]' : ''
+            }`}
+          >
+            <LiquidityFilterBar />
+          </div>
           <div className={dockOpen ? 'w-0 min-w-full shrink-0 [contain:inline-size]' : undefined}>
             <TickerTape />
           </div>

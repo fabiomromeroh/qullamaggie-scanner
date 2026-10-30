@@ -9,7 +9,7 @@ export interface Column<T> {
   value?: (row: T) => number | null | undefined
   /** Text sort key for non-numeric columns. */
   text?: (row: T) => string
-  render?: (row: T) => ReactNode
+  render?: (row: T, ctx: { rows: readonly T[]; index: number }) => ReactNode
   pct?: boolean
   align?: 'left' | 'right'
   className?: string
@@ -121,7 +121,7 @@ export function SortableTable<T>({
                           c.pct ? pctClass(v) : ''
                         } ${c.className ?? ''}`}
                       >
-                        {c.render ? c.render(row) : c.pct ? fmtPct(v) : (v ?? '—')}
+                        {c.render ? c.render(row, { rows: sorted, index: sorted.indexOf(row) }) : c.pct ? fmtPct(v) : (v ?? '—')}
                       </td>
                     )
                   })}

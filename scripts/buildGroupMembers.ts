@@ -1,10 +1,10 @@
 /**
  * Refresh server/data/finviz-group-members.json from Finviz.
- * Membership screen: price > $5 and average volume > 100K
+ * Size floor only: price > $1 and average volume > 50K
  * (`MEMBERSHIP_MIN_PRICE` / `MEMBERSHIP_MIN_AVG_VOL` in server/groupMembers.ts,
- * Finviz `sh_price_o5,sh_avgvol_o100`). This is not the scanner stage-1 floor.
- * The 20-day $20M dollar-volume cut is applied by GET /api/pulse/group-members,
- * not stored in this file.
+ * Finviz `sh_price_o1,sh_avgvol_o50`). The $5 / 100K / $20M liquidity rules
+ * live in the client UI toggles, not this file, and GET /api/pulse/group-members
+ * returns every snapshot member (no server-side $vol cut).
  * Run where finviz.com/screener/stocks answers (new screener: embedded JSON rows + totalCount). Does not overwrite the file
  * unless every group page succeeds. Exits non-zero on a block or parse failure.
  */

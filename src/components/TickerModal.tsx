@@ -1,28 +1,68 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useJson } from '../hooks/useJson'
 import { marketCapTag } from '../lib/marketCapTag'
 import { fmtCompact, fmtPct, fmtPrice, pctClass } from '../lib/pulseFormat'
+import { isTypingTarget } from '../lib/splitLayout'
+import {
+  normalizeTickerList,
+  stepTickerIndex,
+  tickerListPosition,
+} from '../lib/tickerListNav'
 import { TickerModalContext, useTickerModal, type TickerModalTarget } from '../lib/tickerModalContext'
 import { IntradayChart, type IntradayInterval } from './IntradayChart'
 import { TickerNews } from './TickerNews'
 
 const DailyChartPanel = lazy(() => import('./DailyChartPanel'))
 
-/** Clickable ticker that opens the shared ticker modal. */
-export function TickerLink({ ticker, name, className = '' }: { ticker: string; name?: string; className?: string }) {
+const EMPTY_TICKER_LIST: string[] = []
+
+/** Clickable ticker that opens the shared ticker modal. Pass `list` for arrow-key navigation. */
+export function TickerLink({
+  ticker,
+  name,
+  className = '',
+  list,
+  names,
+}: {
+  ticker: string
+  name?: string
+  className?: string
+  list?: readonly string[]
+  names?: Record<string, string>
+}) {
   const { open } = useTickerModal()
   return (
     <button
       type="button"
       onClick={(e) => {
         e.stopPropagation()
-        open({ ticker, name })
+        open({ ticker, name, list: list ? [...list] : undefined, names })
       }}
       className={`font-mono font-semibold text-terminal-blue hover:underline ${className}`}
     >
       {ticker}
     </button>
   )
+}
+
+function normalizeTarget(t: TickerModalTarget): TickerModalTarget {
+  const ticker = t.ticker.trim().toUpperCase()
+  const list = normalizeTickerList(t.list)
+  const names: Record<string, string> = {}
+  if (t.names) {
+    for (const [key, value] of Object.entries(t.names)) {
+      if (!value) continue
+      names[key.trim().toUpperCase()] = value
+    }
+  }
+  if (t.name) names[ticker] = t.name
+  return {
+    ticker,
+    name: names[ticker] ?? t.name,
+    ...(list.length ? { list } : {}),
+    ...(Object.keys(names).length ? { names } : {}),
+  }
 }
 
 interface Summary {
@@ -275,14 +315,79 @@ function MarketCapBadge({ marketCap }: { marketCap: number | null | undefined })
 
 /** Shared ticker header, quote, and Chart / Fundamentals / News / Filings tabs. No overlay and no dismiss keys. */
 export function TickerDetail({ target, onClose }: { target: TickerModalTarget; onClose: () => void }) {
+  const { open } = useTickerModal()
   const [tab, setTab] = useState<Tab>('chart')
   const { data: summary, error } = useJson<Summary>(`/api/ticker/${encodeURIComponent(target.ticker)}/summary`, 60_000)
   const name = summary?.name ?? target.name
   const marketCap = summary?.marketCap ?? summary?.quote.marketCap
+  const list = target.list ?? EMPTY_TICKER_LIST
+  const position = tickerListPosition(list, target.ticker)
+  const canNav = list.length > 1 && position.index >= 0
+  const atStart = !canNav || position.index <= 0
+  const atEnd = !canNav || position.index >= list.length - 1
+
+  const go = useCallback(
+    (direction: 1 | -1) => {
+      const next = stepTickerIndex(list, target.ticker, direction)
+      if (next < 0) return false
+      const ticker = list[next]
+      if (!ticker) return false
+      open({
+        ticker,
+        name: target.names?.[ticker],
+        list,
+        names: target.names,
+      })
+      return true
+    },
+    [list, open, target.names, target.ticker],
+  )
+
+  useEffect(() => {
+    if (!canNav) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' && e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
+      if (isTypingTarget(e.target)) return
+      const direction: 1 | -1 = e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 1
+      if (!go(direction)) return
+      e.preventDefault()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [canNav, go])
+
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 border-b border-terminal-border px-3 py-2">
+        {canNav ? (
+          <span className="flex items-center gap-0.5">
+            <button
+              type="button"
+              onClick={() => go(-1)}
+              disabled={atStart}
+              aria-label="Previous ticker"
+              className="rounded px-1 py-0.5 text-terminal-muted hover:bg-terminal-elevated hover:text-terminal-fg disabled:opacity-30"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => go(1)}
+              disabled={atEnd}
+              aria-label="Next ticker"
+              className="rounded px-1 py-0.5 text-terminal-muted hover:bg-terminal-elevated hover:text-terminal-fg disabled:opacity-30"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </span>
+        ) : null}
         <span className="font-mono text-lg font-bold text-terminal-fg">{target.ticker}</span>
+        {canNav ? (
+          <span className="font-mono text-[11px] text-terminal-dim">
+            {position.index + 1} / {position.total}
+          </span>
+        ) : null}
         {name ? <span className="max-w-96 truncate text-xs text-terminal-muted">{name}</span> : null}
         <MarketCapBadge marketCap={marketCap} />
         <span className="text-[11px] text-terminal-dim">
@@ -372,7 +477,7 @@ function TickerModalBody({ target, onClose }: { target: TickerModalTarget; onClo
 
 export function TickerModalProvider({ children }: { children: ReactNode }) {
   const [target, setTarget] = useState<TickerModalTarget | null>(null)
-  const open = useCallback((t: TickerModalTarget) => setTarget({ ...t, ticker: t.ticker.toUpperCase() }), [])
+  const open = useCallback((t: TickerModalTarget) => setTarget(normalizeTarget(t)), [])
   const close = useCallback(() => setTarget(null), [])
   const value = useMemo(() => ({ open, close }), [open, close])
   return (

@@ -1,6 +1,9 @@
+import { useMemo } from 'react'
 import { useJson } from '../../hooks/useJson'
 import { membershipFilterFootnote } from '../../lib/membershipFootnote'
+import { useLiquidityFilters, passesLiquidityFilters } from '../../lib/liquidityFilters'
 import { fmtCompact, fmtPct, fmtPrice, pctClass } from '../../lib/pulseFormat'
+import { normalizeTickerList, tickerNamesMap } from '../../lib/tickerListNav'
 import type { GroupsResponse, IndustryGroup } from '../../types'
 import { TickerLink } from '../TickerModal'
 import { SortableTable, type Column } from './SortableTable'
@@ -11,9 +14,6 @@ interface MembersResponse {
   generatedAt: string
   filters?: { minPrice: number; minAvgVolume: number }
   totalMembers?: number
-  filteredOut?: number
-  dollarVolumeFilterApplied?: boolean
-  minDollarVolume20?: number
   members: {
     ticker: string
     company?: string
@@ -28,26 +28,53 @@ interface MembersResponse {
   quotesError?: string
 }
 
+function UnknownMark() {
+  return (
+    <span className="text-terminal-dim" title="Unknown — not guessed">
+      ?
+    </span>
+  )
+}
+
 function GroupMembers({ group }: { group: IndustryGroup }) {
   const slug = group.slug ?? group.id
+  const { filters } = useLiquidityFilters()
   const { data, error, loading } = useJson<MembersResponse>(`/api/pulse/group-members/${encodeURIComponent(slug)}`)
+  const visible = useMemo(() => {
+    if (!data) return []
+    return [...data.members]
+      .filter((m) =>
+        passesLiquidityFilters(
+          { price: m.price, avgVolume: m.avgVolume, dollarVolume20: m.dollarVolume20 },
+          filters,
+        ),
+      )
+      .sort((a, b) => (b.changePct ?? -1e9) - (a.changePct ?? -1e9))
+  }, [data, filters])
+  const list = useMemo(() => normalizeTickerList(visible.map((m) => m.ticker)), [visible])
+  const names = useMemo(
+    () => tickerNamesMap(visible.map((m) => ({ ticker: m.ticker, name: m.company }))),
+    [visible],
+  )
   if (loading && !data) return <span className="text-[11px] text-terminal-muted">Loading members…</span>
   if (error) return <span className="text-[11px] text-terminal-red">Members unavailable: {error}</span>
   if (!data) return null
-  const members = [...data.members].sort((a, b) => (b.changePct ?? -1e9) - (a.changePct ?? -1e9))
+  const total = data.totalMembers ?? data.members.length
   return (
     <div>
       <div className="mb-1 text-[10px] text-terminal-dim">
-        {members.length} members from the Finviz membership snapshot ({data.generatedAt.slice(0, 10)};{' '}
-        {membershipFilterFootnote(data)}) · {data.quotesSource ?? 'Yahoo quotes'}
+        {membershipFilterFootnote({ shown: visible.length, total, filters })} · Finviz snapshot{' '}
+        {data.generatedAt.slice(0, 10)} (size floor only) · {data.quotesSource ?? 'Yahoo quotes'}
         {data.quotesError ? <span className="text-terminal-red"> · quotes unavailable: {data.quotesError}</span> : null}
       </div>
       <div className="grid grid-cols-[repeat(auto-fill,minmax(15rem,1fr))] gap-x-4 gap-y-0.5 text-[11px]">
-        {members.map((m) => (
+        {visible.map((m) => (
           <div key={m.ticker} className="flex items-baseline gap-2">
-            <TickerLink ticker={m.ticker} name={m.company} className="w-14 text-left" />
+            <TickerLink ticker={m.ticker} name={m.company} list={list} names={names} className="w-14 text-left" />
             <span className={`w-16 text-right font-mono ${pctClass(m.changePct)}`}>{fmtPct(m.changePct)}</span>
-            <span className="w-14 text-right font-mono text-terminal-muted">{fmtPrice(m.price)}</span>
+            <span className="w-14 text-right font-mono text-terminal-muted">
+              {m.price != null && Number.isFinite(m.price) ? fmtPrice(m.price) : <UnknownMark />}
+            </span>
             <span className="min-w-0 flex-1 truncate text-terminal-dim" title={m.company}>
               {m.company}
               {m.marketCap ? ` · ${fmtCompact(m.marketCap)}` : ''}
@@ -112,4 +139,3 @@ export function ThemeTracker() {
     </div>
   )
 }
-
